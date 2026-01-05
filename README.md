@@ -1,6 +1,6 @@
 ﻿# Kidz 4 Fun Digital Platform
 
-The Kidz 4 Fun digital platform is a full MERN-stack playground experience that brings the indoor play center online. It unifies marketing pages, party bookings, memberships, events, family accounts, and staff tooling across two physical locations (Poughkeepsie, NY and Deptford, NJ). This repository contains all services, infrastructure scripts, and documentation required to run the platform locally or deploy it in the cloud.
+The Kidz 4 Fun digital platform is a full-stack playground experience that brings the indoor play center online. It unifies marketing pages, party bookings, memberships, events, family accounts, and staff tooling across two physical locations (Poughkeepsie, NY and Deptford, NJ). This repository contains all services, infrastructure scripts, and documentation required to run the platform locally or deploy it in the cloud.
 
 ---
 
@@ -31,7 +31,7 @@ The Kidz 4 Fun digital platform is a full MERN-stack playground experience that 
 - **Account & Authentication**: Guardian registration, login, JWT-based sessions, and stored membership data.
 - **Booking Engine**: Endpoints for party reservations, schedule availability, price estimates, cancellation, admin status updates.
 - **Content Services**: CMS-like APIs for FAQs, announcements, testimonials, and front-page highlights.
-- **Data Integration**: MongoDB schemas for users, children, memberships, packages, bookings, events, waivers, testimonials, FAQs, announcements, and content.
+- **Data Integration**: Supabase (PostgreSQL) for users, children, memberships, packages, bookings, events, waivers, testimonials, FAQs, announcements, and content.
 - **Virtual Concierge Chatbot**: React widget + FastAPI service backed by OpenAI and local ChromaDB RAG, guiding families with up-to-date facility info.
 - **Infrastructure**: Docker Compose orchestrations, environment templates, and seeding scripts for realistic data.
 
@@ -39,8 +39,8 @@ The Kidz 4 Fun digital platform is a full MERN-stack playground experience that 
 
 ## Tech Stack & Key Dependencies
 - **Frontend**: React 19, TypeScript, React Router v6, CSS Modules, custom hooks.
-- **Backend**: Node.js 20+, Express 5, TypeScript, Mongoose 8, Zod validation, JWT, bcrypt, Pino logging.
-- **Database**: MongoDB 7 (Atlas or self-hosted).
+- **Backend**: Node.js 20+, Express 5, TypeScript, Zod validation, JWT, bcrypt, Pino logging.
+- **Database**: Supabase (PostgreSQL).
 - **Chatbot Assistant**: Python 3.10+, FastAPI, Uvicorn, Chromadb persistent store, OpenAI `gpt-4o-mini` + `text-embedding-3-small`.
 - **Tooling**: Nodemon, ts-node-dev, ESLint, Prettier, Husky (planned), dotenv, concurrently, Docker Compose.
 
@@ -60,10 +60,10 @@ The Kidz 4 Fun digital platform is a full MERN-stack playground experience that 
 │  • Content, testimonials, FAQ    │
 │  • Admin routes + middleware     │
 └───────▲──────────────────────────┘
-        │  Mongoose ODM             │
+        │  Supabase Client          │
         │                            │
 ┌───────┴──────────────────────────┐
-│          MongoDB Atlas           │
+│       Supabase (PostgreSQL)      │
 │  • Users / Children / Waivers    │
 │  • Memberships / Packages        │
 │  • Bookings / Events / Tickets   │
@@ -82,10 +82,10 @@ FastAPI Chatbot (Python) runs alongside frontend/backend, enriches answers with 
 │   ├── src/
 │   │   ├── app.ts              # Express app factory (CORS, logging, routes)
 │   │   ├── index.ts            # Bootstrap, DB connect, server listen with error handling
-│   │   ├── config/             # env loader (dotenv + zod) and mongoose connection
+│   │   ├── config/             # env loader (dotenv + zod) and Supabase connection
 │   │   ├── controllers/        # REST controllers (auth, bookings, users, waivers, content, events)
 │   │   ├── middleware/         # authGuard, role checks, request logging
-│   │   ├── models/             # Mongoose schemas (User, Child, Booking, Membership, etc.)
+│   │   ├── models/             # Database models (User, Child, Booking, Membership, etc.)
 │   │   ├── routes/             # Route composition modules
 │   │   ├── schemas/            # Zod validation definitions
 │   │   ├── services/           # Business logic (auth, booking, content, party packages)
@@ -123,7 +123,7 @@ FastAPI Chatbot (Python) runs alongside frontend/backend, enriches answers with 
 ## Environments & Secrets
 | Service   | File                    | Variables                                                                                             |
 |-----------|------------------------|--------------------------------------------------------------------------------------------------------|
-| Backend   | `backend/.env`         | `NODE_ENV`, `PORT`, `MONGO_URL`, `JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `FRONTEND_URL`, `CORS_ORIGIN`, `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD` |
+| Backend   | `backend/.env`         | `NODE_ENV`, `PORT`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `FRONTEND_URL`, `CORS_ORIGIN`, `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD` |
 | Frontend  | `frontend/.env` (opt.) | `REACT_APP_API_URL` (defaults to `http://localhost:5000/api`), `REACT_APP_STRIPE_PUBLISHABLE_KEY`    |
 | Chatbot   | `chatbot/.env` (future)| `OPENAI_API_KEY`, `BACKEND_BASE_URL`, etc.                                                            |
 
@@ -132,7 +132,7 @@ The repo includes `.env.example` templates. Never commit production credentials.
 ---
 
 ## Getting Started
-1. **Prerequisites**: Node.js ≥ 20, npm ≥ 10, Python 3.12+, MongoDB local instance or Atlas cluster, PowerShell 5+ (Windows), Git.
+1. **Prerequisites**: Node.js ≥ 20, npm ≥ 10, Python 3.12+, Supabase account, PowerShell 5+ (Windows), Git.
 2. **Clone & install**:
    ```bash
    git clone <repo-url>
@@ -141,7 +141,7 @@ The repo includes `.env.example` templates. Never commit production credentials.
    npm install --prefix frontend
    python -m venv chatbot/.venv && chatbot/.venv/Scripts/activate && pip install -r chatbot/requirements.txt  # optional
    ```
-3. **Configure environment**: Copy `.env.example` to `.env` in each service; populate Mongo URL, JWT secret, etc.
+3. **Configure environment**: Copy `.env.example` to `.env` in each service; populate Supabase URL, Supabase key, JWT secret, etc.
 4. **Populate sample data**: `npm run seed --prefix backend` (imports memberships, packages, events, testimonials, etc.). Optionally define `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` in `backend/.env`; the backend will upsert this account with admin + staff roles on startup so you have credentials ready for the dashboard.
 5. **Run locally**:
    - Quick start: `./start-dev.bat` (opens backend and frontend servers in separate terminals).
@@ -151,7 +151,7 @@ The repo includes `.env.example` templates. Never commit production credentials.
 ---
 
 ## Backend Service
-- **Entry**: `src/index.ts` – loads env, connects Mongo, instantiates Express, logs port conflicts.
+- **Entry**: `src/index.ts` – loads env, connects to Supabase, instantiates Express, logs port conflicts.
 - **Express Stack**: JSON body parser, CORS (configurable origins), Pino HTTP logger.
 - **Routing** (`src/routes/index.ts`)
   - `/api/health`
@@ -180,8 +180,8 @@ The repo includes `.env.example` templates. Never commit production credentials.
 ---
 
 ## Database & Seeding
-- **MongoDB Collections**: Users, Children, Memberships, PartyPackages, Bookings, Events, Tickets, Waivers, FAQs, Testimonials, Announcements.
-- **Seed Script** (`npm run seed --prefix backend`): Resets collections, inserts guardian, child profiles, memberships, packages, events, testimonials, FAQs, announcements, and sample bookings.
+- **Supabase Tables**: Users, Children, Memberships, PartyPackages, Bookings, Events, Tickets, Waivers, FAQs, Testimonials, Announcements.
+- **Seed Script** (`npm run seed --prefix backend`): Resets tables, inserts guardian, child profiles, memberships, packages, events, testimonials, FAQs, announcements, and sample bookings.
 - **Data Sources**: The seed data and frontend fallback derive from `kidz4fun.txt` to keep website content synced with marketing facts.
 
 ---
@@ -242,7 +242,7 @@ The repo includes `.env.example` templates. Never commit production credentials.
 
 ## Deployment Considerations
 - **Hosting**: Containerize via Docker Compose or deploy separately (e.g., Vercel for frontend + Render/Heroku for backend).
-- **Database**: MongoDB Atlas cluster with IP allow-list and TLS. Consider multi-region if the two locations require low latency.
+- **Database**: Supabase hosted PostgreSQL with Row Level Security (RLS) enabled. Consider regional deployment if the two locations require low latency.
 - **Secrets**: Use environment-specific vaults; never bake secrets into images.
 - **CI/CD**: GitHub Actions for lint/test/build; automated deploy to staging/production on approved PRs.
 - **Monitoring**: Pino logs aggregated via ELK/Datadog; health checks via `/api/health`.
