@@ -1,0 +1,369 @@
+/* Kid-friendly playful navigation styles */
+
+.wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(18px);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 251, 247, 0.98),
+    rgba(254, 243, 255, 0.95)
+  );
+  border-bottom: 3px solid;
+  border-image: linear-gradient(90deg, var(--color-primary), var(--color-secondary), var(--color-tertiary)) 1;
+  box-shadow: 0 20px 40px rgba(124, 58, 237, 0.08);
+}
+
+.inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0.9rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.primaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+  text-decoration: none;
+  transition: transform 0.3s ease;
+}
+
+.brand:hover {
+  transform: scale(1.02);
+}
+
+.brandLogo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  border-radius: 12px;
+  transition: transform 0.3s ease;
+  filter: drop-shadow(0 4px 8px rgba(255, 107, 157, 0.25));
+}
+
+.brand:hover .brandLogo {
+  transform: rotate(-5deg) scale(1.05);
+}
+
+.brandIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  font-size: 1.2rem;
+  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  color: #fff;
+  box-shadow:
+    0 8px 20px rgba(255, 107, 157, 0.35),
+    0 4px 0 rgba(124, 58, 237, 0.2);
+  animation: wiggle 4s ease-in-out infinite;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.brandTitle {
+  font-family: 'Fredoka', 'Nunito', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brandTagline {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--color-tertiary);
+  letter-spacing: 0.15em;
+  font-weight: 600;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.3rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 107, 157, 0.08), rgba(124, 58, 237, 0.06));
+  border: 2px dashed rgba(124, 58, 237, 0.15);
+  backdrop-filter: blur(4px);
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.navLink {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-family: 'Fredoka', 'Nunito', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.navLink:hover {
+  color: var(--color-primary);
+  transform: translateY(-3px) scale(1.05);
+  background: rgba(255, 107, 157, 0.1);
+}
+
+.activeLink {
+  color: var(--color-secondary);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(6, 182, 212, 0.1));
+  box-shadow:
+    inset 0 0 0 2px rgba(124, 58, 237, 0.3),
+    0 4px 0 rgba(124, 58, 237, 0.1);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.desktopCtas {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ctaPrimary {
+  min-width: 8.5rem;
+  box-shadow:
+    0 8px 20px rgba(255, 107, 157, 0.35),
+    0 4px 0 rgba(124, 58, 237, 0.15);
+}
+
+.ctaSecondary {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(6, 182, 212, 0.08));
+  color: var(--color-secondary);
+  border: 2px solid rgba(124, 58, 237, 0.2);
+}
+
+.ctaSecondary:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px rgba(124, 58, 237, 0.18);
+}
+
+.adminButton {
+  padding: 0.55rem 1.25rem;
+  border-radius: 999px;
+  font-family: 'Fredoka', 'Nunito', sans-serif;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--color-accent-orange), var(--color-primary));
+  color: #fff;
+  box-shadow:
+    0 8px 20px rgba(251, 146, 60, 0.35),
+    0 4px 0 rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.adminButton:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow:
+    0 14px 28px rgba(251, 146, 60, 0.4),
+    0 6px 0 rgba(0, 0, 0, 0.12);
+}
+
+.accountButton {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(124, 58, 237, 0.08));
+  color: var(--color-text);
+  border: 2px solid rgba(6, 182, 212, 0.2);
+}
+
+.greeting {
+  font-family: 'Fredoka', 'Nunito', sans-serif;
+  font-weight: 600;
+  color: var(--color-secondary);
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(255, 107, 157, 0.08));
+  border: 2px dashed rgba(124, 58, 237, 0.2);
+}
+
+.mobileCtas {
+  display: none;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.menuButton {
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  background: linear-gradient(135deg, rgba(255, 107, 157, 0.1), rgba(124, 58, 237, 0.08));
+  border: 2px solid rgba(124, 58, 237, 0.15);
+  border-radius: 12px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.menuButton:hover {
+  background: linear-gradient(135deg, rgba(255, 107, 157, 0.15), rgba(124, 58, 237, 0.12));
+  transform: scale(1.05);
+}
+
+.menuButton span {
+  display: block;
+  width: 22px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-secondary));
+  border-radius: 999px;
+  transition:
+    transform 0.3s ease,
+    opacity 0.3s ease;
+}
+
+/* Animation keyframes */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+
+@media (max-width: 900px) {
+  .inner {
+    gap: 0.75rem;
+  }
+
+  .primaryRow {
+    align-items: flex-start;
+  }
+
+  .desktopCtas {
+    display: none;
+  }
+
+  .nav {
+    position: absolute;
+    top: 76px;
+    right: 1.5rem;
+    left: 1.5rem;
+    z-index: 60;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, rgba(255, 251, 247, 0.98), rgba(254, 243, 255, 0.98));
+    border-radius: 24px;
+    box-shadow:
+      0 30px 60px rgba(124, 58, 237, 0.15),
+      0 8px 0 rgba(255, 107, 157, 0.1);
+    border: 3px dashed rgba(124, 58, 237, 0.2);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-12px) scale(0.95);
+  }
+
+  .navOpen {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+  }
+
+  .navLink {
+    justify-content: flex-start;
+    padding: 0.85rem 1.25rem;
+    border-radius: var(--radius-md);
+  }
+
+  .mobileCtas {
+    display: flex;
+  }
+
+  .mobileCtas .adminButton {
+    width: 100%;
+    text-align: center;
+  }
+
+  .menuButton {
+    display: flex;
+  }
+}
+
+@media (max-width: 600px) {
+  .inner {
+    padding-inline: 1rem;
+  }
+
+  .brandTitle {
+    font-size: 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .inner {
+    padding: 0.75rem;
+  }
+
+  .brandIcon {
+    width: 42px;
+    height: 42px;
+    font-size: 1rem;
+    border-radius: 12px;
+  }
+
+  .brandTitle {
+    font-size: 1.1rem;
+  }
+
+  .brandTagline {
+    font-size: 0.6rem;
+  }
+
+  .nav {
+    top: 68px;
+    right: 0.75rem;
+    left: 0.75rem;
+    padding: 1rem;
+    border-radius: 18px;
+  }
+
+  .navLink {
+    padding: 0.7rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .mobileCtas {
+    gap: 0.5rem;
+  }
+
+  .greeting {
+    font-size: 0.85rem;
+    padding: 0.4rem 0.85rem;
+  }
+}

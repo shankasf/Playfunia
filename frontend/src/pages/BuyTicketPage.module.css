@@ -1,0 +1,344 @@
+.page {
+  padding: 3rem 1.5rem;
+  background: linear-gradient(180deg, #f0f7ff 0%, #ffffff 55%);
+  min-height: calc(100vh - 80px);
+}
+
+.inner {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  gap: 2rem;
+}
+
+.hero {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 2.5rem 3rem;
+  box-shadow: 0 20px 40px rgba(31, 102, 255, 0.12);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f66ff;
+  background: rgba(31, 102, 255, 0.12);
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin-top: 1rem;
+  font-size: clamp(2rem, 3vw, 2.6rem);
+  color: #1a265a;
+}
+
+.hero p {
+  margin-top: 0.75rem;
+  font-size: 1.05rem;
+  color: #4b5a7d;
+  line-height: 1.6;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 1.9rem;
+  box-shadow: 0 15px 32px rgba(31, 60, 136, 0.08);
+  display: grid;
+  gap: 1.3rem;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #1a265a;
+}
+
+.field {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.field label {
+  font-weight: 600;
+  color: #1a265a;
+}
+
+.field input,
+.field select {
+  border: 1px solid rgba(31, 60, 136, 0.15);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: #1f66ff;
+  box-shadow: 0 0 0 4px rgba(31, 102, 255, 0.12);
+}
+
+.bundleList {
+  display: grid;
+  gap: 1rem;
+}
+
+.bundleOption {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 1.1rem 1.2rem;
+  border-radius: 16px;
+  border: 1px solid rgba(31, 102, 255, 0.18);
+  background: rgba(31, 102, 255, 0.06);
+}
+
+.bundleOption span:last-child {
+  font-weight: 700;
+  color: #1a265a;
+}
+
+.summary {
+  background: rgba(31, 102, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.2rem 1.4rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1rem;
+  color: #1a265a;
+}
+
+.summaryTotal {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.status {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.statusError {
+  color: #d7263d;
+}
+
+.statusSuccess {
+  color: #1aa45d;
+}
+
+.codeGrid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.codeCard {
+  border: 1px dashed rgba(31, 102, 255, 0.4);
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  background: #ffffff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  color: #1a265a;
+}
+
+.helper {
+  font-size: 0.95rem;
+  color: #4b5a7d;
+  line-height: 1.5;
+}
+
+.waiverReminder {
+  background: rgba(255, 170, 51, 0.15);
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  font-size: 0.95rem;
+  color: #684200;
+  display: grid;
+  gap: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .hero {
+    padding: 2rem;
+  }
+
+  .bundleOption {
+    grid-template-columns: 1fr;
+    text-align: left;
+  }
+}
+
+/* Guest Form Section */
+.guestFormSection {
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+  background: rgba(31, 102, 255, 0.04);
+  border-radius: 16px;
+  border: 1px solid rgba(31, 102, 255, 0.12);
+}
+
+.guestFormSection h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1a265a;
+}
+
+.guestFormHint {
+  margin: 0 0 1.25rem;
+  font-size: 0.95rem;
+  color: #4b5a7d;
+}
+
+.signInLink {
+  color: #1f66ff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.signInLink:hover {
+  text-decoration: underline;
+}
+
+.inputRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.inputRow:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+  .inputRow {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+.guestWaiverCheckbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid rgba(31, 102, 255, 0.15);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.guestWaiverCheckbox input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #1f66ff;
+}
+
+.guestWaiverCheckbox span {
+  font-size: 0.95rem;
+  color: #4b5a7d;
+  line-height: 1.5;
+}
+
+.guestWaiverCheckbox a {
+  color: #1f66ff;
+  text-decoration: underline;
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 2rem 0.75rem;
+  }
+
+  .hero {
+    padding: 1.5rem;
+    border-radius: 18px;
+  }
+
+  .hero h1 {
+    font-size: clamp(1.5rem, 5vw, 2rem);
+  }
+
+  .hero p {
+    font-size: 0.95rem;
+  }
+
+  .tag {
+    font-size: 0.75rem;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .card {
+    padding: 1.5rem;
+    border-radius: 16px;
+  }
+
+  .card h2 {
+    font-size: 1.2rem;
+  }
+
+  .field input,
+  .field select {
+    padding: 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  .bundleOption {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .summary {
+    padding: 1rem;
+    border-radius: 12px;
+  }
+
+  .summaryTotal {
+    font-size: 1.2rem;
+  }
+
+  .codeCard {
+    padding: 0.85rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .waiverReminder {
+    padding: 0.85rem;
+    font-size: 0.9rem;
+  }
+
+  .guestFormSection {
+    padding: 1.25rem;
+    border-radius: 14px;
+  }
+
+  .guestFormSection h2 {
+    font-size: 1.1rem;
+  }
+}

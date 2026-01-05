@@ -1,0 +1,92 @@
+.section {
+  margin: 5rem auto;
+  max-width: var(--max-width);
+  padding: 0 1.5rem;
+  display: grid;
+  gap: 2rem;
+}
+
+.header {
+  text-align: center;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.tag {
+  display: inline-flex;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  background: rgba(79, 70, 229, 0.12);
+  color: var(--color-secondary);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  display: grid;
+  gap: 0.75rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: var(--shadow-soft);
+  color: inherit;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(31, 41, 55, 0.16);
+}
+
+.image {
+  padding-top: 70%;
+  background-size: cover;
+  background-position: center;
+}
+
+.card p {
+  margin: 0;
+  padding: 0 1rem 1.25rem;
+  color: var(--color-text);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+@media (max-width: 480px) {
+  .section {
+    margin: 3rem auto;
+    padding: 0 1rem;
+    gap: 1.5rem;
+  }
+
+  .tag {
+    font-size: 0.7rem;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .card {
+    border-radius: 14px;
+  }
+
+  .image {
+    padding-top: 100%;
+  }
+
+  .card p {
+    padding: 0 0.75rem 1rem;
+    font-size: 0.85rem;
+  }
+}

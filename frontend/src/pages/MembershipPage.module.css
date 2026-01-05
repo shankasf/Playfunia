@@ -1,0 +1,393 @@
+.page {
+  padding: 3rem 1.5rem 4rem;
+  background: linear-gradient(180deg, #fff4e6 0%, #ffffff 50%);
+  min-height: calc(100vh - 80px);
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  gap: 2.5rem;
+}
+
+.intro {
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 2.5rem 3rem;
+  box-shadow: 0 20px 40px rgba(255, 163, 67, 0.18);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ff7a00;
+  background: rgba(255, 122, 0, 0.12);
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.intro h1 {
+  margin-top: 1rem;
+  font-size: clamp(2rem, 3vw, 2.7rem);
+  color: #2f1f0f;
+}
+
+.intro p {
+  margin-top: 0.8rem;
+  font-size: 1.1rem;
+  color: #5c4632;
+  line-height: 1.6;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 2rem;
+}
+
+.compare {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 1.5rem 1.75rem;
+  box-shadow: 0 12px 28px rgba(191, 112, 21, 0.12);
+}
+
+.compareHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.compareHeader h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  color: #2f1f0f;
+}
+
+.compareHeader p {
+  margin: 0;
+  color: #6b5039;
+  font-size: 0.95rem;
+}
+
+.compareTable {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.compareRow {
+  display: grid;
+  grid-template-columns: 180px repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+  align-items: center;
+  background: #fff7ef;
+  border: 1px solid rgba(191, 112, 21, 0.16);
+  border-radius: 12px;
+  padding: 0.8rem 1rem;
+}
+
+.compareLabel {
+  font-weight: 700;
+  color: #2f1f0f;
+}
+
+.compareCell {
+  font-weight: 600;
+  color: #4a341f;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.compareTier {
+  font-weight: 700;
+  color: #2f1f0f;
+}
+
+.comparePrice {
+  font-size: 0.95rem;
+  color: #6b5039;
+}
+
+.plans {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.planCard {
+  border-radius: 20px;
+  padding: 1.9rem;
+  background: #ffffff;
+  box-shadow: 0 15px 35px rgba(191, 112, 21, 0.12);
+  border: 2px solid transparent;
+  display: grid;
+  gap: 1rem;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.planCard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 22px 45px rgba(191, 112, 21, 0.18);
+}
+
+.planSelected {
+  border-color: #ff7a00;
+  background: rgba(255, 122, 0, 0.08);
+}
+
+.planHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.planHeader h3 {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #2f1f0f;
+}
+
+.planPrice {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #2f1f0f;
+}
+
+.planDescription {
+  color: #5c4632;
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+.planMeta {
+  display: flex;
+  gap: 1rem;
+  color: #6b5039;
+  font-size: 0.95rem;
+  flex-wrap: wrap;
+}
+
+.benefitList {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #442f1d;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.98rem;
+}
+
+.purchaseCard {
+  position: sticky;
+  top: 120px;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 1.9rem;
+  box-shadow: 0 18px 40px rgba(191, 112, 21, 0.16);
+  display: grid;
+  gap: 1.2rem;
+}
+
+.purchaseCard h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #2f1f0f;
+}
+
+.field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.field label {
+  font-weight: 600;
+  color: #2f1f0f;
+}
+
+.field select,
+.field input {
+  border: 1px solid rgba(47, 31, 15, 0.12);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.field select:focus,
+.field input:focus {
+  outline: none;
+  border-color: #ff7a00;
+  box-shadow: 0 0 0 4px rgba(255, 122, 0, 0.15);
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px dashed rgba(255, 122, 0, 0.4);
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  background: rgba(255, 122, 0, 0.07);
+}
+
+.toggleRow label {
+  font-weight: 600;
+  color: #2f1f0f;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1rem;
+  color: #2f1f0f;
+}
+
+.summaryTotal {
+  font-size: 1.45rem;
+  font-weight: 700;
+}
+
+.status {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.statusError {
+  color: #c1262a;
+}
+
+.statusSuccess {
+  color: #2f8a4b;
+}
+
+.helper {
+  font-size: 0.95rem;
+  color: #5c4632;
+  line-height: 1.5;
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .purchaseCard {
+    position: static;
+  }
+
+  .compareRow {
+    grid-template-columns: 1fr;
+  }
+
+  .intro {
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 2rem 1rem 3rem;
+  }
+
+  .intro {
+    padding: 1.5rem;
+    border-radius: 18px;
+  }
+
+  .intro h1 {
+    font-size: clamp(1.5rem, 5vw, 2rem);
+  }
+
+  .intro p {
+    font-size: 1rem;
+  }
+
+  .planCard {
+    padding: 1.5rem;
+    border-radius: 16px;
+  }
+
+  .planHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .planPrice {
+    font-size: 1.4rem;
+  }
+
+  .purchaseCard {
+    padding: 1.5rem;
+    border-radius: 16px;
+  }
+
+  .compare {
+    padding: 1.25rem;
+    border-radius: 16px;
+  }
+
+  .compareHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 1.5rem 0.75rem 2.5rem;
+  }
+
+  .container {
+    gap: 1.5rem;
+  }
+
+  .intro {
+    padding: 1.25rem;
+  }
+
+  .tag {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.7rem;
+  }
+
+  .planCard {
+    padding: 1.25rem;
+  }
+
+  .planHeader h3 {
+    font-size: 1.2rem;
+  }
+
+  .planMeta {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .benefitList {
+    font-size: 0.9rem;
+  }
+
+  .field select,
+  .field input {
+    padding: 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  .summaryTotal {
+    font-size: 1.25rem;
+  }
+}

@@ -1,0 +1,565 @@
+.page {
+  max-width: 900px;
+  margin: 4rem auto;
+  padding: 0 1.5rem 4rem;
+  display: grid;
+  gap: 2.5rem;
+}
+
+.header {
+  display: grid;
+  gap: 1rem;
+  text-align: center;
+  justify-items: center;
+}
+
+/* Playground Rules Section - Full Image Display */
+.rulesSection {
+  display: grid;
+  gap: 1rem;
+  text-align: center;
+}
+
+.rulesTitle {
+  font-family: 'Fredoka', 'Poppins', sans-serif;
+  font-size: 1.5rem;
+  margin: 0;
+  background: linear-gradient(135deg, var(--color-text), var(--color-secondary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.rulesSubtitle {
+  color: var(--color-text-muted);
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.rulesImageContainer {
+  width: 100%;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  box-shadow:
+    0 20px 50px rgba(124, 58, 237, 0.15),
+    0 8px 0 rgba(255, 107, 157, 0.1);
+  border: 3px solid rgba(124, 58, 237, 0.15);
+  background: #fff;
+}
+
+.rulesImage {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.5rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  color: white;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  box-shadow: 
+    0 4px 15px rgba(102, 126, 234, 0.4),
+    0 2px 6px rgba(118, 75, 162, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  animation: tagGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes tagGlow {
+  0% {
+    box-shadow: 
+      0 4px 15px rgba(102, 126, 234, 0.4),
+      0 2px 6px rgba(118, 75, 162, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+  100% {
+    box-shadow: 
+      0 6px 20px rgba(102, 126, 234, 0.6),
+      0 3px 10px rgba(118, 75, 162, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+}
+
+.page h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+}
+
+.page p {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+}
+
+.authPrompt {
+  background: rgba(99, 102, 241, 0.08);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  display: grid;
+  gap: 1rem;
+  text-align: center;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  justify-items: center;
+}
+
+.existingWaiverNotice {
+  background: linear-gradient(135deg, rgba(26, 164, 93, 0.08) 0%, rgba(46, 213, 115, 0.08) 100%);
+  border-radius: 20px;
+  padding: 2.5rem;
+  display: grid;
+  gap: 1.75rem;
+  text-align: left;
+  border: 2px solid rgba(26, 164, 93, 0.3);
+  box-shadow: 0 8px 24px rgba(26, 164, 93, 0.1);
+}
+
+.summaryHeader {
+  display: grid;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.existingWaiverNotice h2 {
+  margin: 0;
+  color: #1aa45d;
+  font-size: 1.5rem;
+}
+
+.existingWaiverNotice p {
+  margin: 0;
+  color: #4f5673;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.summaryDetails {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.summaryBlock {
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 10px 24px rgba(26, 164, 93, 0.08);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.summaryBlock h3 {
+  margin: 0;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #1aa45d;
+}
+
+.summaryPrimary {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.summarySecondary {
+  color: #4f5673;
+  font-size: 0.95rem;
+}
+
+.childList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.childItem {
+  border: 1px solid rgba(26, 164, 93, 0.25);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: grid;
+  gap: 0.25rem;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.childName {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.childMeta {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.waiverActions {
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.primaryAction {
+  justify-self: center;
+}
+
+.secondaryButton {
+  padding: 0.9rem 1.5rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 2px solid rgba(42, 28, 85, 0.15);
+  color: #2a1c55;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.secondaryButton:hover {
+  background: rgba(255, 255, 255, 1);
+  border-color: rgba(42, 28, 85, 0.3);
+  transform: translateY(-1px);
+}
+
+.tertiaryButton {
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.tertiaryButton:hover {
+  color: #1d4ed8;
+}
+
+.formLoader {
+  padding: 2rem;
+  border-radius: 16px;
+  border: 1px dashed rgba(37, 99, 235, 0.4);
+  text-align: center;
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.05);
+  font-weight: 600;
+}
+
+.formHeader {
+  margin-bottom: 1rem;
+}
+
+.backButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: transparent;
+  color: #6366f1;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.backButton:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 0 1rem 3rem;
+  }
+
+  .summaryDetails {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 720px) {
+  .summaryDetails {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .waiverActions {
+    grid-auto-flow: column;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .primaryAction {
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    margin: 2.5rem auto;
+    padding: 0 0.75rem 2.5rem;
+    gap: 1.5rem;
+  }
+
+  .page h1 {
+    font-size: clamp(1.5rem, 5vw, 2rem);
+  }
+
+  .tag {
+    font-size: 0.75rem;
+    padding: 0.5rem 1rem;
+  }
+
+  .authPrompt {
+    padding: 1.5rem;
+    border-radius: 18px;
+  }
+
+  .authPrompt h2 {
+    font-size: 1.3rem;
+  }
+
+  .loginModeToggle {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .modeButton {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.9rem;
+  }
+
+  .loginForm {
+    max-width: 100%;
+  }
+
+  .loginInput {
+    padding: 0.75rem;
+    font-size: 0.95rem;
+  }
+
+  .loginHint {
+    padding: 0.85rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  .existingWaiverNotice {
+    padding: 1.75rem;
+    border-radius: 16px;
+    gap: 1.5rem;
+  }
+
+  .existingWaiverNotice h2 {
+    font-size: 1.25rem;
+  }
+
+  .existingWaiverNotice p {
+    font-size: 0.95rem;
+  }
+
+  .summaryBlock {
+    padding: 1.25rem;
+    border-radius: 14px;
+  }
+
+  .summaryBlock h3 {
+    font-size: 0.9rem;
+  }
+
+  .summaryPrimary {
+    font-size: 1.05rem;
+  }
+
+  .childItem {
+    padding: 0.65rem 0.85rem;
+    border-radius: 10px;
+  }
+
+  .childName {
+    font-size: 0.95rem;
+  }
+
+  .childMeta {
+    font-size: 0.85rem;
+  }
+
+  .secondaryButton {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+  }
+
+  .formLoader {
+    padding: 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .backButton {
+    font-size: 0.9rem;
+    padding: 0.4rem 0.85rem;
+  }
+}
+
+/* Email/phone login styles */
+.authPrompt h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--color-text);
+}
+
+.loginModeToggle {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.modeButton {
+  padding: 0.6rem 1.5rem;
+  border: 2px solid rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+  background: transparent;
+  color: #4f5673;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.modeButton:hover {
+  border-color: rgba(99, 102, 241, 0.5);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.modeActive {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: #6366f1;
+  color: #6366f1;
+}
+
+.loginForm {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+  max-width: 360px;
+}
+
+.loginInput {
+  padding: 0.85rem 1rem;
+  border: 2px solid rgba(99, 102, 241, 0.25);
+  border-radius: 12px;
+  font-size: 1rem;
+  text-align: center;
+  background: #fff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.loginInput:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.15);
+}
+
+.loginInput:disabled {
+  background: #f8f9fa;
+  cursor: not-allowed;
+}
+
+.loginError {
+  color: #dc2626;
+  font-size: 0.9rem;
+  margin: 0;
+  padding: 0.5rem;
+  background: rgba(220, 38, 38, 0.08);
+  border-radius: 8px;
+}
+
+.loginHint {
+  font-size: 0.9rem;
+  color: #4f5673;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.08) 100%);
+  padding: 1rem 1.25rem;
+  border-radius: 12px;
+  border: 1px dashed rgba(99, 102, 241, 0.3);
+  margin-top: 0.5rem;
+  line-height: 1.5;
+}
+
+.loginNote {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin-top: 0.5rem;
+}
+
+.loginNote a {
+  color: #6366f1;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.loginNote a:hover {
+  text-decoration: underline;
+}
+
+.logoutSection {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+.logoutButton {
+  padding: 0.6rem 1rem;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.logoutButton:hover {
+  color: #475569;
+}
+
+/* Confirmation section for returning users */
+.confirmSection {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 2px solid rgba(99, 102, 241, 0.25);
+}
+
+.confirmCheckbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.confirmCheckbox input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: #6366f1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.confirmCheckbox span {
+  user-select: none;
+}
+
+.disabledButton {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

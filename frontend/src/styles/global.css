@@ -1,0 +1,319 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800;900&family=Fredoka:wght@400;500;600;700&family=Poppins:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* Kid-friendly vibrant color palette */
+  --color-primary: #ff6b9d;       /* Playful pink */
+  --color-primary-dark: #e8457a;
+  --color-primary-light: #ffb3d0;
+  --color-secondary: #7c3aed;     /* Fun purple */
+  --color-secondary-light: #a78bfa;
+  --color-tertiary: #06b6d4;      /* Bright turquoise */
+  --color-tertiary-light: #67e8f9;
+  --color-background: #fffbf7;    /* Warm cream */
+  --color-surface: #ffffff;
+  --color-muted: #fef3ff;         /* Light lavender */
+  --color-accent: #fbbf24;        /* Bright yellow */
+  --color-accent-orange: #fb923c; /* Fun orange */
+  --color-accent-green: #4ade80;  /* Lime green */
+  --color-accent-blue: #60a5fa;   /* Sky blue */
+  --color-text: #1e1b4b;          /* Deep purple-black */
+  --color-text-muted: #6b7280;
+  --max-width: 1200px;
+
+  /* Rounder, more playful borders */
+  --radius-xl: 32px;
+  --radius-lg: 24px;
+  --radius-md: 16px;
+  --radius-sm: 12px;
+  --radius-round: 9999px;
+
+  /* Playful shadows */
+  --shadow-soft: 0 20px 40px rgba(124, 58, 237, 0.1);
+  --shadow-card: 0 25px 60px rgba(255, 107, 157, 0.12);
+  --shadow-glow: 0 0 30px rgba(124, 58, 237, 0.2);
+  --shadow-fun: 8px 8px 0 rgba(124, 58, 237, 0.15);
+
+  /* Responsive spacing */
+  --spacing-page: 1.5rem;
+  --spacing-section: 4rem;
+
+  /* Fun gradients */
+  --gradient-rainbow: linear-gradient(135deg, #ff6b9d 0%, #fbbf24 25%, #4ade80 50%, #06b6d4 75%, #7c3aed 100%);
+  --gradient-sunset: linear-gradient(135deg, #ff6b9d 0%, #fb923c 50%, #fbbf24 100%);
+  --gradient-ocean: linear-gradient(135deg, #06b6d4 0%, #7c3aed 100%);
+  --gradient-candy: linear-gradient(135deg, #ff6b9d 0%, #a78bfa 100%);
+}
+
+/* Responsive breakpoint variables via media queries */
+@media (max-width: 768px) {
+  :root {
+    --spacing-page: 1rem;
+    --spacing-section: 2.5rem;
+    --radius-lg: 18px;
+    --radius-md: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --spacing-page: 0.75rem;
+    --spacing-section: 2rem;
+    --radius-lg: 14px;
+    --radius-md: 10px;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* Smooth scrolling for anchor links */
+  scroll-behavior: smooth;
+  /* Prevent horizontal overflow */
+  overflow-x: hidden;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--color-background);
+  font-family: 'Nunito', 'Fredoka', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--color-text);
+  /* Prevent horizontal overflow */
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* Responsive font sizing */
+html {
+  font-size: 16px;
+}
+
+@media (max-width: 768px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Ensure inputs and buttons don't overflow on mobile */
+input, select, textarea, button {
+  max-width: 100%;
+}
+
+/* Better touch targets on mobile */
+@media (max-width: 768px) {
+  button, 
+  a[role="button"],
+  input[type="submit"],
+  input[type="button"] {
+    min-height: 44px;
+  }
+}
+
+/* Hide horizontal scrollbars that might appear */
+body {
+  overflow-x: hidden;
+}
+
+/* Responsive container utility */
+.container {
+  width: 100%;
+  max-width: var(--max-width);
+  margin-inline: auto;
+  padding-inline: var(--spacing-page);
+}
+
+/* ===== KID-FRIENDLY ANIMATIONS ===== */
+
+/* Bounce animation */
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+/* Wiggle animation */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg); }
+  75% { transform: rotate(3deg); }
+}
+
+/* Pop animation */
+@keyframes pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* Float animation */
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* Sparkle animation */
+@keyframes sparkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+
+/* Rainbow text animation */
+@keyframes rainbow {
+  0% { color: #ff6b9d; }
+  20% { color: #fb923c; }
+  40% { color: #fbbf24; }
+  60% { color: #4ade80; }
+  80% { color: #06b6d4; }
+  100% { color: #7c3aed; }
+}
+
+/* Pulse glow */
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(255, 107, 157, 0.4); }
+  50% { box-shadow: 0 0 40px rgba(255, 107, 157, 0.6); }
+}
+
+/* Slide up fade in */
+@keyframes slideUpFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Confetti animation */
+@keyframes confettiFall {
+  0% {
+    transform: translateY(-100vh) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/* Utility classes for animations */
+.animate-bounce {
+  animation: bounce 2s ease-in-out infinite;
+}
+
+.animate-wiggle {
+  animation: wiggle 1s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pop:hover {
+  animation: pop 0.3s ease-in-out;
+}
+
+.animate-sparkle {
+  animation: sparkle 2s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+.animate-slide-up {
+  animation: slideUpFadeIn 0.5s ease-out forwards;
+}
+
+/* Fun text styles */
+.text-gradient-rainbow {
+  background: var(--gradient-rainbow);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-candy {
+  background: var(--gradient-candy);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Playful heading style */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Fredoka', 'Nunito', sans-serif;
+  font-weight: 700;
+}
+
+/* Fun button hover effect */
+button, a[role="button"], .btn {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+button:hover, a[role="button"]:hover, .btn:hover {
+  transform: translateY(-3px) scale(1.02);
+}
+
+button:active, a[role="button"]:active, .btn:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+/* Decorative dots pattern */
+.pattern-dots {
+  background-image: radial-gradient(circle, var(--color-primary-light) 2px, transparent 2px);
+  background-size: 24px 24px;
+}
+
+/* Decorative waves */
+.pattern-waves {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(255, 107, 157, 0.05) 10px,
+      rgba(255, 107, 157, 0.05) 20px
+    );
+}
+
+/* Card with fun shadow */
+.card-fun {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-fun);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card-fun:hover {
+  transform: translateY(-5px);
+  box-shadow: 12px 12px 0 rgba(124, 58, 237, 0.2);
+}
+

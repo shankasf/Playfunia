@@ -1,0 +1,41 @@
+.placeholder {
+  padding: 1.5rem;
+  background: rgba(31, 60, 136, 0.05);
+  border-radius: 16px;
+  text-align: center;
+  color: #445079;
+  font-weight: 500;
+}
+
+.form {
+  display: grid;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 15px 30px rgba(31, 60, 136, 0.12);
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.amount {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2a1c55;
+}
+
+.caption {
+  color: #5c6489;
+  font-size: 0.95rem;
+}
+
+.error {
+  margin: 0;
+  color: #d7263d;
+  font-weight: 600;
+  font-size: 0.95rem;
+}

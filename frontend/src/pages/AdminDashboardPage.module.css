@@ -1,0 +1,1181 @@
+.page {
+  padding: 3rem 1.5rem 4rem;
+  background: linear-gradient(180deg, #f5faff 0%, #ffffff 50%);
+  min-height: calc(100vh - 80px);
+}
+
+.header {
+  max-width: 1100px;
+  margin: 0 auto 2.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+  color: #1d2a5b;
+}
+
+.header h1 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(2rem, 3vw, 2.6rem);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  background: rgba(31, 102, 255, 0.12);
+  color: #1f66ff;
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.secondary {
+  background: rgba(31, 102, 255, 0.12);
+  color: #1f2b66;
+}
+
+.signOutButton {
+  border: 1px solid rgba(220, 53, 69, 0.4);
+  border-radius: 12px;
+  padding: 0.7rem 1.2rem;
+  font-weight: 600;
+  background: transparent;
+  color: #dc3545;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.signOutButton:hover {
+  background: rgba(220, 53, 69, 0.1);
+  border-color: #dc3545;
+}
+
+.exportButton {
+  border: 1px dashed rgba(31, 102, 255, 0.4);
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  font-weight: 600;
+  background: transparent;
+  color: #1f2b66;
+  cursor: pointer;
+}
+
+.statusBar {
+  min-width: 600px;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  table-layout: fixed;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.statusConnected,
+.statusDisconnected {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  .tableWrapper {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .table th {
+    text-align: left;
+    padding: 0.75rem 0.65rem;
+    background: rgba(31, 60, 136, 0.08);
+    color: #1d2a5b;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .table td {
+    padding: 0.75rem 0.65rem;
+    border-bottom: 1px solid rgba(31, 60, 136, 0.08);
+    color: #42507c;
+    vertical-align: middle;
+    word-break: break-word;
+  }
+  font-weight: 600;
+}
+
+.statusConnected::before,
+.statusDisconnected::before {
+  content: '';
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  .table td:last-child,
+  .table th:last-child {
+    text-align: right;
+  }
+}
+
+.statusConnected {
+  color: #1f8f5f;
+}
+
+.statusConnected::before {
+  background: #1f8f5f;
+}
+
+.statusDisconnected {
+  color: #b55000;
+}
+
+.statusDisconnected::before {
+  background: #b55000;
+}
+
+.statusBarBottom {
+  max-width: 1100px;
+  margin: 2rem auto 0;
+  padding: 0.75rem 1rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(31, 60, 136, 0.04);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.summaryGrid {
+  max-width: 1100px;
+  margin: 0 auto 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.1rem;
+}
+
+.summaryCard {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 1.5rem;
+  box-shadow: 0 12px 30px rgba(31, 60, 136, 0.12);
+  color: #1d2a5b;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.summaryCard span {
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5d6ca0;
+}
+
+.summaryCard strong {
+  font-size: 2rem;
+}
+
+.summaryCard p {
+  margin: 0;
+  color: #5d6ca0;
+}
+
+.layout {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.columnPrimary,
+.columnAside {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-content: start;
+}
+
+.columnAside {
+  grid-template-columns: 1fr;
+}
+
+.panel {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 1.8rem;
+  box-shadow: 0 18px 40px rgba(31, 60, 136, 0.12);
+  display: grid;
+  gap: 1.2rem;
+  align-content: start;
+  min-height: 0;
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.panelHeader h2 {
+  margin: 0;
+  color: #1d2a5b;
+}
+
+.panelActions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.panelActions a {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1f66ff;
+  text-decoration: none;
+}
+
+.tableWrapper {
+  width: 100%;
+}
+
+.table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  table-layout: fixed;
+}
+
+/* Booking table with auto column widths */
+.bookingTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+  table-layout: auto;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.bookingTable th {
+  text-align: left;
+  padding: 1rem 1rem;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.bookingTable th:first-child {
+  border-radius: 12px 0 0 0;
+  padding-left: 1.25rem;
+}
+
+.bookingTable th:last-child {
+  border-radius: 0 12px 0 0;
+  text-align: center;
+  padding-right: 1.25rem;
+}
+
+.bookingTable td {
+  padding: 1rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+  vertical-align: middle;
+  background: #ffffff;
+}
+
+.bookingTable td:first-child {
+  padding-left: 1.25rem;
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.bookingTable td:last-child {
+  text-align: center;
+  padding-right: 1.25rem;
+}
+
+.bookingTable tbody tr {
+  transition: all 0.15s ease;
+}
+
+.bookingTable tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.bookingTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.bookingTable tbody tr:last-child td:first-child {
+  border-radius: 0 0 0 12px;
+}
+
+.bookingTable tbody tr:last-child td:last-child {
+  border-radius: 0 0 8px 0;
+}
+
+.bookingActions {
+  display: inline-flex;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+}
+
+.bookingActions .editBtn,
+.bookingActions .deleteBtn {
+  white-space: nowrap;
+  min-width: 56px;
+  text-align: center;
+  padding: 0.4rem 0.7rem;
+}
+
+.table th {
+  text-align: left;
+  padding: 0.75rem 0.65rem;
+  background: rgba(31, 60, 136, 0.08);
+  color: #1d2a5b;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.table td {
+  padding: 0.75rem 0.65rem;
+  border-bottom: 1px solid rgba(31, 60, 136, 0.08);
+  color: #42507c;
+  vertical-align: middle;
+  word-break: break-word;
+}
+
+.table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.table tbody tr:hover {
+  background: rgba(31, 60, 136, 0.05);
+}
+
+.rowSelected td {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border-left: 3px solid #3b82f6;
+}
+
+.rowSelected td:first-child {
+  border-left: 3px solid #3b82f6;
+}
+
+.table td:last-child,
+.table th:last-child {
+  text-align: right;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.formGrid label,
+.notesField {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #1d2a5b;
+}
+
+.formGrid input,
+.formGrid select,
+.notesField textarea,
+.ticketActions input {
+  border-radius: 10px;
+  border: 1px solid rgba(31, 60, 136, 0.18);
+  padding: 0.65rem 0.8rem;
+  font-size: 0.95rem;
+}
+
+.notesField textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.formActions button,
+.ticketActions button,
+.panel button {
+  border: none;
+  border-radius: 12px;
+  padding: 0.65rem 1.2rem;
+  background: linear-gradient(120deg, #ff8a5c 0%, #7d63ff 100%);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 12px 26px rgba(31, 60, 136, 0.18);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.formActions button:disabled,
+.ticketActions button:disabled,
+.panel button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.formActions button:not(:disabled),
+.ticketActions button:not(:disabled),
+.panel button:not(:disabled) {
+  transform: translateY(0);
+}
+
+.formActions button:not(:disabled):hover,
+.ticketActions button:not(:disabled):hover,
+.panel button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 36px rgba(31, 60, 136, 0.22);
+}
+
+.secondaryButton {
+  background: rgba(31, 60, 136, 0.1);
+  color: #1d2a5b;
+  box-shadow: none;
+}
+
+.danger {
+  background: #d7263d;
+  box-shadow: none;
+}
+
+.secondaryButton:not(:disabled):hover,
+.danger:not(:disabled):hover {
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+.ticketActions {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.ticketActions input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.feedback {
+  font-size: 0.9rem;
+  color: #1d2a5b;
+}
+
+.error {
+  color: #d7263d;
+  font-weight: 600;
+}
+
+.validationResult {
+  border-radius: 14px;
+  padding: 1rem;
+  background: rgba(31, 102, 255, 0.08);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.validationResult[data-status='denied'] {
+  background: rgba(215, 38, 61, 0.12);
+}
+
+.waiverList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.waiverList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 14px;
+  border: 1px solid rgba(31, 60, 136, 0.08);
+  cursor: pointer;
+}
+
+.waiverList li:hover {
+  background: rgba(31, 60, 136, 0.05);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(31, 60, 136, 0.1);
+}
+
+.waiverList li {
+  transition: all 0.2s ease;
+}
+
+.waiverSelected {
+  background: linear-gradient(135deg, rgba(31, 102, 255, 0.1) 0%, rgba(125, 99, 255, 0.12) 100%);
+  border-color: rgba(31, 102, 255, 0.3);
+  box-shadow: 0 8px 20px rgba(31, 102, 255, 0.15);
+}
+
+.waiverMeta {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: end;
+  align-content: start;
+}
+
+.waiverActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editBtn {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: none;
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.editBtn:hover {
+  background: #2563eb;
+}
+
+.deleteBtn {
+  padding: 0.5rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.deleteBtn:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #ef4444;
+}
+
+.waiverList li > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.waiverList li > div strong {
+  display: block;
+  font-weight: 700;
+  color: #1d2a5b;
+}
+
+.waiverList li > div span {
+  color: #5d6ca0;
+  font-size: 0.9rem;
+}
+
+.waiverList small {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: #1f8f5f;
+  font-weight: 600;
+}
+
+.waiverList li > span {
+  font-weight: 600;
+  color: #1d2a5b;
+  white-space: nowrap;
+}
+
+.waiverEdit {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1.5rem;
+  background: #ffffff;
+  border-radius: 20px;
+  border: 1px solid rgba(31, 60, 136, 0.1);
+  box-shadow: 0 16px 48px rgba(31, 60, 136, 0.12);
+}
+
+.waiverEditHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(31, 60, 136, 0.1);
+  margin-bottom: 0.5rem;
+}
+
+.waiverEditHeader h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #1d2a5b;
+}
+
+.closeBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(31, 60, 136, 0.15);
+  background: #ffffff;
+  color: #5d6ca0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: none !important;
+}
+
+.closeBtn:hover {
+  background: #f8f9fc;
+  border-color: rgba(31, 60, 136, 0.25);
+  color: #1d2a5b;
+  transform: none !important;
+}
+
+.waiverCard {
+  background: #fafbfd;
+  border: 1px solid rgba(31, 60, 136, 0.08);
+  border-radius: 14px;
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.waiverCardTitle {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5d6ca0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.waiverCardTitle::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  background: linear-gradient(180deg, #ff8a5c 0%, #7d63ff 100%);
+  border-radius: 2px;
+}
+
+.waiverFormGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.waiverField {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.waiverField span {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #7a8bb5;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.waiverField input,
+.waiverField textarea {
+  border: 1px solid rgba(31, 60, 136, 0.12);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.9rem;
+  color: #1d2a5b;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.waiverField input:focus,
+.waiverField textarea:focus {
+  outline: none;
+  border-color: rgba(125, 99, 255, 0.5);
+  box-shadow: 0 0 0 3px rgba(125, 99, 255, 0.08);
+}
+
+.waiverField textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.waiverToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: #42507c;
+  font-weight: 500;
+  width: fit-content;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(31, 60, 136, 0.04);
+  transition: background 0.2s ease;
+}
+
+.waiverToggle:hover {
+  background: rgba(31, 60, 136, 0.08);
+}
+
+.waiverToggle input {
+  display: none;
+}
+
+.toggleTrack {
+  width: 36px;
+  height: 20px;
+  background: rgba(31, 60, 136, 0.18);
+  border-radius: 10px;
+  position: relative;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.waiverToggle input:checked + .toggleTrack {
+  background: #1f8f5f;
+}
+
+.toggleThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease;
+}
+
+.waiverToggle input:checked + .toggleTrack .toggleThumb {
+  transform: translateX(16px);
+}
+
+.waiverChildren {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.childCard {
+  display: grid;
+  grid-template-columns: 1fr 1fr 36px;
+  gap: 1rem;
+  align-items: end;
+  background: #ffffff;
+  padding: 0.85rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(31, 60, 136, 0.1);
+  box-shadow: 0 2px 8px rgba(31, 60, 136, 0.04);
+}
+
+.removeBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(215, 38, 61, 0.2);
+  background: rgba(215, 38, 61, 0.06);
+  color: #d7263d;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: none !important;
+  flex-shrink: 0;
+}
+
+.removeBtn:hover {
+  background: rgba(215, 38, 61, 0.12);
+  border-color: rgba(215, 38, 61, 0.35);
+  transform: none !important;
+}
+
+.addChildBtn {
+  justify-self: center;
+  padding: 0.5rem 1.25rem;
+  border: 1px dashed rgba(31, 60, 136, 0.25);
+  border-radius: 8px;
+  background: transparent;
+  color: #5d6ca0;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: none !important;
+  margin-top: 0.75rem;
+}
+
+.addChildBtn:hover {
+  border-color: rgba(31, 60, 136, 0.4);
+  background: rgba(31, 60, 136, 0.04);
+  color: #1d2a5b;
+  transform: none !important;
+}
+
+.emptyHint {
+  color: #5d6ca0;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.waiverFeedback {
+  font-size: 0.9rem;
+  color: #1f8f5f;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.75rem;
+  background: rgba(31, 143, 95, 0.1);
+  border-radius: 10px;
+  margin: 0;
+}
+
+.waiverActions {
+  display: flex;
+  justify-content: center;
+  padding-top: 0.5rem;
+}
+
+.saveBtn {
+  padding: 0.75rem 2rem;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(120deg, #ff8a5c 0%, #7d63ff 100%);
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(125, 99, 255, 0.25);
+  transition: all 0.2s ease;
+}
+
+.saveBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(125, 99, 255, 0.35);
+}
+
+.saveBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.table button,
+.visitButton {
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(120deg, #ff8a5c 0%, #7d63ff 100%);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 12px 26px rgba(31, 60, 136, 0.18);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.table button:disabled,
+.visitButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.table button:not(:disabled):hover,
+.visitButton:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 36px rgba(31, 60, 136, 0.22);
+}
+
+.emptyState {
+  max-width: 520px;
+  margin: 0 auto;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 2.5rem;
+  box-shadow: 0 18px 40px rgba(31, 60, 136, 0.18);
+  text-align: center;
+  display: grid;
+  gap: 1rem;
+  color: #1d2a5b;
+}
+
+.loadingCard {
+  max-width: 400px;
+  margin: 4rem auto;
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 3rem 2.5rem;
+  box-shadow: 0 25px 50px rgba(31, 60, 136, 0.15);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.loadingLogo {
+  font-size: 1.75rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #ff8a5c 0%, #7d63ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.02em;
+}
+
+.loadingSpinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid #f1f5f9;
+  border-top-color: #7d63ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingText {
+  color: #64748b;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .columnAside {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 2rem 1rem 3rem;
+  }
+
+  .header {
+    margin-bottom: 2rem;
+    gap: 1.5rem;
+  }
+
+  .header h1 {
+    font-size: clamp(1.5rem, 5vw, 2rem);
+  }
+
+  .tag {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .actions {
+    gap: 0.5rem;
+  }
+
+  .signOutButton,
+  .exportButton {
+    padding: 0.55rem 0.9rem;
+    font-size: 0.85rem;
+  }
+
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.85rem;
+  }
+
+  .summaryCard {
+    padding: 1.25rem;
+    border-radius: 14px;
+  }
+
+  .summaryCard span {
+    font-size: 0.75rem;
+  }
+
+  .summaryCard strong {
+    font-size: 1.5rem;
+  }
+
+  .panel {
+    padding: 1.25rem;
+    border-radius: 14px;
+  }
+
+  .panelHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .panelHeader h2 {
+    font-size: 1.15rem;
+  }
+
+  .tableWrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table {
+    min-width: 500px;
+  }
+
+  .bookingTable {
+    font-size: 0.8rem;
+  }
+
+  .bookingTable th,
+  .bookingTable td {
+    padding: 0.65rem 0.5rem;
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .ticketActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ticketActions input {
+    min-width: 0;
+  }
+
+  .waiverFormGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .childCard {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .removeBtn {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 1.5rem 0.75rem 2.5rem;
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryCard {
+    padding: 1rem;
+  }
+
+  .summaryCard strong {
+    font-size: 1.3rem;
+  }
+
+  .panel {
+    padding: 1rem;
+  }
+
+  .panelActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .formActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .formActions button {
+    width: 100%;
+  }
+
+  .waiverList li {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .waiverMeta {
+    justify-items: start;
+  }
+
+  .waiverEdit {
+    padding: 1.25rem;
+  }
+
+  .waiverEditHeader h3 {
+    font-size: 1.15rem;
+  }
+
+  .waiverCard {
+    padding: 1rem;
+  }
+
+  .loadingCard {
+    padding: 2rem 1.5rem;
+    border-radius: 18px;
+  }
+
+  .emptyState {
+    padding: 2rem 1.25rem;
+    border-radius: 14px;
+  }
+}

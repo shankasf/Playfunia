@@ -1,0 +1,34 @@
+#root {
+  min-height: 100%;
+  /* Ensure content fills viewport */
+  display: flex;
+  flex-direction: column;
+}
+
+/* Prevent text selection on touch devices for interactive elements */
+@media (hover: none) and (pointer: coarse) {
+  button,
+  a[role="button"],
+  .interactive {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
+/* Better focus states for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-secondary, #4f46e5);
+  outline-offset: 2px;
+}
+
+/* Reduced motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+

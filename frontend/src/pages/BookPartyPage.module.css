@@ -1,0 +1,1379 @@
+/* Modern booking page layout - inspired by Complete Playground */
+.page {
+  padding: 0;
+  background: #f8f9fa;
+  min-height: calc(100vh - 80px);
+}
+
+.mainLayout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  max-width: 1400px;
+  margin: 0 auto;
+  min-height: calc(100vh - 80px);
+}
+
+/* Left Column - Booking Form */
+.bookingColumn {
+  padding: 2rem 2.5rem;
+  background: #fff;
+  overflow-y: auto;
+}
+
+/* Back button and Package Header */
+.packageHeader {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+  align-items: flex-start;
+}
+
+.backButton {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #2a1c55;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.backButton:hover {
+  color: #ff4d94;
+}
+
+.backArrow {
+  font-size: 1.25rem;
+}
+
+.packageInfo {
+  flex: 1;
+}
+
+.packageInfo h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2a1c55;
+}
+
+.packageFeatures {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #5f6368;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+
+.packageFeatures li {
+  margin-bottom: 0.25rem;
+}
+
+.readMore {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #3157c9;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.readMore:hover {
+  color: #ff4d94;
+}
+
+.packageImage {
+  width: 200px;
+  height: 130px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Location Selector */
+.locationSelector {
+  margin-bottom: 2rem;
+}
+
+.locationSelector h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.locationButtons {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.locationButton {
+  padding: 0.75rem 1.5rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #5f6368;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.locationButton:hover {
+  border-color: #2a1c55;
+  color: #2a1c55;
+}
+
+.locationButton.locationActive {
+  border-color: #4ade80;
+  background: #4ade80;
+  color: #fff;
+}
+
+/* Section Headers */
+.section {
+  margin-bottom: 2rem;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.sectionHeader h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.calendarToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+  color: #5f6368;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.calendarToggle:hover {
+  border-color: #2a1c55;
+  color: #2a1c55;
+}
+
+/* Horizontal Date Picker */
+.dateStrip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.dateNav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fff;
+  color: #5f6368;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.dateNav:hover:not(:disabled) {
+  border-color: #2a1c55;
+  color: #2a1c55;
+}
+
+.dateNav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dateList {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+  overflow: hidden;
+}
+
+.dateItem {
+  flex: 1;
+  min-width: 70px;
+  max-width: 90px;
+  padding: 0.75rem 0.5rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #1d2a5b;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dateItem:hover:not(.dateItemDisabled) {
+  border-color: #2a1c55;
+}
+
+.dateItem.dateItemSelected {
+  border-color: #4ade80;
+  background: #4ade80;
+  color: #fff;
+}
+
+.dateItem.dateItemDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dateItemDay {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.25rem;
+}
+
+.dateItemNumber {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.monthLabel {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #5f6368;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Time Slots */
+.timeSlots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.timeSlot {
+  padding: 0.8rem 1.25rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  color: #5f6368;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.timeSlot:hover:not(:disabled) {
+  border-color: #2a1c55;
+  color: #2a1c55;
+}
+
+.timeSlot.timeSlotSelected {
+  border-color: #4ade80;
+  background: #4ade80;
+  color: #fff;
+}
+
+.timeSlot:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.slotsLoading,
+.slotsEmpty {
+  padding: 1rem;
+  color: #5f6368;
+  font-size: 0.95rem;
+}
+
+/* Ticket/Guest Selectors */
+.ticketSection {
+  margin-bottom: 2rem;
+}
+
+.ticketSection h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.ticketList {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ticketRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ticketRow:last-child {
+  border-bottom: none;
+}
+
+.ticketInfo h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.ticketPrice {
+  display: block;
+  font-size: 0.9rem;
+  color: #5f6368;
+}
+
+.ticketHint {
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.quantityControl {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.quantityBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: #4ade80;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.quantityBtn:hover:not(:disabled) {
+  background: #22c55e;
+}
+
+.quantityBtn:disabled {
+  background: #e0e0e0;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.quantityValue {
+  min-width: 48px;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a2e;
+  background: #fff;
+  padding: 0 0.5rem;
+}
+
+/* Add-ons Section */
+.addOnsSection {
+  margin-bottom: 2rem;
+}
+
+.addOnsSection h2 {
+  margin: 0 0 1rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.addOnsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.addOnItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  background: #fff;
+  transition: all 0.2s;
+}
+
+.addOnItem:hover {
+  border-color: #d0d0d0;
+}
+
+.addOnItem.addOnActive {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.addOnInfo {
+  flex: 1;
+}
+
+.addOnInfo h3 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.addOnInfo p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #5f6368;
+}
+
+.addOnPrice {
+  font-weight: 600;
+  color: #4ade80;
+}
+
+.addOnToggle {
+  width: 48px;
+  height: 28px;
+  border: none;
+  border-radius: 14px;
+  background: #e0e0e0;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  margin-left: 1rem;
+}
+
+.addOnToggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s;
+}
+
+.addOnToggle.addOnToggleActive {
+  background: #4ade80;
+}
+
+.addOnToggle.addOnToggleActive::after {
+  transform: translateX(20px);
+}
+
+/* Package Selection Cards */
+.packageGrid {
+  display: grid;
+  gap: 1rem;
+}
+
+.packageCard {
+  padding: 1.25rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  width: 100%;
+}
+
+.packageCard:hover {
+  border-color: #d0d0d0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.packageCard.packageCardSelected {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.packageCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+
+.packageCardHeader h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.packageCardPrice {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+.packageCardDesc {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #5f6368;
+  line-height: 1.5;
+}
+
+.packageCardMeta {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: #9ca3af;
+}
+
+/* Notes Section */
+.notesSection {
+  margin-bottom: 2rem;
+}
+
+.notesSection h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.notesInput {
+  width: 100%;
+  min-height: 100px;
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.2s;
+}
+
+.notesInput:focus {
+  outline: none;
+  border-color: #4ade80;
+}
+
+.notesInput::placeholder {
+  color: #9ca3af;
+}
+
+/* Children Section */
+.childrenSection {
+  margin-bottom: 2rem;
+}
+
+.childrenSection h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+/* Guest Booking Form */
+.guestFormSection {
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.guestFormSection h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.guestFormHint {
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.signInLink {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.signInLink:hover {
+  text-decoration: underline;
+}
+
+.guestChildHeader {
+  margin: 1.5rem 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.guestWaiverCheckbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.guestWaiverCheckbox input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #3b82f6;
+}
+
+.guestWaiverCheckbox span {
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.guestWaiverCheckbox a {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+
+.childrenList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.childCheckbox {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.childCheckbox:hover {
+  border-color: #d0d0d0;
+}
+
+.childCheckbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: #4ade80;
+}
+
+.childCheckbox span {
+  font-size: 0.95rem;
+  color: #1a1a2e;
+}
+
+.emptyChildren {
+  padding: 1.25rem;
+  border: 1px dashed #e0e0e0;
+  border-radius: 10px;
+  background: #fafafa;
+  text-align: center;
+}
+
+.emptyChildren p {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  color: #5f6368;
+}
+
+/* Add Child Form */
+.addChildOptions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.addChildButton {
+  padding: 0.6rem 1.2rem;
+  background: #4ade80;
+  border: none;
+  border-radius: 8px;
+  color: #1a1a2e;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.addChildButton:hover {
+  background: #22c55e;
+}
+
+.waiverLink {
+  font-size: 0.85rem;
+  color: #6366f1;
+  text-decoration: none;
+}
+
+.waiverLink:hover {
+  text-decoration: underline;
+}
+
+.addChildForm {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+}
+
+.addChildForm h3 {
+  margin: 0 0 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.addChildForm .formRow {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.addChildForm .formRow label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.addChildForm .formRow label span {
+  font-size: 0.85rem;
+  color: #5f6368;
+  font-weight: 500;
+}
+
+.addChildForm .formRow input {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 0.95rem;
+}
+
+.addChildForm .formRow input:focus {
+  outline: none;
+  border-color: #4ade80;
+  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.2);
+}
+
+.addChildError {
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+.addChildActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.addChildCancel {
+  padding: 0.5rem 1rem;
+  background: #f3f4f6;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  color: #5f6368;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.addChildCancel:hover {
+  background: #e5e7eb;
+}
+
+.addChildCancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.addChildSubmit {
+  padding: 0.5rem 1rem;
+  background: #4ade80;
+  border: none;
+  border-radius: 6px;
+  color: #1a1a2e;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.addChildSubmit:hover {
+  background: #22c55e;
+}
+
+.addChildSubmit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Right Column - Cart */
+.cartColumn {
+  background: #f8f9fa;
+  padding: 2rem;
+  border-left: 1px solid #e0e0e0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.cartHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.cartHeader h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.cartIcon {
+  font-size: 1.25rem;
+}
+
+.cartEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.cartEmptyIcon {
+  font-size: 3rem;
+  color: #d0d0d0;
+  margin-bottom: 1rem;
+}
+
+.cartEmpty p {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  color: #9ca3af;
+}
+
+/* Cart with items */
+.cartContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cartItem {
+  padding: 1rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.cartItemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.5rem;
+}
+
+.cartItemHeader h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.cartItemPrice {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #4ade80;
+}
+
+.cartItemDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #5f6368;
+}
+
+.cartDivider {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 0.5rem 0;
+}
+
+.cartSummary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 10px;
+}
+
+.cartLine {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #5f6368;
+}
+
+.cartTotal {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e0e0e0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.cartDeposit {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #4ade80;
+  font-weight: 600;
+}
+
+/* Waiver Section in Cart */
+.waiverCard {
+  padding: 1rem;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.waiverNeeded {
+  border: 1px solid #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.waiverComplete {
+  border: 1px solid #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.waiverCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.waiverCardHeader h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.waiverNeeded .waiverCardHeader h3 {
+  color: #d97706;
+}
+
+.waiverComplete .waiverCardHeader h3 {
+  color: #16a34a;
+}
+
+.waiverCard p {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #5f6368;
+  line-height: 1.5;
+}
+
+.waiverNote {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.waiverPreview {
+  border: 1px solid #dbeafe;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.waiverPreviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.waiverPreviewTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.waiverPreviewMeta {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.waiverPreviewToggle {
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.waiverPreviewToggle:hover {
+  background: #dbeafe;
+}
+
+.waiverPreviewBody {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.waiverPreviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.5rem 1rem;
+}
+
+.waiverLabel {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.15rem;
+}
+
+.waiverValue {
+  font-size: 0.9rem;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.waiverSubValue {
+  font-size: 0.8rem;
+  color: #475569;
+}
+
+.waiverChildrenSection {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.waiverChildrenGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.waiverChildCard {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+}
+
+.waiverPolicies ul {
+  padding-left: 1rem;
+  margin: 0.25rem 0 0;
+  color: #0f172a;
+  font-size: 0.85rem;
+}
+
+.waiverCheckboxLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #16a34a;
+  line-height: 1.4;
+  margin-bottom: 0.75rem;
+}
+
+.waiverCheckboxLabel input {
+  margin-top: 0.15rem;
+  accent-color: #4ade80;
+}
+
+.waiverButton {
+  width: 100%;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.waiverButtonPrimary {
+  background: #fbbf24;
+  color: #7c2d12;
+}
+
+.waiverButtonPrimary:hover {
+  background: #f59e0b;
+}
+
+.waiverConfirmBtn {
+  background: #4ade80;
+  color: #fff;
+}
+
+.waiverConfirmBtn:hover:not(:disabled) {
+  background: #22c55e;
+}
+
+.waiverConfirmBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.waiverConfirmedBtn {
+  background: #16a34a;
+  color: #fff;
+}
+
+.waiverModifyLink {
+  display: block;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid #4ade80;
+  border-radius: 6px;
+  background: #fff;
+  color: #16a34a;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: center;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.waiverModifyLink:hover {
+  background: rgba(74, 222, 128, 0.1);
+}
+
+/* Checkout Button */
+.checkoutButton {
+  width: 100%;
+  padding: 1rem;
+  border: none;
+  border-radius: 10px;
+  background: #ff4d94;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 14px rgba(255, 77, 148, 0.3);
+}
+
+.checkoutButton:hover:not(:disabled) {
+  background: #ff2d7a;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(255, 77, 148, 0.4);
+}
+
+.checkoutButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.buttonSpinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Status Messages */
+.statusMessage {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.statusError {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.statusSuccess {
+  background: rgba(74, 222, 128, 0.1);
+  color: #16a34a;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+}
+
+.statusInfo {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+/* Sign-in Required State */
+.signInRequired {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 80px);
+  padding: 2rem;
+  background: linear-gradient(180deg, #fef3f8 0%, #ffffff 45%);
+  text-align: center;
+}
+
+.signInRequired h1 {
+  margin: 0 0 1rem;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #2a1c55;
+}
+
+.signInRequired p {
+  margin: 0 0 1.5rem;
+  font-size: 1rem;
+  color: #5f6368;
+  max-width: 400px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 1024px) {
+  .mainLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .cartColumn {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: auto;
+    max-height: 50vh;
+    border-left: none;
+    border-top: 1px solid #e0e0e0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    padding: 1.5rem;
+  }
+
+  .bookingColumn {
+    padding-bottom: 200px;
+  }
+
+  .packageHeader {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .packageImage {
+    width: 100%;
+    height: 180px;
+    order: -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .bookingColumn {
+    padding: 1.5rem;
+  }
+
+  .dateList {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .dateList::-webkit-scrollbar {
+    display: none;
+  }
+
+  .dateItem {
+    min-width: 60px;
+    flex: 0 0 auto;
+  }
+
+  .timeSlots {
+    gap: 0.5rem;
+  }
+
+  .timeSlot {
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+  }
+}

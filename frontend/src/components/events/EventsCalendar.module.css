@@ -1,0 +1,119 @@
+.section {
+  margin: 4rem auto;
+  max-width: var(--max-width);
+  padding: 0 1.5rem;
+  display: grid;
+  gap: 2rem;
+}
+
+.header {
+  text-align: center;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.tag {
+  display: inline-flex;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--color-secondary);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.loading,
+.empty {
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.monthList {
+  display: grid;
+  gap: 2rem;
+}
+
+.monthGroup {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: var(--shadow-soft);
+  padding: 2rem;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.monthGroup h3 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.monthGroup ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.eventRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  padding-bottom: 1.25rem;
+}
+
+.eventRow:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.eventRow h4 {
+  margin: 0.25rem 0;
+}
+
+.eventRow p {
+  margin: 0;
+  color: var(--color-text-muted);
+  max-width: 520px;
+}
+
+.location {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--color-secondary);
+  font-weight: 600;
+}
+
+.ctas {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: end;
+}
+
+.price {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+  .section {
+    padding: 0 1rem;
+  }
+
+  .eventRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .ctas {
+    justify-items: start;
+  }
+}

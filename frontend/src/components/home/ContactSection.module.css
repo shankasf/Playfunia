@@ -1,0 +1,191 @@
+﻿.section {
+  margin: 6rem auto 7rem;
+  padding: 0 1.5rem;
+  max-width: var(--max-width);
+}
+
+.card {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(255, 111, 97, 0.1));
+  border-radius: var(--radius-lg);
+  padding: 3rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  box-shadow: var(--shadow-card);
+}
+
+.tag {
+  display: inline-flex;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(255, 209, 102, 0.28);
+  color: var(--color-primary-dark);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+.content h2 {
+  font-size: clamp(2rem, 4vw, 2.5rem);
+  margin: 1rem 0;
+}
+
+.content p {
+  color: var(--color-text-muted);
+  max-width: 520px;
+}
+
+.details {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.details strong {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+  color: var(--color-text);
+}
+
+.details a,
+.details span {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.form {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 2.5rem;
+  display: grid;
+  gap: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+label {
+  display: grid;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+input,
+textarea {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  font-size: 1rem;
+  font-family: inherit;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-secondary);
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+}
+
+button {
+  background: linear-gradient(120deg, var(--color-primary), var(--color-secondary));
+  color: #fff;
+  padding: 0.85rem 1.5rem;
+  border-radius: 999px;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px rgba(79, 70, 229, 0.25);
+}
+
+.formNote {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 720px) {
+  .card {
+    padding: 2.25rem;
+  }
+
+  .form {
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .mapSection {
+    margin: 3rem auto;
+    padding: 0 1rem;
+    gap: 1.5rem;
+  }
+
+  .tag {
+    font-size: 0.7rem;
+    padding: 0.35rem 0.75rem;
+  }
+
+  .mapGrid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .mapCard {
+    padding: 1.5rem 1.25rem;
+    border-radius: 18px;
+  }
+
+  .mapCard h2 {
+    font-size: 1.2rem;
+  }
+
+  .mapCard p {
+    font-size: 0.95rem;
+  }
+
+  .mapFrame {
+    aspect-ratio: 4 / 3;
+    border-radius: 14px;
+  }
+
+  .mapButton {
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
+    border-radius: 12px;
+  }
+
+  .hours {
+    font-size: 0.95rem;
+  }
+
+  .card {
+    padding: 1.5rem;
+  }
+
+  .form {
+    padding: 1.5rem;
+    border-radius: 18px;
+  }
+
+  label {
+    font-size: 0.95rem;
+  }
+
+  input,
+  textarea {
+    padding: 0.65rem 0.85rem;
+    font-size: 0.95rem;
+  }
+
+  button {
+    padding: 0.75rem 1.25rem;
+  }
+}

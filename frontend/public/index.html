@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ff6b9d" />
+    <meta name="description" content="Playfunia - Indoor Play & Adventure Club. The most fun indoor playground experience for kids ages 1-13." />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+    <!-- Preconnect to external domains -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- Preload critical fonts -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap" /></noscript>
+
+    <!-- Preload critical images -->
+    <link rel="preload" href="%PUBLIC_URL%/images/logo.png" as="image" />
+    <link rel="preload" href="%PUBLIC_URL%/images/hero-ballpit-logo.jpg" as="image" />
+
+    <!-- DNS prefetch for analytics/external services -->
+    <link rel="dns-prefetch" href="https://www.google-analytics.com" />
+
+    <title>Playfunia - Indoor Play & Adventure Club</title>
+
+    <!-- Critical CSS for above-the-fold content -->
+    <style>
+      /* Prevent FOUC */
+      html { visibility: visible; opacity: 1; }
+
+      /* Initial loading state */
+      #root:empty::before {
+        content: '';
+        display: block;
+        width: 48px;
+        height: 48px;
+        margin: 100px auto;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #ff6b9d;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+
+    <!-- Register Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then(function(registration) {
+              console.log('SW registered: ', registration.scope);
+            })
+            .catch(function(error) {
+              console.log('SW registration failed: ', error);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
