@@ -3,7 +3,7 @@ import type { CreatePaymentRequest, Money } from 'square';
 
 import { getSquareClient, getSquareLocationId } from '../config/square';
 import { appConfig } from '../config/env';
-import { UserRepository, PaymentRepository, MembershipRepository, OrderRepository } from '../repositories';
+import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { reserveTickets } from './ticket.service';
 import { purchaseMembership } from './membership.service';
@@ -16,12 +16,38 @@ import type {
   SquareGuestCheckoutFinalizeInput,
 } from '../schemas/square-checkout.schema';
 
-const PROMO_CODES: Record<string, number> = {
-  PLAYFUN10: 0.1,
-  FAMILY15: 0.15,
+// Tier name mapping for database plans (same as membership.service.ts)
+const REVERSE_TIER_MAP: Record<string, string[]> = {
+  'explorer': ['Silver'],
+  'adventurer': ['Gold'],
+  'champion': ['Platinum', 'VIP Platinum'],
 };
 
-const SIBLING_DISCOUNT_RATE = 0.05;
+// Cache for pricing config values (refreshed on each checkout)
+let cachedSiblingDiscountRate: number | null = null;
+
+async function getSiblingDiscountRate(): Promise<number> {
+  if (cachedSiblingDiscountRate === null) {
+    cachedSiblingDiscountRate = await PricingConfigRepository.getValue('sibling_discount_rate', 5);
+  }
+  return cachedSiblingDiscountRate / 100; // Convert from percentage to decimal
+}
+
+async function getPromoDiscount(promoCode: string): Promise<number> {
+  const promo = await PromotionRepository.findByCode(promoCode);
+  if (!promo) return 0;
+
+  // Check if promo is still valid
+  const now = new Date();
+  if (promo.valid_from && new Date(promo.valid_from) > now) return 0;
+  if (promo.valid_until && new Date(promo.valid_until) < now) return 0;
+  if (promo.max_redemptions && promo.redemptions >= promo.max_redemptions) return 0;
+
+  // Return percentage as decimal (e.g., 10 -> 0.10)
+  if (promo.percent_off) return promo.percent_off / 100;
+
+  return 0;
+}
 
 interface CheckoutLine {
   type: SquareCheckoutItemInput['type'];
@@ -69,19 +95,18 @@ async function getUserWithMembership(userId: string) {
   if (user.customer_id) {
     const membership = await MembershipRepository.findByCustomerId(user.customer_id);
     if (membership && membership.status === 'active') {
-      const tierDiscounts: Record<string, number> = {
-        explorer: 5,
-        adventurer: 10,
-        champion: 15,
-      };
-      membershipDiscount = tierDiscounts[membership.tier] ?? 0;
+      // Fetch discount from membership_plans table based on tier
+      const plans = await MembershipPlanRepository.findAll(true);
+      const planNames = REVERSE_TIER_MAP[membership.tier] ?? [];
+      const plan = plans.find(p => planNames.includes(p.name));
+      membershipDiscount = plan?.discount_percent ?? 0;
     }
   }
 
   return { user, membershipDiscount };
 }
 
-function calculateLine(item: SquareCheckoutItemInput, membershipDiscountPercent: number): CheckoutLine {
+async function calculateLine(item: SquareCheckoutItemInput, membershipDiscountPercent: number): Promise<CheckoutLine> {
   if (item.type === 'membership') {
     const subtotal = roundCurrency(item.unitPrice);
     return {
@@ -99,8 +124,10 @@ function calculateLine(item: SquareCheckoutItemInput, membershipDiscountPercent:
   const discounts: Array<{ label: string; amount: number }> = [];
   const subtotal = roundCurrency(item.unitPrice * item.quantity);
 
+  // Fetch sibling discount rate from database
   if (item.quantity >= 2) {
-    const siblingDiscount = roundCurrency(subtotal * SIBLING_DISCOUNT_RATE);
+    const siblingDiscountRate = await getSiblingDiscountRate();
+    const siblingDiscount = roundCurrency(subtotal * siblingDiscountRate);
     if (siblingDiscount > 0) {
       discounts.push({ label: 'Sibling discount', amount: siblingDiscount });
     }
@@ -131,9 +158,9 @@ function calculateLine(item: SquareCheckoutItemInput, membershipDiscountPercent:
   };
 }
 
-function applyPromo(totalBeforePromo: number, promoCode?: string) {
+async function applyPromo(totalBeforePromo: number, promoCode?: string): Promise<number> {
   if (!promoCode) return 0;
-  const rate = PROMO_CODES[promoCode.toUpperCase()] ?? 0;
+  const rate = await getPromoDiscount(promoCode);
   return roundCurrency(totalBeforePromo * rate);
 }
 
@@ -145,9 +172,13 @@ async function buildSummary(
   summary: SquareCheckoutSummary;
   user: Awaited<ReturnType<typeof getUserWithMembership>>['user'];
 }> {
+  // Reset cache for fresh pricing data
+  cachedSiblingDiscountRate = null;
+
   const { user, membershipDiscount } = await getUserWithMembership(userId);
 
-  const lines = items.map(item => calculateLine(item, membershipDiscount));
+  // Calculate lines with async discount lookups
+  const lines = await Promise.all(items.map(item => calculateLine(item, membershipDiscount)));
   const subtotal = roundCurrency(lines.reduce((sum, line) => sum + line.subtotal, 0));
   const lineDiscountTotal = roundCurrency(
     lines.reduce(
@@ -157,7 +188,7 @@ async function buildSummary(
   );
 
   const totalBeforePromo = roundCurrency(subtotal - lineDiscountTotal);
-  const promoDiscount = applyPromo(totalBeforePromo, promoCode);
+  const promoDiscount = await applyPromo(totalBeforePromo, promoCode);
   const total = Math.max(roundCurrency(totalBeforePromo - promoDiscount), 0);
 
   const discounts: Array<{ label: string; amount: number }> = [];
@@ -180,8 +211,12 @@ async function buildSummary(
   };
 }
 
-function buildGuestSummary(items: SquareCheckoutItemInput[], promoCode?: string): SquareCheckoutSummary {
-  const lines = items.map(item => calculateLine(item, 0));
+async function buildGuestSummary(items: SquareCheckoutItemInput[], promoCode?: string): Promise<SquareCheckoutSummary> {
+  // Reset cache for fresh pricing data
+  cachedSiblingDiscountRate = null;
+
+  // Calculate lines with async discount lookups (no membership discount for guests)
+  const lines = await Promise.all(items.map(item => calculateLine(item, 0)));
   const subtotal = roundCurrency(lines.reduce((sum, line) => sum + line.subtotal, 0));
   const lineDiscountTotal = roundCurrency(
     lines.reduce(
@@ -191,7 +226,7 @@ function buildGuestSummary(items: SquareCheckoutItemInput[], promoCode?: string)
   );
 
   const totalBeforePromo = roundCurrency(subtotal - lineDiscountTotal);
-  const promoDiscount = applyPromo(totalBeforePromo, promoCode);
+  const promoDiscount = await applyPromo(totalBeforePromo, promoCode);
   const total = Math.max(roundCurrency(totalBeforePromo - promoDiscount), 0);
 
   const discounts: Array<{ label: string; amount: number }> = [];
@@ -374,7 +409,7 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
  * Create guest checkout intent
  */
 export async function createSquareGuestCheckoutPaymentIntent(input: SquareGuestCheckoutIntentInput) {
-  const summary = buildGuestSummary(input.items, input.promoCode);
+  const summary = await buildGuestSummary(input.items, input.promoCode);
 
   if (summary.total <= 0) {
     throw new AppError('No payment is required for this cart', 400);
@@ -394,7 +429,7 @@ export async function createSquareGuestCheckoutPaymentIntent(input: SquareGuestC
 export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFinalizeInput) {
   assertSquareConfigured();
 
-  const summary = buildGuestSummary(input.items, input.promoCode);
+  const summary = await buildGuestSummary(input.items, input.promoCode);
 
   if (summary.total <= 0) {
     throw new AppError('No payment is required for this cart', 400);

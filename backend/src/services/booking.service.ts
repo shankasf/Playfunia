@@ -45,6 +45,11 @@ async function getCleaningFee(): Promise<number> {
   return PricingConfigRepository.getValue('cleaning_fee', 50);
 }
 
+// Helper to get deposit percentage from database (with fallback to 50%)
+async function getDepositPercentage(): Promise<number> {
+  return PricingConfigRepository.getValue('deposit_percentage', 50);
+}
+
 // Helper to get add-on definitions from database
 async function getAddOnDefinitions(): Promise<Record<string, { id: string; label: string; price: number; type: 'flat' | 'perChild' | 'duration' }>> {
   const addOns = await PartyAddOnRepository.findAll(true);
@@ -527,9 +532,10 @@ async function calculateBookingPricing(params: {
   guests: number;
   addOnDetails: { selected: { id: string; price: number; quantity: number }[] };
 }) {
-  const [cleaningFee, addOnDefinitions] = await Promise.all([
+  const [cleaningFee, addOnDefinitions, depositPercentage] = await Promise.all([
     getCleaningFee(),
     getAddOnDefinitions(),
+    getDepositPercentage(),
   ]);
 
   const extraGuestCount = Math.max(0, params.guests - params.partyPackage.maxGuests);
@@ -551,7 +557,8 @@ async function calculateBookingPricing(params: {
 
   const subtotal = params.partyPackage.basePrice + extraGuestTotal + addOnTotal;
   const total = subtotal + cleaningFee;
-  const depositCents = Math.round((total * 100) / 2);
+  // Calculate deposit based on configurable percentage from database
+  const depositCents = Math.round((total * 100 * depositPercentage) / 100);
   const depositAmount = depositCents / 100;
   const balanceRemaining = Math.max(total - depositAmount, 0);
 

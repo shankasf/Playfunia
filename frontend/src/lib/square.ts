@@ -14,7 +14,7 @@ let squareConfig: SquareConfig | null = null;
 /**
  * Load Square Web Payments SDK script dynamically
  */
-function loadSquareScript(): Promise<void> {
+function loadSquareScript(environment: 'sandbox' | 'production'): Promise<void> {
   return new Promise((resolve, reject) => {
     if (window.Square) {
       resolve();
@@ -30,7 +30,10 @@ function loadSquareScript(): Promise<void> {
 
     const script = document.createElement('script');
     script.id = 'square-web-payments-sdk';
-    script.src = 'https://sandbox.web.squarecdn.com/v1/square.js'; // Use sandbox for now
+    // Use production or sandbox SDK based on environment
+    script.src = environment === 'production'
+      ? 'https://web.squarecdn.com/v1/square.js'
+      : 'https://sandbox.web.squarecdn.com/v1/square.js';
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () => reject(new Error('Failed to load Square SDK'));
@@ -73,7 +76,7 @@ export async function initializeSquare(): Promise<Payments | null> {
       return null;
     }
 
-    await loadSquareScript();
+    await loadSquareScript(config.environment);
 
     if (!window.Square) {
       throw new Error('Square SDK not loaded');

@@ -1,0 +1,28 @@
+SQUARE SANDBOX TEST CARD NUMBERS
+=================================
+
+SUCCESSFUL PAYMENTS
+-------------------
+Visa:        4111 1111 1111 1111
+Mastercard:  5105 1051 0510 5100
+Amex:        3400 000000 00009
+Discover:    6011 0000 0000 0004
+
+CVV: Any 3 digits (4 digits for Amex)
+Expiry: Any future date (e.g., 12/26)
+ZIP: Any valid ZIP (e.g., 10001)
+
+
+TEST FAILURE SCENARIOS
+----------------------
+Card Declined:     4000 0000 0000 0002
+Invalid CVV:       4000 0000 0000 0010
+Card Expired:      4000 0000 0000 0069
+Insufficient Funds: 4000 0000 0000 0044
+
+
+NOTES
+-----
+- These numbers ONLY work in sandbox environment
+- Real card numbers will NOT work in sandbox
+- Switch to production credentials for real payments
