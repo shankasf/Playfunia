@@ -11,6 +11,7 @@ import {
   listAllBookingsHandler,
   listBookingsHandler,
   confirmBookingDepositHandler,
+  processSquareDepositHandler,
   updateBookingStatusHandler,
 } from '../controllers/booking.controller';
 import { authGuard, optionalAuthGuard, requireRoles } from '../middleware/auth.middleware';
@@ -29,6 +30,7 @@ bookingRouter.get('/', listBookingsHandler);
 bookingRouter.post('/availability', checkBookingAvailabilityHandler);
 bookingRouter.post('/:bookingId/deposit-intent', createBookingDepositIntentHandler);
 bookingRouter.post('/:bookingId/deposit/confirm', confirmBookingDepositHandler);
+bookingRouter.post('/:bookingId/deposit/square', processSquareDepositHandler);
 bookingRouter.patch('/:bookingId/cancel', cancelBookingHandler);
 bookingRouter.get('/admin', requireRoles('admin', 'staff'), listAllBookingsHandler);
 bookingRouter.patch(

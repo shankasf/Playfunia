@@ -129,3 +129,23 @@ export async function confirmBookingDeposit(bookingId: string, paymentIntentId: 
     { paymentIntentId }
   );
 }
+
+export type SquareDepositResponse = {
+  paymentId: string;
+  amount: number;
+  currency: string;
+  status: string;
+  balanceRemaining: number;
+  mock?: boolean;
+};
+
+export async function processSquareDeposit(
+  bookingId: string,
+  sourceId: string,
+  verificationToken?: string
+) {
+  return apiPost<SquareDepositResponse, { sourceId: string; verificationToken?: string }>(
+    `/bookings/${bookingId}/deposit/square`,
+    { sourceId, verificationToken }
+  );
+}

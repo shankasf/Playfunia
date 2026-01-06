@@ -16,6 +16,7 @@ import {
   updateBookingStatus,
   recalculateBookingPricing,
 } from "../services/booking.service";
+import { createSquarePayment } from "../services/square-payment.service";
 import {
   bookingAvailabilitySchema,
   bookingEstimateSchema,
@@ -132,6 +133,29 @@ export const confirmBookingDepositHandler = asyncHandler(async (req: Authenticat
   const { bookingId } = parseWithSchema(bookingIdParamSchema, req.params);
   const { paymentIntentId } = parseWithSchema(bookingDepositConfirmSchema, req.body);
   const result = await completeBookingDepositPayment(req.user.id, bookingId, paymentIntentId);
+  return res.status(200).json(result);
+});
+
+// Square payment handler for booking deposits
+export const processSquareDepositHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    throw new AppError("Unauthorized", 401);
+  }
+
+  const { bookingId } = parseWithSchema(bookingIdParamSchema, req.params);
+  const { sourceId } = req.body;
+
+  if (!sourceId) {
+    throw new AppError("sourceId is required", 400);
+  }
+
+  const result = await createSquarePayment(
+    req.user.id,
+    bookingId,
+    sourceId,
+    'card'
+  );
+
   return res.status(200).json(result);
 });
 

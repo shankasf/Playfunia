@@ -14,6 +14,7 @@ import {
 import {
   createBookingDepositIntent,
   confirmBookingDeposit,
+  processSquareDeposit,
   BookingDepositIntentResponse,
 } from "../api/bookings";
 import { createCheckoutIntent, finalizeCheckout, type CheckoutSummary } from "../api/checkout";
@@ -32,6 +33,8 @@ type PaymentState = {
   loading: boolean;
   error?: string;
   completed?: boolean;
+  squareReady?: boolean;
+  depositAmount?: number;
 };
 
 type CartPaymentState = {
@@ -102,12 +105,24 @@ export function CheckoutPage() {
 
   const cartSubtotal = payableItems.reduce((sum, item) => sum + item.total, 0);
 
-  const handleStartDeposit = async (bookingId: string) => {
+  const handleStartDeposit = async (bookingId: string, depositAmount: number) => {
     if (!hasValidWaiver) {
       setStatus("Please complete the waiver before paying a deposit.");
       return;
     }
     setPayments(prev => ({ ...prev, [bookingId]: { loading: true } }));
+
+    // Use Square if available
+    if (squareAvailable) {
+      setPayments(prev => ({
+        ...prev,
+        [bookingId]: { loading: false, squareReady: true, depositAmount },
+      }));
+      setStatus("Secure payment form ready. Enter your card details to pay the deposit.");
+      return;
+    }
+
+    // Fallback to Stripe
     try {
       const intent = await createBookingDepositIntent(bookingId);
 
@@ -130,6 +145,29 @@ export function CheckoutPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to prepare deposit payment.";
       setPayments(prev => ({ ...prev, [bookingId]: { loading: false, error: message } }));
+    }
+  };
+
+  // Square deposit payment handler
+  const handleSquareDepositSuccess = async (bookingId: string, sourceId: string, verificationToken?: string) => {
+    setPayments(prev => ({
+      ...prev,
+      [bookingId]: { ...(prev[bookingId] ?? {}), loading: true, error: undefined },
+    }));
+    try {
+      const result = await processSquareDeposit(bookingId, sourceId, verificationToken);
+      markBookingDepositPaid(bookingId, result.balanceRemaining);
+      setPayments(prev => ({
+        ...prev,
+        [bookingId]: { ...(prev[bookingId] ?? {}), loading: false, completed: true, squareReady: false },
+      }));
+      setStatus(`Deposit confirmed for booking. Thank you!`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Payment failed. Please try again.";
+      setPayments(prev => ({
+        ...prev,
+        [bookingId]: { ...(prev[bookingId] ?? {}), loading: false, error: message },
+      }));
     }
   };
 
@@ -455,8 +493,19 @@ export function CheckoutPage() {
                         <div className={styles.depositComplete}>
                           Deposit received. A Playfunia host will reach out with party details.
                         </div>
-                      ) : state.loading && !state.intent ? (
+                      ) : state.loading && !state.intent && !state.squareReady ? (
                         <p>Preparing secure payment form...</p>
+                      ) : state.squareReady ? (
+                        <SquarePaymentForm
+                          amount={state.depositAmount ?? item.depositAmount}
+                          currency="usd"
+                          description={`Deposit for ${item.reference}`}
+                          submitLabel="Pay deposit"
+                          processingLabel="Processing deposit..."
+                          onSuccess={(sourceId, verificationToken) =>
+                            handleSquareDepositSuccess(item.bookingId, sourceId, verificationToken)
+                          }
+                        />
                       ) : state.intent ? (
                         <PaymentForm
                           clientSecret={state.intent.clientSecret}
@@ -470,7 +519,7 @@ export function CheckoutPage() {
                       ) : (
                         <PrimaryButton
                           type="button"
-                          onClick={() => handleStartDeposit(item.bookingId)}
+                          onClick={() => handleStartDeposit(item.bookingId, item.depositAmount)}
                           disabled={state.loading || !hasValidWaiver}
                         >
                           {state.loading ? "Preparing..." : hasValidWaiver ? "Pay deposit" : "Waiver required"}
