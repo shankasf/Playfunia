@@ -8,9 +8,9 @@ Mastercard:  5105 1051 0510 5100
 Amex:        3400 000000 00009
 Discover:    6011 0000 0000 0004
 
-CVV: Any 3 digits (4 digits for Amex)
+CVV: Use 111 (or 1111 for Amex)
 Expiry: Any future date (e.g., 12/26)
-ZIP: Any valid ZIP (e.g., 10001)
+ZIP: Any valid ZIP (e.g., 12345)
 
 
 TEST FAILURE SCENARIOS

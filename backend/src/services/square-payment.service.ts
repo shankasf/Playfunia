@@ -3,8 +3,9 @@ import type { CreatePaymentRequest, Money, CreatePaymentResponse } from 'square'
 
 import { getSquareClient, getSquareLocationId } from '../config/square';
 import { appConfig } from '../config/env';
-import { UserRepository, PartyBookingRepository, PaymentRepository, OrderRepository } from '../repositories';
+import { UserRepository, PartyBookingRepository, PaymentRepository, OrderRepository, PartyPackageRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
+import { sendBookingConfirmation, type BookingEmailData } from './email.service';
 
 // Payment method types
 export type PaymentMethod = 'card' | 'cash' | 'partial';
@@ -25,6 +26,46 @@ function toSquareMoney(amount: number): Money {
     amount: BigInt(Math.round(amount * 100)),
     currency: 'USD',
   };
+}
+
+// Helper to send booking confirmation email
+async function sendBookingConfirmationEmail(
+  booking: any,
+  guardian: any,
+  depositAmount: number
+): Promise<void> {
+  try {
+    // Get package details
+    const partyPackage = booking.package_id
+      ? await PartyPackageRepository.findById(booking.package_id)
+      : null;
+
+    const emailData: BookingEmailData = {
+      reference: booking.reference ?? `PF-${booking.booking_id}`,
+      guestName: `${guardian.first_name} ${guardian.last_name}`.trim(),
+      email: guardian.email,
+      eventDate: booking.event_date
+        ? new Date(booking.event_date).toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          })
+        : 'TBD',
+      startTime: booking.start_time ?? 'TBD',
+      location: booking.location ?? 'Albany',
+      packageName: partyPackage?.name ?? 'Party Package',
+      guestCount: booking.guests ?? 10,
+      depositAmount,
+      totalAmount: booking.total ?? 0,
+      balanceRemaining: booking.balance_remaining ?? 0,
+    };
+
+    await sendBookingConfirmation(emailData);
+  } catch (error) {
+    console.error('Failed to send booking confirmation email:', error);
+    // Don't throw - email failure shouldn't fail the payment
+  }
 }
 
 /**
@@ -139,6 +180,12 @@ export async function createSquarePayment(
       deposit_paid_at: new Date().toISOString(),
     });
 
+    // Send booking confirmation email
+    const updatedBooking = await PartyBookingRepository.findById(bookingIdNum);
+    if (updatedBooking) {
+      await sendBookingConfirmationEmail(updatedBooking, guardian, depositAmount);
+    }
+
     return {
       paymentId: mockPaymentId,
       amount: depositAmount,
@@ -217,6 +264,12 @@ export async function createSquarePayment(
       deposit_paid_at: new Date().toISOString(),
       latest_payment_intent_id: payment.id,
     });
+
+    // Send booking confirmation email
+    const updatedBooking = await PartyBookingRepository.findById(bookingIdNum);
+    if (updatedBooking) {
+      await sendBookingConfirmationEmail(updatedBooking, guardian, depositAmount);
+    }
 
     return {
       paymentId: payment.id,

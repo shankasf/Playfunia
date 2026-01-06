@@ -1,41 +1,82 @@
 .placeholder {
   padding: 1.5rem;
-  background: rgba(31, 60, 136, 0.05);
-  border-radius: 16px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px;
   text-align: center;
-  color: #445079;
+  color: #6b7280;
   font-weight: 500;
+  border: 1px solid #e5e7eb;
+}
+
+.placeholder p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.placeholder p::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d1d5db;
+  border-top-color: #ff6b9d;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .form {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 16px;
-  padding: 1.5rem;
-  box-shadow: 0 15px 30px rgba(31, 60, 136, 0.12);
+  background: linear-gradient(135deg, #ffffff 0%, #fefefe 100%);
+  border-radius: 14px;
+  padding: 1.25rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .summary {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .amount {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
-  color: #2a1c55;
+  background: linear-gradient(135deg, #1f2b66 0%, #3b4a8c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .caption {
-  color: #5c6489;
-  font-size: 0.95rem;
+  color: #6b7280;
+  font-size: 0.9rem;
+  font-weight: 500;
 }
 
 .error {
   margin: 0;
-  color: #d7263d;
+  color: #dc2626;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
+  padding: 0.75rem 1rem;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.15);
+  border-radius: 8px;
+  line-height: 1.4;
+}
+
+/* Square card container styling */
+.form > div:not(.summary):not(.error) {
+  min-height: 50px;
 }

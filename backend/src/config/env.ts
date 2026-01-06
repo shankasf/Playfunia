@@ -27,6 +27,14 @@ const envSchema = z
     DEFAULT_ADMIN_PASSWORD: z.string().optional(),
     INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_USER_ID: z.string().optional(),
+    // SMTP Email Configuration
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().optional(),
+    SMTP_SECURE: z.coerce.boolean().default(false),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    SMTP_FROM: z.string().optional(),
+    SMTP_FROM_NAME: z.string().default('Playfunia'),
   })
   .strip();
 
@@ -64,4 +72,12 @@ export const appConfig = {
   defaultAdminPassword: env.DEFAULT_ADMIN_PASSWORD,
   instagramAccessToken: env.INSTAGRAM_ACCESS_TOKEN,
   instagramUserId: env.INSTAGRAM_USER_ID,
+  // SMTP Email Configuration
+  smtpHost: env.SMTP_HOST,
+  smtpPort: env.SMTP_PORT,
+  smtpSecure: env.SMTP_SECURE,
+  smtpUser: env.SMTP_USER,
+  smtpPass: env.SMTP_PASS,
+  smtpFrom: env.SMTP_FROM,
+  smtpFromName: env.SMTP_FROM_NAME,
 };

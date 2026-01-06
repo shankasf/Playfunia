@@ -34,26 +34,32 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
 
     async function initialize() {
       try {
+        console.log('[Square] Initializing Square SDK...');
         const paymentsInstance = await initializeSquare();
 
         if (!mounted) return;
 
         if (!paymentsInstance) {
+          console.error('[Square] Payments instance is null');
           setErrorMessage("Square payments are not available. Please try again later.");
           setIsLoading(false);
           return;
         }
 
+        console.log('[Square] Payments instance created successfully');
         setPayments(paymentsInstance);
 
         // Create card payment method
+        console.log('[Square] Creating card element...');
         const cardInstance = await paymentsInstance.card();
 
         if (!mounted) return;
 
+        console.log('[Square] Card element created successfully');
         setCard(cardInstance);
         setIsLoading(false);
       } catch (error) {
+        console.error('[Square] Initialization error:', error);
         if (mounted) {
           const message = error instanceof Error ? error.message : "Failed to initialize payment form";
           setErrorMessage(message);
@@ -100,19 +106,24 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
 
     try {
       // Tokenize the card
+      console.log('[Square] Tokenizing card...');
       const tokenResult: TokenResult = await card.tokenize();
+      console.log('[Square] Token result:', tokenResult);
 
       if (tokenResult.status !== 'OK' || !tokenResult.token) {
         const errorResult = tokenResult as { errors?: Array<{ message: string }> };
+        console.error('[Square] Tokenization failed:', errorResult);
         const errors = errorResult.errors?.map((e: { message: string }) => e.message).join(', ') || 'Card tokenization failed';
         setErrorMessage(errors);
         setIsSubmitting(false);
         return;
       }
 
+      console.log('[Square] Tokenization successful, calling onSuccess...');
       // Call the success handler with the token
       await onSuccess(tokenResult.token);
     } catch (error) {
+      console.error('[Square] Submit error:', error);
       const message = error instanceof Error ? error.message : "Payment failed. Please try again.";
       setErrorMessage(message);
     } finally {
@@ -146,11 +157,20 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
       <div
         ref={cardContainerRef}
         style={{
-          minHeight: '89px',
-          background: '#fff',
-          borderRadius: '8px',
-          padding: '12px',
-          border: '1px solid #e0e0e0',
+          minHeight: '56px',
+          background: '#ffffff',
+          borderRadius: '10px',
+          padding: '14px 16px',
+          border: '2px solid #e5e7eb',
+          transition: 'border-color 0.2s, box-shadow 0.2s',
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = '#ff6b9d';
+          e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255, 107, 157, 0.1)';
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.borderColor = '#e5e7eb';
+          e.currentTarget.style.boxShadow = 'none';
         }}
       />
 

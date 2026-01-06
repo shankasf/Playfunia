@@ -272,3 +272,15 @@ export async function deleteChildForUser(userId: string, childId: number) {
 
   await ChildRepository.delete(childId);
 }
+
+export async function resetUserPassword(email: string, newPassword: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await UserRepository.findByEmail(normalizedEmail);
+
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await UserRepository.update(user.user_id, { password_hash: passwordHash });
+}
