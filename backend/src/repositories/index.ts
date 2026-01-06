@@ -531,15 +531,66 @@ export const ResourceRepository = {
 };
 
 // ============= Waiver Repository =============
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WaiverSubmissionData = any;
+
+// Helper to map DB record to backward-compatible format
+function mapWaiverSubmission(data: WaiverSubmissionData): WaiverSubmissionData {
+  if (!data) return data;
+
+  // Extract children from waiver_users.waiver_user_children if available
+  const waiverUser = data.waiver_users as { waiver_user_children?: Array<Record<string, unknown>> } | null;
+  const waiverUserChildren = waiverUser?.waiver_user_children || [];
+  const children = waiverUserChildren.map((c: Record<string, unknown>) => ({
+    name: `${c.minor_first_name || ''} ${c.minor_last_name || ''}`.trim(),
+    first_name: c.minor_first_name as string || '',
+    last_name: c.minor_last_name as string || '',
+    birthDate: c.minor_date_of_birth as string || '',
+    birth_date: c.minor_date_of_birth as string || '',
+    gender: c.minor_gender as string || '',
+  }));
+
+  const mapped = {
+    ...data,
+    // Map new column names to old for backward compatibility
+    guardian_name: `${data.guardian_first_name || ''} ${data.guardian_last_name || ''}`.trim(),
+    signature: data.digital_signature,
+    signed_at: data.date_signed,
+    relationship_to_children: data.relationship_to_minor,
+    marketing_opt_in: data.marketing_sms_opt_in || data.marketing_email_opt_in,
+    // Keep new columns available too
+    waiver_submission_id: data.submission_id,
+    waiver_id: data.submission_id,
+    // Children from waiver_user_children table
+    children,
+    // camelCase aliases for frontend
+    guardianName: `${data.guardian_first_name || ''} ${data.guardian_last_name || ''}`.trim(),
+    guardianEmail: data.guardian_email,
+    guardianPhone: data.guardian_phone,
+    guardianDateOfBirth: data.guardian_date_of_birth,
+    relationshipToChildren: data.relationship_to_minor,
+    signedAt: data.date_signed,
+    expiresAt: data.expires_at,
+    archiveUntil: data.archive_until,
+    marketingOptIn: data.marketing_sms_opt_in || data.marketing_email_opt_in,
+    acceptedPolicies: data.accepted_policies,
+    allergies: null, // Removed from schema
+    medicalNotes: null, // Removed from schema
+    insuranceProvider: null, // Removed from schema
+    insurancePolicyNumber: null, // Removed from schema
+  };
+  return mapped;
+}
+
 export const WaiverRepository = {
   async findByCustomerId(customerId: number) {
     const { data, error } = await supabase
       .from('waiver_submissions')
       .select('*')
       .eq('customer_id', customerId)
-      .order('signed_at', { ascending: false });
+      .order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async findByWaiverUserId(waiverUserId: number) {
@@ -547,9 +598,9 @@ export const WaiverRepository = {
       .from('waiver_submissions')
       .select('*')
       .eq('waiver_user_id', waiverUserId)
-      .order('signed_at', { ascending: false });
+      .order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async findValidByEmail(email: string) {
@@ -558,11 +609,11 @@ export const WaiverRepository = {
       .select('*')
       .eq('guardian_email', email.toLowerCase())
       .gte('archive_until', new Date().toISOString())
-      .order('signed_at', { ascending: false })
+      .order('date_signed', { ascending: false })
       .limit(1)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    return data ? mapWaiverSubmission(data) : null;
   },
 
   async findByEmail(email: string) {
@@ -570,9 +621,9 @@ export const WaiverRepository = {
       .from('waiver_submissions')
       .select('*')
       .eq('guardian_email', email.toLowerCase())
-      .order('signed_at', { ascending: false });
+      .order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async findByGuardianEmail(email: string) {
@@ -580,9 +631,9 @@ export const WaiverRepository = {
       .from('waiver_submissions')
       .select('*')
       .eq('guardian_email', email.toLowerCase())
-      .order('signed_at', { ascending: false });
+      .order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async findByGuardianPhone(phone: string) {
@@ -590,48 +641,74 @@ export const WaiverRepository = {
       .from('waiver_submissions')
       .select('*')
       .eq('guardian_phone', phone)
-      .order('signed_at', { ascending: false });
+      .order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async create(waiverData: {
     customer_id?: number;
     waiver_user_id?: number;
-    guardian_name: string;
+    guardian_name?: string;
+    guardian_first_name?: string;
+    guardian_last_name?: string;
     guardian_email?: string;
     guardian_phone?: string;
     guardian_date_of_birth?: string;
     relationship_to_children?: string;
-    allergies?: string;
-    medical_notes?: string;
-    insurance_provider?: string;
-    insurance_policy_number?: string;
-    children: unknown;
-    signature: string;
+    relationship_to_minor?: string;
+    signature?: string;
+    digital_signature?: string;
     accepted_policies: string[];
     marketing_opt_in?: boolean;
+    marketing_sms_opt_in?: boolean;
+    marketing_email_opt_in?: boolean;
     archive_until?: string;
     ip_address?: string;
   }) {
+    // Parse guardian_name into first/last if provided
+    let firstName = waiverData.guardian_first_name;
+    let lastName = waiverData.guardian_last_name;
+
+    if (!firstName && waiverData.guardian_name) {
+      const parts = waiverData.guardian_name.trim().split(' ');
+      firstName = parts[0] || 'Unknown';
+      lastName = parts.slice(1).join(' ') || '';
+    }
+
+    const insertData = {
+      customer_id: waiverData.customer_id,
+      waiver_user_id: waiverData.waiver_user_id,
+      guardian_first_name: firstName || 'Unknown',
+      guardian_last_name: lastName || '',
+      guardian_email: waiverData.guardian_email?.toLowerCase(),
+      guardian_phone: waiverData.guardian_phone,
+      guardian_date_of_birth: waiverData.guardian_date_of_birth,
+      relationship_to_minor: waiverData.relationship_to_minor || waiverData.relationship_to_children,
+      digital_signature: waiverData.digital_signature || waiverData.signature || '',
+      waiver_agreement_accepted: true,
+      accepted_policies: waiverData.accepted_policies,
+      marketing_sms_opt_in: waiverData.marketing_sms_opt_in ?? waiverData.marketing_opt_in ?? false,
+      marketing_email_opt_in: waiverData.marketing_email_opt_in ?? waiverData.marketing_opt_in ?? false,
+      archive_until: waiverData.archive_until,
+      ip_address: waiverData.ip_address,
+    };
+
     const { data, error } = await supabase
       .from('waiver_submissions')
-      .insert({
-        ...waiverData,
-        children: waiverData.children as Record<string, unknown>,
-      })
+      .insert(insertData)
       .select()
       .single();
     if (error) throw error;
-    return data;
+    return mapWaiverSubmission(data);
   },
 
   async findAll(options?: { limit?: number }) {
-    let query = supabaseAny.from('waiver_submissions').select('*');
+    let query = supabaseAny.from('waiver_submissions').select('*, waiver_users(*, waiver_user_children(*))');
     if (options?.limit) query = query.limit(options.limit);
-    const { data, error } = await query.order('signed_at', { ascending: false });
+    const { data, error } = await query.order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 };
 
@@ -641,9 +718,18 @@ export const WaiverUserRepository = {
     const { data, error } = await supabase
       .from('waiver_users')
       .select('*, waiver_user_children(*)')
-      .eq('email', email.toLowerCase())
+      .eq('guardian_email', email.toLowerCase())
       .single();
     if (error && error.code !== 'PGRST116') throw error;
+    // Map new schema to old interface for backward compatibility
+    if (data) {
+      return {
+        ...data,
+        email: data.guardian_email,
+        phone: data.guardian_phone,
+        guardian_name: `${data.guardian_first_name || ''} ${data.guardian_last_name || ''}`.trim(),
+      };
+    }
     return data;
   },
 
@@ -651,9 +737,18 @@ export const WaiverUserRepository = {
     const { data, error } = await supabase
       .from('waiver_users')
       .select('*, waiver_user_children(*)')
-      .eq('phone', phone)
+      .eq('guardian_phone', phone)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
+    // Map new schema to old interface for backward compatibility
+    if (data) {
+      return {
+        ...data,
+        email: data.guardian_email,
+        phone: data.guardian_phone,
+        guardian_name: `${data.guardian_first_name || ''} ${data.guardian_last_name || ''}`.trim(),
+      };
+    }
     return data;
   },
 
@@ -664,6 +759,15 @@ export const WaiverUserRepository = {
       .eq('waiver_user_id', waiverUserId)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
+    // Map new schema to old interface for backward compatibility
+    if (data) {
+      return {
+        ...data,
+        email: data.guardian_email,
+        phone: data.guardian_phone,
+        guardian_name: `${data.guardian_first_name || ''} ${data.guardian_last_name || ''}`.trim(),
+      };
+    }
     return data;
   },
 
@@ -671,26 +775,45 @@ export const WaiverUserRepository = {
     email?: string;
     phone?: string;
     guardian_name?: string;
+    guardian_first_name?: string;
+    guardian_last_name?: string;
     marketing_opt_in?: boolean;
   }) {
+    // Parse guardian_name into first/last if provided
+    let firstName = userData.guardian_first_name;
+    let lastName = userData.guardian_last_name;
+
+    if (!firstName && userData.guardian_name) {
+      const parts = userData.guardian_name.trim().split(' ');
+      firstName = parts[0] || 'Unknown';
+      lastName = parts.slice(1).join(' ') || '';
+    }
+
     const { data, error } = await supabase
       .from('waiver_users')
       .insert({
-        email: userData.email?.toLowerCase(),
-        phone: userData.phone,
-        guardian_name: userData.guardian_name,
+        guardian_email: userData.email?.toLowerCase(),
+        guardian_phone: userData.phone,
+        guardian_first_name: firstName || 'Unknown',
+        guardian_last_name: lastName || '',
         marketing_opt_in: userData.marketing_opt_in ?? false,
       })
       .select()
       .single();
     if (error) throw error;
-    return data;
+    // Return with backward compatible fields
+    return {
+      ...data,
+      email: data.guardian_email,
+      phone: data.guardian_phone,
+      guardian_name: `${data.guardian_first_name || ''} ${data.guardian_last_name || ''}`.trim(),
+    };
   },
 
   async update(waiverUserId: number, updates: Partial<WaiverUser>) {
     const { data, error } = await supabase
       .from('waiver_users')
-      .update(updates)
+      .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('waiver_user_id', waiverUserId)
       .select()
       .single();
@@ -698,15 +821,43 @@ export const WaiverUserRepository = {
     return data;
   },
 
-  async updateChildren(waiverUserId: number, children: Array<{ name: string; birth_date: string; gender?: string }>) {
+  async updateChildren(waiverUserId: number, children: Array<{
+    name?: string;
+    first_name?: string;
+    last_name?: string;
+    minor_first_name?: string;
+    minor_last_name?: string;
+    birth_date?: string;
+    minor_date_of_birth?: string;
+    gender?: string;
+    minor_gender?: string;
+  }>) {
     // Delete existing children
     await supabaseAny.from('waiver_user_children').delete().eq('waiver_user_id', waiverUserId);
-    
-    // Insert new children
+
+    // Insert new children with new schema column names
     if (children.length > 0) {
-      const { error } = await supabaseAny.from('waiver_user_children').insert(
-        children.map((c) => ({ ...c, waiver_user_id: waiverUserId }))
-      );
+      const mappedChildren = children.map((c) => {
+        // Parse name into first/last if using old format
+        let firstName = c.minor_first_name || c.first_name;
+        let lastName = c.minor_last_name || c.last_name;
+
+        if (!firstName && c.name) {
+          const parts = c.name.trim().split(' ');
+          firstName = parts[0] || 'Unknown';
+          lastName = parts.slice(1).join(' ') || '';
+        }
+
+        return {
+          waiver_user_id: waiverUserId,
+          minor_first_name: firstName || 'Unknown',
+          minor_last_name: lastName || '',
+          minor_date_of_birth: c.minor_date_of_birth || c.birth_date,
+          minor_gender: c.minor_gender || c.gender,
+        };
+      });
+
+      const { error } = await supabaseAny.from('waiver_user_children').insert(mappedChildren);
       if (error) throw error;
     }
   },
@@ -1529,7 +1680,7 @@ export const WaiverSubmissionRepository = {
       .eq('submission_id', submissionId)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    return data ? mapWaiverSubmission(data) : null;
   },
 
   async findByCustomerId(customerId: number) {
@@ -1537,9 +1688,9 @@ export const WaiverSubmissionRepository = {
       .from('waiver_submissions')
       .select('*')
       .eq('customer_id', customerId)
-      .order('signed_at', { ascending: false });
+      .order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async findByWaiverUserId(waiverUserId: number) {
@@ -1547,9 +1698,9 @@ export const WaiverSubmissionRepository = {
       .from('waiver_submissions')
       .select('*')
       .eq('waiver_user_id', waiverUserId)
-      .order('signed_at', { ascending: false });
+      .order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async findValidByEmail(email: string) {
@@ -1559,70 +1710,95 @@ export const WaiverSubmissionRepository = {
       .select('*')
       .eq('guardian_email', email.toLowerCase())
       .or(`expires_at.is.null,expires_at.gte.${now}`)
-      .order('signed_at', { ascending: false })
+      .order('date_signed', { ascending: false })
       .limit(1)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    return data ? mapWaiverSubmission(data) : null;
   },
 
   async create(waiverData: {
     customer_id?: number;
     waiver_user_id?: number;
-    guardian_name: string;
+    guardian_name?: string;
+    guardian_first_name?: string;
+    guardian_last_name?: string;
     guardian_email?: string;
     guardian_phone?: string;
     guardian_date_of_birth?: string;
     relationship_to_children?: string;
-    allergies?: string;
-    medical_notes?: string;
-    insurance_provider?: string;
-    insurance_policy_number?: string;
-    children: { name: string; birthDate: string; gender?: string }[];
+    relationship_to_minor?: string;
     child_ids?: number[];
-    signature: string;
+    signature?: string;
+    digital_signature?: string;
     accepted_policies: string[];
     marketing_opt_in?: boolean;
+    marketing_sms_opt_in?: boolean;
+    marketing_email_opt_in?: boolean;
     expires_at?: string;
     archive_until?: string;
     ip_address?: string;
   }) {
+    // Parse guardian_name into first/last if provided
+    let firstName = waiverData.guardian_first_name;
+    let lastName = waiverData.guardian_last_name;
+
+    if (!firstName && waiverData.guardian_name) {
+      const parts = waiverData.guardian_name.trim().split(' ');
+      firstName = parts[0] || 'Unknown';
+      lastName = parts.slice(1).join(' ') || '';
+    }
+
+    const insertData = {
+      customer_id: waiverData.customer_id,
+      waiver_user_id: waiverData.waiver_user_id,
+      guardian_first_name: firstName || 'Unknown',
+      guardian_last_name: lastName || '',
+      guardian_email: waiverData.guardian_email?.toLowerCase(),
+      guardian_phone: waiverData.guardian_phone,
+      guardian_date_of_birth: waiverData.guardian_date_of_birth,
+      relationship_to_minor: waiverData.relationship_to_minor || waiverData.relationship_to_children,
+      child_ids: waiverData.child_ids,
+      digital_signature: waiverData.digital_signature || waiverData.signature || '',
+      waiver_agreement_accepted: true,
+      accepted_policies: waiverData.accepted_policies,
+      marketing_sms_opt_in: waiverData.marketing_sms_opt_in ?? waiverData.marketing_opt_in ?? false,
+      marketing_email_opt_in: waiverData.marketing_email_opt_in ?? waiverData.marketing_opt_in ?? false,
+      expires_at: waiverData.expires_at,
+      archive_until: waiverData.archive_until,
+      ip_address: waiverData.ip_address,
+    };
+
     const { data, error } = await supabase
       .from('waiver_submissions')
-      .insert({
-        ...waiverData,
-        guardian_email: waiverData.guardian_email?.toLowerCase(),
-      })
+      .insert(insertData)
       .select()
       .single();
     if (error) throw error;
-    return data;
+    return mapWaiverSubmission(data);
   },
 
   async findAll(options?: { limit?: number | undefined }) {
-    let query = supabaseAny.from('waiver_submissions').select('*, customers(*), waiver_users(*)');
+    let query = supabaseAny.from('waiver_submissions').select('*, customers(*), waiver_users(*, waiver_user_children(*))');
     if (options?.limit) query = query.limit(options.limit);
-    const { data, error } = await query.order('signed_at', { ascending: false });
+    const { data, error } = await query.order('date_signed', { ascending: false });
     if (error) throw error;
-    return data ?? [];
+    return (data ?? []).map(mapWaiverSubmission);
   },
 
   async update(
     submissionId: number,
     updates: Partial<{
-      guardian_name: string | null;
+      guardian_first_name: string | null;
+      guardian_last_name: string | null;
       guardian_email: string | null;
       guardian_phone: string | null;
       guardian_date_of_birth: string | null;
-      relationship_to_children: string | null;
-      allergies: string | null;
-      medical_notes: string | null;
-      insurance_provider: string | null;
-      insurance_policy_number: string | null;
-      children: unknown;
-      marketing_opt_in: boolean | null;
+      relationship_to_minor: string | null;
+      marketing_sms_opt_in: boolean | null;
+      marketing_email_opt_in: boolean | null;
       expires_at: string | null;
-      signed_at: string | null;
+      date_signed: string | null;
       archive_until: string | null;
     }>,
   ) {
@@ -1642,7 +1818,7 @@ export const WaiverSubmissionRepository = {
       .select('*, customers(*), waiver_users(*)')
       .single();
     if (error) throw error;
-    return data;
+    return mapWaiverSubmission(data);
   },
 };
 

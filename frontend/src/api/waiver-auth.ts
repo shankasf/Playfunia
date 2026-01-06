@@ -6,6 +6,13 @@ export type WaiverLookupResult = {
   phone?: string;
 };
 
+export type WaiverChild = {
+  id?: string;
+  name: string;
+  birthDate: string;
+  gender?: string;
+};
+
 export type WaiverAuthResult = {
   token: string;
   isNewUser: boolean;
@@ -14,7 +21,12 @@ export type WaiverAuthResult = {
     email?: string;
     phone?: string;
     guardianName?: string;
+    guardianFirstName?: string;
+    guardianLastName?: string;
+    guardianDateOfBirth?: string;
+    relationshipToMinor?: string;
     hasCompletedWaiver: boolean;
+    children?: WaiverChild[];
   };
 };
 

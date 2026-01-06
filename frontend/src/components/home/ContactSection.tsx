@@ -14,19 +14,15 @@ export function ContactSection() {
           <div className={styles.details}>
             <div>
               <strong>Call</strong>
-              <a href="tel:+18456322185">845-632-2185</a>
+              <a href="tel:+12015395928">+1 (201) 539-5928</a>
             </div>
             <div>
               <strong>Email</strong>
               <a href="mailto:info@playfunia.com">info@playfunia.com</a>
             </div>
             <div>
-              <strong>Poughkeepsie, NY</strong>
-              <span>2001 South Rd Unit A108 - Poughkeepsie Galleria Mall</span>
-            </div>
-            <div>
-              <strong>Deptford, NJ</strong>
-              <span>2000 Deptford Center Rd - Deptford Mall</span>
+              <strong>Albany, NY</strong>
+              <span>1 Crossgates Mall Rd, Unit N202, Level 2, Near Macy's, Albany, NY 12203</span>
             </div>
           </div>
         </div>

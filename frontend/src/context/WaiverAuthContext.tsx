@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { lookupWaiverAuth, loginWaiverUser, type WaiverAuthResult } from '../api/waiver-auth';
+import { lookupWaiverAuth, loginWaiverUser, type WaiverAuthResult, type WaiverChild } from '../api/waiver-auth';
 import { setWaiverAuthToken } from '../api/client';
 
 /**
@@ -22,7 +22,12 @@ type WaiverUser = {
     email?: string;
     phone?: string;
     guardianName?: string;
+    guardianFirstName?: string;
+    guardianLastName?: string;
+    guardianDateOfBirth?: string;
+    relationshipToMinor?: string;
     hasCompletedWaiver: boolean;
+    children?: WaiverChild[];
 };
 
 type WaiverAuthContextValue = {

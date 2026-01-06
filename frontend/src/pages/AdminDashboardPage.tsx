@@ -43,17 +43,15 @@ type MembershipFormState = {
 };
 
 type WaiverFormState = {
-  guardianName: string;
+  guardianFirstName: string;
+  guardianLastName: string;
   guardianEmail: string;
   guardianPhone: string;
   guardianDateOfBirth: string;
-  relationshipToChildren: string;
-  allergies: string;
-  medicalNotes: string;
-  insuranceProvider: string;
-  insurancePolicyNumber: string;
+  relationshipToMinor: string;
   expiresAt: string;
-  marketingOptIn: boolean;
+  marketingSmsOptIn: boolean;
+  marketingEmailOptIn: boolean;
   children: Array<{ name: string; birthDate: string }>;
 };
 
@@ -687,12 +685,22 @@ export function AdminDashboardPage() {
                   <h4 className={styles.waiverCardTitle}>Guardian Information</h4>
                   <div className={styles.waiverFormGrid}>
                     <label className={styles.waiverField}>
-                      <span>Full name</span>
+                      <span>First name</span>
                       <input
                         type="text"
-                        value={waiverForm.guardianName}
+                        value={waiverForm.guardianFirstName}
                         onChange={(e) =>
-                          setWaiverForm((prev) => ({ ...prev, guardianName: e.target.value }))
+                          setWaiverForm((prev) => ({ ...prev, guardianFirstName: e.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className={styles.waiverField}>
+                      <span>Last name</span>
+                      <input
+                        type="text"
+                        value={waiverForm.guardianLastName}
+                        onChange={(e) =>
+                          setWaiverForm((prev) => ({ ...prev, guardianLastName: e.target.value }))
                         }
                       />
                     </label>
@@ -730,14 +738,14 @@ export function AdminDashboardPage() {
                       />
                     </label>
                     <label className={styles.waiverField}>
-                      <span>Relationship</span>
+                      <span>Relationship to minor</span>
                       <input
                         type="text"
-                        value={waiverForm.relationshipToChildren}
+                        value={waiverForm.relationshipToMinor}
                         onChange={(e) =>
                           setWaiverForm((prev) => ({
                             ...prev,
-                            relationshipToChildren: e.target.value,
+                            relationshipToMinor: e.target.value,
                           }))
                         }
                       />
@@ -756,74 +764,38 @@ export function AdminDashboardPage() {
                 </div>
 
                 <div className={styles.waiverCard}>
-                  <h4 className={styles.waiverCardTitle}>Insurance &amp; Preferences</h4>
-                  <div className={styles.waiverFormGrid}>
-                    <label className={styles.waiverField}>
-                      <span>Insurance provider</span>
-                      <input
-                        type="text"
-                        value={waiverForm.insuranceProvider}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({
-                            ...prev,
-                            insuranceProvider: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.waiverField}>
-                      <span>Policy number</span>
-                      <input
-                        type="text"
-                        value={waiverForm.insurancePolicyNumber}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({
-                            ...prev,
-                            insurancePolicyNumber: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
+                  <h4 className={styles.waiverCardTitle}>Marketing Preferences</h4>
                   <label className={styles.waiverToggle}>
                     <input
                       type="checkbox"
-                      checked={waiverForm.marketingOptIn}
+                      checked={waiverForm.marketingSmsOptIn}
                       onChange={(e) =>
                         setWaiverForm((prev) => ({
                           ...prev,
-                          marketingOptIn: e.target.checked,
+                          marketingSmsOptIn: e.target.checked,
                         }))
                       }
                     />
                     <span className={styles.toggleTrack}>
                       <span className={styles.toggleThumb} />
                     </span>
-                    <span>Receive marketing emails</span>
+                    <span>Receive SMS marketing</span>
                   </label>
-                </div>
-
-                <div className={styles.waiverCard}>
-                  <h4 className={styles.waiverCardTitle}>Health Information</h4>
-                  <label className={styles.waiverField}>
-                    <span>Allergies</span>
-                    <textarea
-                      rows={2}
-                      value={waiverForm.allergies}
+                  <label className={styles.waiverToggle}>
+                    <input
+                      type="checkbox"
+                      checked={waiverForm.marketingEmailOptIn}
                       onChange={(e) =>
-                        setWaiverForm((prev) => ({ ...prev, allergies: e.target.value }))
+                        setWaiverForm((prev) => ({
+                          ...prev,
+                          marketingEmailOptIn: e.target.checked,
+                        }))
                       }
                     />
-                  </label>
-                  <label className={styles.waiverField}>
-                    <span>Medical notes</span>
-                    <textarea
-                      rows={2}
-                      value={waiverForm.medicalNotes}
-                      onChange={(e) =>
-                        setWaiverForm((prev) => ({ ...prev, medicalNotes: e.target.value }))
-                      }
-                    />
+                    <span className={styles.toggleTrack}>
+                      <span className={styles.toggleThumb} />
+                    </span>
+                    <span>Receive email marketing</span>
                   </label>
                 </div>
 
@@ -1324,39 +1296,39 @@ function cleanBookingForm(form: BookingFormState): AdminBookingUpdatePayload {
 
 function emptyWaiverForm(): WaiverFormState {
   return {
-    guardianName: '',
+    guardianFirstName: '',
+    guardianLastName: '',
     guardianEmail: '',
     guardianPhone: '',
     guardianDateOfBirth: '',
-    relationshipToChildren: '',
-    allergies: '',
-    medicalNotes: '',
-    insuranceProvider: '',
-    insurancePolicyNumber: '',
+    relationshipToMinor: '',
     expiresAt: '',
-    marketingOptIn: false,
+    marketingSmsOptIn: false,
+    marketingEmailOptIn: false,
     children: [],
   };
 }
 
 function toWaiverForm(waiver: AdminWaiver): WaiverFormState {
   return {
-    guardianName: waiver.guardianName ?? '',
+    guardianFirstName: waiver.guardianFirstName ?? '',
+    guardianLastName: waiver.guardianLastName ?? '',
     guardianEmail: waiver.guardianEmail ?? '',
     guardianPhone: waiver.guardianPhone ?? '',
     guardianDateOfBirth: waiver.guardianDateOfBirth ? waiver.guardianDateOfBirth.slice(0, 10) : '',
-    relationshipToChildren: waiver.relationshipToChildren ?? '',
-    allergies: waiver.allergies ?? '',
-    medicalNotes: waiver.medicalNotes ?? '',
-    insuranceProvider: waiver.insuranceProvider ?? '',
-    insurancePolicyNumber: waiver.insurancePolicyNumber ?? '',
+    relationshipToMinor: waiver.relationshipToMinor ?? waiver.relationshipToChildren ?? '',
     expiresAt: waiver.expiresAt ? waiver.expiresAt.slice(0, 10) : '',
-    marketingOptIn: Boolean(waiver.marketingOptIn),
+    marketingSmsOptIn: Boolean(waiver.marketingSmsOptIn),
+    marketingEmailOptIn: Boolean(waiver.marketingEmailOptIn),
     children: Array.isArray(waiver.children)
-      ? waiver.children.map((child) => ({
-        name: child.name ?? '',
-        birthDate: child.birthDate ? child.birthDate.slice(0, 10) : '',
-      }))
+      ? waiver.children.map((child) => {
+        const childName = child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim();
+        const childDob = child.birthDate || child.birth_date || '';
+        return {
+          name: childName ?? '',
+          birthDate: childDob ? childDob.slice(0, 10) : '',
+        };
+      })
       : [],
   };
 }
@@ -1368,17 +1340,15 @@ function cleanWaiverForm(form: WaiverFormState): AdminWaiverUpdatePayload {
   };
 
   return {
-    guardianName: normalizeText(form.guardianName),
+    guardianFirstName: normalizeText(form.guardianFirstName),
+    guardianLastName: normalizeText(form.guardianLastName),
     guardianEmail: normalizeText(form.guardianEmail),
     guardianPhone: normalizeText(form.guardianPhone),
     guardianDateOfBirth: normalizeText(form.guardianDateOfBirth),
-    relationshipToChildren: normalizeText(form.relationshipToChildren),
-    allergies: normalizeText(form.allergies),
-    medicalNotes: normalizeText(form.medicalNotes),
-    insuranceProvider: normalizeText(form.insuranceProvider),
-    insurancePolicyNumber: normalizeText(form.insurancePolicyNumber),
+    relationshipToMinor: normalizeText(form.relationshipToMinor),
     expiresAt: normalizeText(form.expiresAt),
-    marketingOptIn: Boolean(form.marketingOptIn),
+    marketingSmsOptIn: Boolean(form.marketingSmsOptIn),
+    marketingEmailOptIn: Boolean(form.marketingEmailOptIn),
     children: form.children
       .map((child) => ({
         name: (child.name ?? '').trim(),

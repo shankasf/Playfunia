@@ -7,8 +7,8 @@ const locations = [
     address: "1 Crossgates Mall Rd, Unit N202",
     detail: "Level 2, Near Macy's",
     hours: "Daily 9:00 AM - 7:00 PM",
-    phone: "(201) 539-5928",
-    mapLink: "https://maps.google.com/?q=Crossgates+Mall+Albany+NY",
+    phone: "+1 (201) 539-5928",
+    mapLink: "https://maps.google.com/?q=1+Crossgates+Mall+Rd+Albany+NY+12203",
   },
 ];
 

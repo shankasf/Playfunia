@@ -1,6 +1,6 @@
 ﻿# Kidz 4 Fun Digital Platform
 
-The Kidz 4 Fun digital platform is a full-stack playground experience that brings the indoor play center online. It unifies marketing pages, party bookings, memberships, events, family accounts, and staff tooling across two physical locations (Poughkeepsie, NY and Deptford, NJ). This repository contains all services, infrastructure scripts, and documentation required to run the platform locally or deploy it in the cloud.
+The PlayFunia digital platform is a full-stack playground experience that brings the indoor play center online. It unifies marketing pages, party bookings, memberships, events, family accounts, and staff tooling at our Crossgates Mall location (Albany, NY). This repository contains all services, infrastructure scripts, and documentation required to run the platform locally or deploy it in the cloud.
 
 ---
 

@@ -515,22 +515,25 @@ export const deleteWaiverUserHandler = asyncHandler(async (req, res) => {
 
 // Transform DB waiver to frontend format
 function transformWaiver(w: Record<string, unknown>): Record<string, unknown> {
+  // Build guardian name from first/last or use existing guardian_name (from backward compat mapping)
+  const guardianName = w.guardian_name ?? `${w.guardian_first_name || ''} ${w.guardian_last_name || ''}`.trim();
   return {
     id: String(w.submission_id),
-    guardianName: w.guardian_name ?? '',
+    guardianFirstName: w.guardian_first_name ?? '',
+    guardianLastName: w.guardian_last_name ?? '',
+    guardianName: guardianName,
     guardianEmail: w.guardian_email ?? '',
     guardianPhone: w.guardian_phone ?? '',
     guardianDateOfBirth: w.guardian_date_of_birth,
-    relationshipToChildren: w.relationship_to_children,
+    relationshipToMinor: w.relationship_to_minor ?? w.relationship_to_children,
     guardian: w.customers ?? w.waiver_users ?? null,
     children: Array.isArray(w.children) ? w.children : [],
-    allergies: w.allergies,
-    medicalNotes: w.medical_notes,
-    insuranceProvider: w.insurance_provider,
-    insurancePolicyNumber: w.insurance_policy_number,
-    signedAt: w.signed_at ?? w.created_at,
+    digitalSignature: w.digital_signature ?? w.signature,
+    signedAt: w.date_signed ?? w.signed_at ?? w.created_at,
     expiresAt: w.expires_at,
-    marketingOptIn: Boolean(w.marketing_opt_in),
+    marketingSmsOptIn: Boolean(w.marketing_sms_opt_in),
+    marketingEmailOptIn: Boolean(w.marketing_email_opt_in),
+    marketingOptIn: Boolean(w.marketing_sms_opt_in || w.marketing_email_opt_in || w.marketing_opt_in),
     visitCount: typeof w.visit_count === 'number' ? w.visit_count : 1,
   };
 }
@@ -575,30 +578,30 @@ export const updateWaiverSubmissionHandler = asyncHandler(async (req, res) => {
     throw new AppError(`Invalid ${key}`, 400);
   };
 
-  setStringOrNull('guardianName', 'guardian_name');
+  setStringOrNull('guardianFirstName', 'guardian_first_name');
+  setStringOrNull('guardianLastName', 'guardian_last_name');
   setStringOrNull('guardianEmail', 'guardian_email');
   setStringOrNull('guardianPhone', 'guardian_phone');
   setStringOrNull('guardianDateOfBirth', 'guardian_date_of_birth');
-  setStringOrNull('relationshipToChildren', 'relationship_to_children');
-  setStringOrNull('allergies', 'allergies');
-  setStringOrNull('medicalNotes', 'medical_notes');
-  setStringOrNull('insuranceProvider', 'insurance_provider');
-  setStringOrNull('insurancePolicyNumber', 'insurance_policy_number');
+  setStringOrNull('relationshipToMinor', 'relationship_to_minor');
   setStringOrNull('expiresAt', 'expires_at');
 
-  if ('marketingOptIn' in body) {
-    if (typeof body.marketingOptIn !== 'boolean') {
-      throw new AppError('Invalid marketingOptIn', 400);
+  if ('marketingSmsOptIn' in body) {
+    if (typeof body.marketingSmsOptIn !== 'boolean') {
+      throw new AppError('Invalid marketingSmsOptIn', 400);
     }
-    updates.marketing_opt_in = body.marketingOptIn;
+    updates.marketing_sms_opt_in = body.marketingSmsOptIn;
   }
 
-  if ('children' in body) {
-    if (!Array.isArray(body.children)) {
-      throw new AppError('Invalid children', 400);
+  if ('marketingEmailOptIn' in body) {
+    if (typeof body.marketingEmailOptIn !== 'boolean') {
+      throw new AppError('Invalid marketingEmailOptIn', 400);
     }
-    updates.children = body.children;
+    updates.marketing_email_opt_in = body.marketingEmailOptIn;
   }
+
+  // Note: children are stored in waiver_user_children table, not in waiver_submissions
+  // To update children, use the waiver user children endpoints
 
   if (Object.keys(updates).length === 0) {
     throw new AppError('No updates provided', 400);
@@ -886,53 +889,51 @@ export const exportWaiversHandler = asyncHandler(async (_req, res) => {
   }
 
   const header = [
-    'Guardian Name',
+    'Guardian First Name',
+    'Guardian Last Name',
     'Guardian Email',
     'Guardian Phone',
     'Guardian DOB',
     'Relationship',
-    'Allergies',
-    'Medical Notes',
-    'Insurance Provider',
-    'Insurance Policy',
     ...childHeaders,
-    'Signature',
-    'Signed At',
+    'Digital Signature',
+    'Date Signed',
     'Expires At',
     'Archive Until',
     'Accepted Policies',
-    'Marketing Opt-in',
+    'Marketing SMS Opt-in',
+    'Marketing Email Opt-in',
   ];
 
   const rows = waivers.map(waiver => {
-    const children = (waiver.children ?? []) as Array<{ name: string; birthDate: string; gender?: string }>;
+    const children = (waiver.children ?? []) as Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>;
     const childData: string[] = [];
     for (let i = 0; i < maxChildren; i++) {
       const child = children[i];
       if (child) {
-        childData.push(child.name, child.birthDate?.split('T')[0] ?? '', child.gender ?? '');
+        const childName = child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim();
+        const childDob = (child.birthDate || child.birth_date || '')?.split('T')[0] ?? '';
+        childData.push(childName, childDob, child.gender ?? '');
       } else {
         childData.push('', '', '');
       }
     }
 
     return [
-      waiver.guardian_name,
+      waiver.guardian_first_name ?? '',
+      waiver.guardian_last_name ?? '',
       waiver.guardian_email ?? '',
       waiver.guardian_phone ?? '',
       waiver.guardian_date_of_birth ?? '',
-      waiver.relationship_to_children ?? '',
-      waiver.allergies ?? '',
-      waiver.medical_notes ?? '',
-      waiver.insurance_provider ?? '',
-      waiver.insurance_policy_number ?? '',
+      waiver.relationship_to_minor ?? '',
       ...childData,
-      waiver.signature,
-      waiver.signed_at,
+      waiver.digital_signature ?? '',
+      waiver.date_signed ?? '',
       waiver.expires_at ?? '',
       waiver.archive_until ?? '',
       (waiver.accepted_policies ?? []).join('; '),
-      waiver.marketing_opt_in ? 'yes' : 'no',
+      waiver.marketing_sms_opt_in ? 'yes' : 'no',
+      waiver.marketing_email_opt_in ? 'yes' : 'no',
     ];
   });
 

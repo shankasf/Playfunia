@@ -85,17 +85,21 @@ export type AdminMembership = {
 
 export type AdminWaiver = {
   id: string;
+  // New schema fields
+  guardianFirstName?: string;
+  guardianLastName?: string;
+  relationshipToMinor?: string;
+  digitalSignature?: string;
+  marketingSmsOptIn?: boolean;
+  marketingEmailOptIn?: boolean;
+  // Backward compatible fields
   guardianName: string;
   guardianEmail: string;
   guardianPhone: string;
   guardianDateOfBirth?: string;
   relationshipToChildren?: string;
   guardian?: { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
-  children: Array<{ name: string; birthDate: string }>;
-  allergies?: string;
-  medicalNotes?: string;
-  insuranceProvider?: string;
-  insurancePolicyNumber?: string;
+  children: Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>;
   signedAt: string;
   expiresAt?: string;
   marketingOptIn: boolean;
@@ -103,15 +107,14 @@ export type AdminWaiver = {
 };
 
 export type AdminWaiverUpdatePayload = Partial<{
-  guardianName: string | null;
+  guardianFirstName: string | null;
+  guardianLastName: string | null;
   guardianEmail: string | null;
   guardianPhone: string | null;
   guardianDateOfBirth: string | null;
-  relationshipToChildren: string | null;
-  allergies: string | null;
-  medicalNotes: string | null;
-  insuranceProvider: string | null;
-  insurancePolicyNumber: string | null;
+  relationshipToMinor: string | null;
+  marketingSmsOptIn: boolean;
+  marketingEmailOptIn: boolean;
   expiresAt: string | null;
   marketingOptIn: boolean;
   children: Array<{ name: string; birthDate: string }>;

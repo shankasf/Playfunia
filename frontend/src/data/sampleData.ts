@@ -115,14 +115,14 @@ export const sampleEvents: EventItem[] = [
       0
     ).toISOString(),
     endDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 11, 0, 0).toISOString(),
-    location: 'Playfunia - Poughkeepsie, NY',
+    location: 'PlayFunia - Albany, NY',
     price: 20,
     tags: ['sensory', 'inclusive'],
   },
   {
     id: 'glow-party',
     title: 'Glow Party Friday',
-    description: 'Neon games, black lights, and a live DJ to kick off the weekend in Deptford.',
+    description: 'Neon games, black lights, and a live DJ to kick off the weekend at PlayFunia.',
     startDate: new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -132,7 +132,7 @@ export const sampleEvents: EventItem[] = [
       0
     ).toISOString(),
     endDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5, 20, 0, 0).toISOString(),
-    location: 'Playfunia - Deptford, NJ',
+    location: 'PlayFunia - Albany, NY',
     price: 25,
     tags: ['party', 'family'],
   },
@@ -142,7 +142,7 @@ export const sampleEvents: EventItem[] = [
     description: 'Snap photos in the party room and enjoy themed crafts with surprise guests.',
     startDate: new Date(now.getFullYear(), now.getMonth() + 1, 3, 13, 0, 0).toISOString(),
     endDate: new Date(now.getFullYear(), now.getMonth() + 1, 3, 15, 0, 0).toISOString(),
-    location: 'Playfunia - Poughkeepsie, NY',
+    location: 'PlayFunia - Albany, NY',
     price: 18,
     tags: ['character', 'photo-op'],
   },

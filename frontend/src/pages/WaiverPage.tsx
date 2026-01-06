@@ -98,13 +98,20 @@ export function WaiverPage() {
       birthDate: toDateInputValue(child.birthDate),
     }));
   }, [existingChildren, latestWaiver]);
-  const waiverSignedDate = latestWaiver?.signedAt
-    ? new Date(latestWaiver.signedAt).toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : null;
+  const formatSignedDateTime = (dateStr?: string) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return null;
+    return date.toLocaleString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+  };
+  const waiverSignedDate = formatSignedDateTime(latestWaiver?.signedAt);
   const summaryHeading = returnUrl
     ? '✅ You already have a valid waiver on file'
     : waiverSignedDate
@@ -134,11 +141,16 @@ export function WaiverPage() {
   }, [user?.id, isWaiverAuthenticated]);
 
   useEffect(() => {
-    if (!user && !isWaiverAuthenticated) {
-      setLatestWaiver(null);
+    // For main users, load waivers immediately
+    if (user) {
+      loadLatestWaiver();
       return;
     }
-    loadLatestWaiver();
+    // For waiver-only users, only load after they've logged in via this page's form
+    // (isReturningUser is set by the login flow, not from localStorage restoration)
+    if (!isWaiverAuthenticated) {
+      setLatestWaiver(null);
+    }
   }, [loadLatestWaiver, user, isWaiverAuthenticated]);
 
   // Load previous waiver data when returning user is detected
@@ -175,9 +187,6 @@ export function WaiverPage() {
       !latestWaiver.children?.length ||
       latestWaiver.children.some((child) => !child.name || !child.birthDate);
 
-    // Note: allergies, medicalNotes, insuranceProvider, insurancePolicyNumber
-    // can be empty strings - that's valid
-
     if (missingRequired) {
       setQuickSignError('Some required details are missing from your previous waiver. Please complete all fields.');
       setShowForm(true);
@@ -195,16 +204,12 @@ export function WaiverPage() {
         guardianPhone: latestWaiver.guardianPhone,
         guardianDob: latestWaiver.guardianDateOfBirth,
         relationshipToChildren: latestWaiver.relationshipToChildren,
-        allergies: latestWaiver.allergies || '',
-        medicalNotes: latestWaiver.medicalNotes || '',
-        insuranceProvider: latestWaiver.insuranceProvider || '',
-        insurancePolicyNumber: latestWaiver.insurancePolicyNumber || '',
         signature: latestWaiver.signature,
         acceptedPolicies: latestWaiver.acceptedPolicies,
         marketingOptIn: latestWaiver.marketingOptIn,
         children: latestWaiver.children.map((child) => ({
-          name: child.name,
-          birthDate: child.birthDate,
+          name: child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim(),
+          birthDate: child.birthDate || child.birth_date,
           gender: child.gender,
         })),
         // Flag for quick re-sign - backend will only record visit if data unchanged
@@ -359,7 +364,17 @@ export function WaiverPage() {
           {waiverUser.hasCompletedWaiver ? (
             <div className={styles.existingWaiverNotice}>
               <div className={styles.summaryHeader}>
-                <h2>✅ Waiver signed for today!</h2>
+                <h2>✅ Waiver signed successfully!</h2>
+                <p className={styles.lastSignedDate}>
+                  📅 Signed on: <strong>{new Date().toLocaleString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}</strong>
+                </p>
                 <p>You're all set. Enjoy your visit to Playfunia!</p>
               </div>
               <div className={styles.waiverActions}>
@@ -375,6 +390,11 @@ export function WaiverPage() {
               <div className={styles.existingWaiverNotice}>
                 <div className={styles.summaryHeader}>
                   <h2>👋 Welcome back!</h2>
+                  {latestWaiver.signedAt && (
+                    <p className={styles.lastSignedDate}>
+                      📅 Last signed: <strong>{formatSignedDateTime(latestWaiver.signedAt)}</strong>
+                    </p>
+                  )}
                   <p>For safety and legal purposes, <strong>a new waiver must be signed for each visit</strong>. Please review your details below.</p>
                 </div>
 
@@ -390,9 +410,9 @@ export function WaiverPage() {
 
                   <div className={styles.summaryBlock}>
                     <h3>Children covered</h3>
-                    {latestWaiver.children?.length ? (
+                    {waiverUser?.children?.length ? (
                       <ul className={styles.childList}>
-                        {latestWaiver.children.map((child, index) => (
+                        {waiverUser.children.map((child, index) => (
                           <li key={`${child.name}-${index}`} className={styles.childItem}>
                             <span className={styles.childName}>{child.name || 'Child name not provided'}</span>
                             <span className={styles.childMeta}>{formatChildBirthDate(child.birthDate)}</span>
@@ -443,18 +463,23 @@ export function WaiverPage() {
                 </div>
               </div>
             ) : (
-              /* No previous waiver found - show form */
+              /* No previous waiver found - show form with saved user data */
               <WaiverForm
                 key="new-waiver-user-form"
                 returnUrl={returnUrl}
-                initialGuardianName={waiverUser.guardianName ?? ''}
-                initialGuardianEmail={waiverUser.email ?? ''}
-                initialGuardianPhone={waiverUser.phone ?? ''}
-                initialGuardianDob={undefined}
-                initialRelationship={undefined}
+                initialGuardianName={waiverUser?.guardianName ?? `${waiverUser?.guardianFirstName ?? ''} ${waiverUser?.guardianLastName ?? ''}`.trim()}
+                initialGuardianEmail={waiverUser?.email ?? ''}
+                initialGuardianPhone={waiverUser?.phone ?? ''}
+                initialGuardianDob={waiverUser?.guardianDateOfBirth ?? undefined}
+                initialRelationship={waiverUser?.relationshipToMinor ?? undefined}
                 initialMarketingOptIn={false}
                 initialSignature={''}
-                initialChildren={[]}
+                initialChildren={waiverUser?.children?.map((child, index) => ({
+                  id: child.id ?? `child-${index}`,
+                  name: child.name ?? '',
+                  birthDate: toDateInputValue(child.birthDate),
+                  gender: child.gender,
+                })) ?? []}
                 onSubmitted={handleWaiverSubmitted}
                 onGoBack={() => { logoutWaiverUser(); setIsReturningUser(false); }}
               />
@@ -467,15 +492,15 @@ export function WaiverPage() {
               <WaiverForm
                 key={latestWaiver?.id ?? 'waiver-user-form-edit'}
                 returnUrl={returnUrl}
-                initialGuardianName={latestWaiver?.guardianName ?? waiverUser.guardianName ?? ''}
-                initialGuardianEmail={latestWaiver?.guardianEmail ?? waiverUser.email ?? ''}
-                initialGuardianPhone={latestWaiver?.guardianPhone ?? waiverUser.phone ?? ''}
-                initialGuardianDob={latestWaiver?.guardianDateOfBirth ?? undefined}
-                initialRelationship={latestWaiver?.relationshipToChildren ?? undefined}
+                initialGuardianName={latestWaiver?.guardianName ?? waiverUser?.guardianName ?? `${waiverUser?.guardianFirstName ?? ''} ${waiverUser?.guardianLastName ?? ''}`.trim()}
+                initialGuardianEmail={latestWaiver?.guardianEmail ?? waiverUser?.email ?? ''}
+                initialGuardianPhone={latestWaiver?.guardianPhone ?? waiverUser?.phone ?? ''}
+                initialGuardianDob={latestWaiver?.guardianDateOfBirth ?? waiverUser?.guardianDateOfBirth ?? undefined}
+                initialRelationship={latestWaiver?.relationshipToChildren ?? waiverUser?.relationshipToMinor ?? undefined}
                 initialMarketingOptIn={latestWaiver?.marketingOptIn ?? false}
                 initialSignature={latestWaiver?.signature ?? ''}
-                initialChildren={latestWaiver?.children?.map((child, index) => ({
-                  id: child.name ? `${child.name}-${index}` : undefined,
+                initialChildren={waiverUser?.children?.map((child, index) => ({
+                  id: child.id ?? `child-${index}`,
                   name: child.name ?? '',
                   birthDate: toDateInputValue(child.birthDate),
                   gender: child.gender,
@@ -485,18 +510,23 @@ export function WaiverPage() {
               />
             )
           ) : (
-            /* New waiver user - no previous waiver found */
+            /* New waiver user - first time signing */
             <WaiverForm
               key="new-waiver-form"
               returnUrl={returnUrl}
-              initialGuardianName={waiverUser.guardianName ?? ''}
-              initialGuardianEmail={waiverUser.email ?? ''}
-              initialGuardianPhone={waiverUser.phone ?? ''}
-              initialGuardianDob={undefined}
-              initialRelationship={undefined}
+              initialGuardianName={waiverUser?.guardianName ?? `${waiverUser?.guardianFirstName ?? ''} ${waiverUser?.guardianLastName ?? ''}`.trim()}
+              initialGuardianEmail={waiverUser?.email ?? ''}
+              initialGuardianPhone={waiverUser?.phone ?? ''}
+              initialGuardianDob={waiverUser?.guardianDateOfBirth ?? undefined}
+              initialRelationship={waiverUser?.relationshipToMinor ?? undefined}
               initialMarketingOptIn={false}
               initialSignature={''}
-              initialChildren={[]}
+              initialChildren={waiverUser?.children?.map((child, index) => ({
+                id: child.id ?? `child-${index}`,
+                name: child.name ?? '',
+                birthDate: toDateInputValue(child.birthDate),
+                gender: child.gender,
+              })) ?? []}
               onSubmitted={handleWaiverSubmitted}
               onGoBack={() => { logoutWaiverUser(); setIsReturningUser(false); }}
             />

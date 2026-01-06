@@ -29,7 +29,7 @@ import { fetchMyWaivers, type GuardianWaiver } from '../api/waivers';
 import { addChild } from '../api/users';
 import styles from './BookPartyPage.module.css';
 
-const PARTY_LOCATIONS = ['Poughkeepsie', 'Deptford'] as const;
+const PARTY_LOCATIONS = ['Albany'] as const;
 const DAYS_TO_SHOW = 5;
 const BOOKING_STATE_KEY = 'playfunia_booking_state';
 
@@ -136,7 +136,7 @@ export function BookPartyPage() {
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
 
   // Booking state
-  const [location, setLocation] = useState<(typeof PARTY_LOCATIONS)[number]>('Poughkeepsie');
+  const [location, setLocation] = useState<(typeof PARTY_LOCATIONS)[number]>('Albany');
   const [dateOffset, setDateOffset] = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [slots, setSlots] = useState<BookingSlotsResponse | null>(null);
@@ -1288,24 +1288,7 @@ export function BookPartyPage() {
                                 </div>
                                 <div>
                                   <span className={styles.waiverLabel}>Relationship</span>
-                                  <div className={styles.waiverValue}>{latestWaiver.relationshipToChildren || '—'}</div>
-                                </div>
-                                <div>
-                                  <span className={styles.waiverLabel}>Allergies</span>
-                                  <div className={styles.waiverValue}>{latestWaiver.allergies || 'None listed'}</div>
-                                </div>
-                                <div>
-                                  <span className={styles.waiverLabel}>Medical notes</span>
-                                  <div className={styles.waiverValue}>{latestWaiver.medicalNotes || 'None listed'}</div>
-                                </div>
-                                <div>
-                                  <span className={styles.waiverLabel}>Insurance</span>
-                                  <div className={styles.waiverValue}>
-                                    {latestWaiver.insuranceProvider || '—'}
-                                    {latestWaiver.insurancePolicyNumber
-                                      ? ` · ${latestWaiver.insurancePolicyNumber}`
-                                      : ''}
-                                  </div>
+                                  <div className={styles.waiverValue}>{latestWaiver.relationshipToChildren || latestWaiver.relationshipToMinor || '—'}</div>
                                 </div>
                                 <div>
                                   <span className={styles.waiverLabel}>Marketing opt-in</span>

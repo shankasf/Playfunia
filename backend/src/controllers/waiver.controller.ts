@@ -55,37 +55,44 @@ export const exportWaiversHandler = asyncHandler(
     const waivers = await listAllWaivers();
 
     // Determine max children across all waivers for column count
-    const maxChildren = waivers.reduce((max, w) => Math.max(max, w.children.length), 0);
+    const maxChildren = waivers.reduce((max, w) => Math.max(max, (w.children as unknown[])?.length ?? 0), 0);
 
     const rows = waivers.map(waiver => {
-      const guardianDob: string = waiver.guardianDateOfBirth
-        ? (waiver.guardianDateOfBirth.toISOString().split('T')[0] ?? '')
+      const guardianDob: string = waiver.guardian_date_of_birth
+        ? String(waiver.guardian_date_of_birth).split('T')[0] ?? ''
         : '';
+      const signedAtStr: string = waiver.date_signed || waiver.signed_at
+        ? String(waiver.date_signed || waiver.signed_at)
+        : '';
+      const expiresAtStr: string = waiver.expires_at
+        ? String(waiver.expires_at)
+        : '';
+
       const row: Record<string, string> = {
-        guardianName: waiver.guardianName,
-        guardianEmail: waiver.guardianEmail,
-        guardianPhone: waiver.guardianPhone ?? '',
+        guardianFirstName: waiver.guardian_first_name ?? '',
+        guardianLastName: waiver.guardian_last_name ?? '',
+        guardianEmail: waiver.guardian_email ?? '',
+        guardianPhone: waiver.guardian_phone ?? '',
         guardianDateOfBirth: guardianDob,
-        relationshipToChildren: waiver.relationshipToChildren ?? '',
-        guardianAccount: getPopulatedGuardianEmail(waiver.guardian),
-        signedAt: waiver.signedAt.toISOString(),
-        expiresAt: waiver.expiresAt ? waiver.expiresAt.toISOString() : '',
-        marketingOptIn: waiver.marketingOptIn ? 'yes' : 'no',
-        allergies: waiver.allergies ?? '',
-        medicalNotes: waiver.medicalNotes ?? '',
-        insuranceProvider: waiver.insuranceProvider ?? '',
-        insurancePolicyNumber: waiver.insurancePolicyNumber ?? '',
-        signature: waiver.signature ?? '',
-        acceptedPolicies: waiver.acceptedPolicies.join('; '),
+        relationshipToMinor: waiver.relationship_to_minor ?? '',
+        guardianAccount: getPopulatedGuardianEmail(waiver.customers ?? waiver.waiver_users),
+        dateSigned: signedAtStr,
+        expiresAt: expiresAtStr,
+        marketingSmsOptIn: waiver.marketing_sms_opt_in ? 'yes' : 'no',
+        marketingEmailOptIn: waiver.marketing_email_opt_in ? 'yes' : 'no',
+        digitalSignature: waiver.digital_signature ?? '',
+        acceptedPolicies: Array.isArray(waiver.accepted_policies) ? waiver.accepted_policies.join('; ') : '',
       };
 
       // Add separate columns for each child
+      const children = (waiver.children ?? []) as Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>;
       for (let i = 0; i < maxChildren; i++) {
-        const child = waiver.children[i];
+        const child = children[i];
         const num = i + 1;
-        row[`child${num}Name`] = child?.name ?? '';
-        const childDob: string = child?.birthDate
-          ? (child.birthDate.toISOString().split('T')[0] ?? '')
+        const childName = child?.name || `${child?.first_name || ''} ${child?.last_name || ''}`.trim();
+        row[`child${num}Name`] = childName ?? '';
+        const childDob: string = child?.birthDate || child?.birth_date
+          ? String(child.birthDate || child.birth_date).split('T')[0] ?? ''
           : '';
         row[`child${num}DOB`] = childDob;
         row[`child${num}Gender`] = child?.gender ?? '';

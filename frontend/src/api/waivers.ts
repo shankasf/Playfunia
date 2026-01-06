@@ -1,22 +1,30 @@
 import { apiGet } from './client';
 
 export type WaiverChild = {
-  name: string;
-  birthDate: string;
+  name?: string;
+  first_name?: string;
+  last_name?: string;
+  birthDate?: string;
+  birth_date?: string;
   gender?: string;
 };
 
 export type GuardianWaiver = {
   id: string;
+  // New schema fields
+  guardianFirstName?: string | null;
+  guardianLastName?: string | null;
+  digitalSignature?: string | null;
+  dateSigned?: string;
+  relationshipToMinor?: string | null;
+  marketingSmsOptIn?: boolean;
+  marketingEmailOptIn?: boolean;
+  // Backward compatible fields (mapped from new schema)
   guardianName: string | null;
   guardianEmail: string | null;
   guardianPhone: string | null;
   guardianDateOfBirth: string | null;
   relationshipToChildren: string | null;
-  allergies: string;
-  medicalNotes: string;
-  insuranceProvider: string;
-  insurancePolicyNumber: string;
   children: WaiverChild[];
   signature: string | null;
   signedAt: string;

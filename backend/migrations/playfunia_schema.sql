@@ -558,24 +558,21 @@ CREATE POLICY "Authenticated access on payments" ON public.payments
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ============================================================
--- 23. WAIVER_USERS
+-- 23. WAIVER_USERS (Guardian/Adult Information)
 -- ============================================================
 CREATE TABLE public.waiver_users (
     waiver_user_id SERIAL PRIMARY KEY,
-    email VARCHAR(200),
-    phone VARCHAR(50),
-    guardian_name VARCHAR(200),
+    guardian_first_name VARCHAR(100) NOT NULL,
+    guardian_last_name VARCHAR(100) NOT NULL,
     guardian_date_of_birth DATE,
-    relationship_to_children VARCHAR(100),
-    allergies TEXT,
-    medical_notes TEXT,
-    insurance_provider VARCHAR(200),
-    insurance_policy_number VARCHAR(100),
+    guardian_phone VARCHAR(50),
+    guardian_email VARCHAR(200),
+    relationship_to_minor VARCHAR(100),
     marketing_opt_in BOOLEAN DEFAULT false,
     last_waiver_signed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now(),
-    CONSTRAINT waiver_users_contact_check CHECK (email IS NOT NULL OR phone IS NOT NULL)
+    CONSTRAINT waiver_users_contact_check CHECK (guardian_email IS NOT NULL OR guardian_phone IS NOT NULL)
 );
 
 ALTER TABLE public.waiver_users ENABLE ROW LEVEL SECURITY;
@@ -588,15 +585,17 @@ CREATE POLICY "Authenticated access on waiver_users" ON public.waiver_users
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ============================================================
--- 24. WAIVER_USER_CHILDREN
+-- 24. WAIVER_USER_CHILDREN (Minor Information - Unlimited Children)
 -- ============================================================
 CREATE TABLE public.waiver_user_children (
     waiver_user_child_id SERIAL PRIMARY KEY,
     waiver_user_id INTEGER NOT NULL REFERENCES public.waiver_users(waiver_user_id) ON DELETE CASCADE,
-    name VARCHAR(200) NOT NULL,
-    birth_date DATE NOT NULL,
-    gender VARCHAR(20),
-    created_at TIMESTAMPTZ DEFAULT now()
+    minor_first_name VARCHAR(100) NOT NULL,
+    minor_last_name VARCHAR(100),
+    minor_date_of_birth DATE NOT NULL,
+    minor_gender VARCHAR(20),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
 );
 
 ALTER TABLE public.waiver_user_children ENABLE ROW LEVEL SECURITY;
@@ -609,27 +608,30 @@ CREATE POLICY "Authenticated access on waiver_user_children" ON public.waiver_us
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ============================================================
--- 25. WAIVER_SUBMISSIONS
+-- 25. WAIVER_SUBMISSIONS (Complete Waiver Record with Digital Signature)
 -- ============================================================
 CREATE TABLE public.waiver_submissions (
     submission_id SERIAL PRIMARY KEY,
     customer_id INTEGER REFERENCES public.customers(customer_id) ON DELETE SET NULL,
     waiver_user_id INTEGER REFERENCES public.waiver_users(waiver_user_id) ON DELETE SET NULL,
-    guardian_name VARCHAR(200) NOT NULL,
-    guardian_email VARCHAR(200),
-    guardian_phone VARCHAR(50),
+    -- Guardian/Adult Information
+    guardian_first_name VARCHAR(100) NOT NULL,
+    guardian_last_name VARCHAR(100) NOT NULL,
     guardian_date_of_birth DATE,
-    relationship_to_children VARCHAR(100),
-    allergies TEXT,
-    medical_notes TEXT,
-    insurance_provider VARCHAR(200),
-    insurance_policy_number VARCHAR(100),
-    children JSONB NOT NULL DEFAULT '[]'::jsonb,
+    guardian_phone VARCHAR(50),
+    guardian_email VARCHAR(200),
+    relationship_to_minor VARCHAR(100),
+    -- Children referenced via child_ids array pointing to waiver_user_children table
     child_ids INTEGER[] DEFAULT '{}',
-    signature TEXT NOT NULL,
+    -- Digital Signature & Agreement
+    digital_signature TEXT NOT NULL,
+    waiver_agreement_accepted BOOLEAN NOT NULL DEFAULT false,
     accepted_policies TEXT[] NOT NULL,
-    marketing_opt_in BOOLEAN DEFAULT false,
-    signed_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    -- Marketing Consent
+    marketing_sms_opt_in BOOLEAN DEFAULT false,
+    marketing_email_opt_in BOOLEAN DEFAULT false,
+    -- Metadata
+    date_signed TIMESTAMPTZ DEFAULT now() NOT NULL,
     expires_at TIMESTAMPTZ,
     archive_until TIMESTAMPTZ,
     ip_address VARCHAR(64),
@@ -727,11 +729,14 @@ CREATE INDEX ix_events_dates ON public.events(start_date, end_date);
 CREATE INDEX ix_memberships_customer ON public.memberships(customer_id);
 CREATE INDEX ix_memberships_status ON public.memberships(status);
 CREATE INDEX ix_announcements_active ON public.announcements(is_active);
-CREATE INDEX ix_waiver_users_email ON public.waiver_users(email);
-CREATE INDEX ix_waiver_users_phone ON public.waiver_users(phone);
+CREATE INDEX ix_waiver_users_email ON public.waiver_users(guardian_email);
+CREATE INDEX ix_waiver_users_phone ON public.waiver_users(guardian_phone);
+CREATE INDEX ix_waiver_users_name ON public.waiver_users(guardian_last_name, guardian_first_name);
 CREATE INDEX ix_waiver_user_children_user ON public.waiver_user_children(waiver_user_id);
 CREATE INDEX ix_waiver_submissions_customer ON public.waiver_submissions(customer_id);
 CREATE INDEX ix_waiver_submissions_waiver_user ON public.waiver_submissions(waiver_user_id);
+CREATE INDEX ix_waiver_submissions_date_signed ON public.waiver_submissions(date_signed DESC);
+CREATE INDEX ix_waiver_user_children_name ON public.waiver_user_children(minor_last_name, minor_first_name);
 CREATE INDEX ix_waiver_visits_user ON public.waiver_visits(waiver_user_id);
 CREATE INDEX ix_waiver_visits_date ON public.waiver_visits(visited_at DESC);
 CREATE INDEX ix_ticket_purchases_customer ON public.ticket_purchases(customer_id);
@@ -957,8 +962,7 @@ VALUES
 -- Locations
 INSERT INTO public.locations (name, address, city, state, postal_code, phone, email)
 VALUES
-    ('Poughkeepsie', '123 Main St', 'Poughkeepsie', 'NY', '12601', '(845) 555-0100', 'poughkeepsie@playfunia.com'),
-    ('Deptford', '456 Oak Ave', 'Deptford', 'NJ', '08096', '(856) 555-0100', 'deptford@playfunia.com');
+    ('Albany', '1 Crossgates Mall Rd, Unit N202, Level 2, Near Macy''s', 'Albany', 'NY', '12203', '+1 (201) 539-5928', 'info@playfunia.com');
 
 -- ============================================================
 -- VERIFY

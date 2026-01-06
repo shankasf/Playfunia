@@ -251,7 +251,7 @@ async function seed() {
     guardian: guardian._id,
     children: children.map(child => child._id),
     partyPackage: partyPackages[0]?._id,
-    location: 'Poughkeepsie',
+    location: 'Albany',
     eventDate: upcomingDate,
     startTime: '10:00',
     endTime: '12:00',

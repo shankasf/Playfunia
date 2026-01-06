@@ -36,7 +36,7 @@ const PARTY_DURATION_MINUTES = 120;
 const EXTRA_HOUR_MINUTES = 60;
 const CLEANING_BUFFER_MINUTES = 30;
 
-const PARTY_LOCATIONS = ['Poughkeepsie', 'Deptford'] as const;
+const PARTY_LOCATIONS = ['Albany'] as const;
 
 const DAILY_SLOTS = ['10:00', '12:30', '15:00', '17:30'];
 

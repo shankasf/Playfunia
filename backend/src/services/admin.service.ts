@@ -97,7 +97,7 @@ export async function getAdminDashboardSummary() {
     supabase
       .from('waiver_submissions')
       .select('*')
-      .order('signed_at', { ascending: false })
+      .order('date_signed', { ascending: false })
       .limit(5),
     // Active memberships
     supabase
@@ -506,7 +506,7 @@ export async function listWaiverUsers(options?: { limit?: number | undefined; se
 
   if (options?.search) {
     const sanitized = sanitizeSearchInput(options.search);
-    query = query.or(`email.ilike.%${sanitized}%,phone.ilike.%${sanitized}%,guardian_name.ilike.%${sanitized}%`);
+    query = query.or(`guardian_email.ilike.%${sanitized}%,guardian_phone.ilike.%${sanitized}%,guardian_first_name.ilike.%${sanitized}%,guardian_last_name.ilike.%${sanitized}%`);
   }
   if (options?.limit) query = query.limit(options.limit);
   
@@ -820,28 +820,26 @@ export async function deleteResource(resourceId: number) {
 // ============= Export Functions =============
 export async function exportWaiversToCsv(): Promise<{
   children: { name: string; birthDate: string; gender?: string }[];
-  guardian_name: string;
+  guardian_first_name: string;
+  guardian_last_name: string;
   guardian_email: string | null;
   guardian_phone: string | null;
   guardian_date_of_birth: string | null;
-  relationship_to_children: string | null;
-  allergies: string | null;
-  medical_notes: string | null;
-  insurance_provider: string | null;
-  insurance_policy_number: string | null;
-  signature: string;
-  signed_at: string;
+  relationship_to_minor: string | null;
+  digital_signature: string;
+  date_signed: string;
   expires_at: string | null;
   archive_until: string | null;
   accepted_policies: string[];
-  marketing_opt_in: boolean | null;
+  marketing_sms_opt_in: boolean | null;
+  marketing_email_opt_in: boolean | null;
 }[]> {
   const { data: waivers, error } = await supabase
     .from('waiver_submissions')
     .select('*')
-    .order('signed_at', { ascending: false })
+    .order('date_signed', { ascending: false })
     .limit(1000);
-  
+
   if (error) throw error;
   return (waivers ?? []) as any;
 }
@@ -849,7 +847,7 @@ export async function exportWaiversToCsv(): Promise<{
 export async function exportContactsToCsv(): Promise<{ name: string; email: string; phone?: string; marketingOptIn: boolean }[]> {
   const [usersResult, waiversResult] = await Promise.all([
     supabaseAny.from('users').select('first_name, last_name, email, phone'),
-    supabaseAny.from('waiver_submissions').select('guardian_name, guardian_email, guardian_phone, marketing_opt_in'),
+    supabaseAny.from('waiver_submissions').select('guardian_first_name, guardian_last_name, guardian_email, guardian_phone, marketing_sms_opt_in, marketing_email_opt_in'),
   ]);
 
   const contacts = new Map<string, { name: string; email: string; phone?: string; marketingOptIn: boolean }>();
@@ -865,15 +863,16 @@ export async function exportContactsToCsv(): Promise<{ name: string; email: stri
     });
   });
 
-  ((waiversResult.data ?? []) as Array<{ guardian_name: string; guardian_email: string | null; guardian_phone: string | null; marketing_opt_in: boolean | null }>).forEach(waiver => {
+  ((waiversResult.data ?? []) as Array<{ guardian_first_name: string; guardian_last_name: string; guardian_email: string | null; guardian_phone: string | null; marketing_sms_opt_in: boolean | null; marketing_email_opt_in: boolean | null }>).forEach(waiver => {
     if (!waiver.guardian_email) return;
     const key = waiver.guardian_email.toLowerCase();
     const existing = contacts.get(key);
+    const guardianName = `${waiver.guardian_first_name ?? ''} ${waiver.guardian_last_name ?? ''}`.trim();
     contacts.set(key, {
-      name: waiver.guardian_name ?? existing?.name ?? '',
+      name: guardianName || existing?.name || '',
       email: waiver.guardian_email,
       phone: existing?.phone ?? waiver.guardian_phone ?? undefined,
-      marketingOptIn: waiver.marketing_opt_in || existing?.marketingOptIn || false,
+      marketingOptIn: waiver.marketing_sms_opt_in || waiver.marketing_email_opt_in || existing?.marketingOptIn || false,
     });
   });
 

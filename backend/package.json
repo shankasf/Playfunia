@@ -12,6 +12,7 @@
     "format": "prettier --write src/**/*.{ts,tsx,js,json}",
     "typecheck": "tsc --noEmit",
     "seed": "ts-node --project tsconfig.json scripts/seed.ts",
+    "seed:waivers": "ts-node --project tsconfig.json scripts/seed-waivers.ts",
     "prepare": "husky install"
   },
   "keywords": [],
@@ -23,6 +24,7 @@
     "bcryptjs": "^3.0.2",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
+    "csv-parse": "^6.1.0",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",

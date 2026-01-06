@@ -127,6 +127,16 @@
   text-align: center;
 }
 
+.lastSignedDate {
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  margin: 0.25rem 0;
+}
+
+.lastSignedDate strong {
+  color: var(--color-primary);
+}
+
 .existingWaiverNotice h2 {
   margin: 0;
   color: #1aa45d;
