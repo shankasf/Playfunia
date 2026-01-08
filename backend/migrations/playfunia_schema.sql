@@ -85,6 +85,7 @@ CREATE TABLE public.customers (
     phone VARCHAR(50),
     address TEXT,
     notes TEXT,
+    is_guest BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -300,7 +301,8 @@ CREATE POLICY "Authenticated read on promotions" ON public.promotions
 CREATE TABLE public.users (
     user_id SERIAL PRIMARY KEY,
     email VARCHAR(200) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255),  -- Nullable: Supabase Auth handles passwords
+    auth_user_id UUID UNIQUE,    -- Links to Supabase auth.users.id
     first_name VARCHAR(100),
     last_name VARCHAR(100),
     phone VARCHAR(50),
@@ -722,6 +724,7 @@ CREATE POLICY "Authenticated access on app_payments" ON public.app_payments
 CREATE INDEX ix_users_email ON public.users(email);
 CREATE INDEX ix_users_customer ON public.users(customer_id);
 CREATE INDEX ix_users_phone ON public.users(phone);
+CREATE INDEX ix_users_auth_user_id ON public.users(auth_user_id);
 CREATE INDEX ix_children_customer ON public.children(customer_id);
 CREATE INDEX ix_events_location ON public.events(location_id);
 CREATE INDEX ix_events_published ON public.events(is_published);
@@ -884,6 +887,80 @@ GRANT EXECUTE ON FUNCTION public.record_membership_reminder(INTEGER, VARCHAR, VA
 GRANT EXECUTE ON FUNCTION public.process_membership_reminders() TO service_role;
 
 -- ============================================================
+-- FUNCTION: Supabase Auth User Auto-Link
+-- Automatically links Supabase auth.users to public.users on signup
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.handle_new_auth_user()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_customer_id INTEGER;
+    v_full_name TEXT;
+BEGIN
+    -- Check if user already exists by email
+    IF EXISTS (SELECT 1 FROM public.users WHERE email = NEW.email) THEN
+        -- Link existing user to Supabase auth
+        UPDATE public.users
+        SET auth_user_id = NEW.id,
+            updated_at = NOW()
+        WHERE email = NEW.email;
+    ELSE
+        -- Build full name from metadata
+        v_full_name := TRIM(
+            COALESCE(NEW.raw_user_meta_data->>'first_name', '') || ' ' ||
+            COALESCE(NEW.raw_user_meta_data->>'last_name', '')
+        );
+        IF v_full_name = '' OR v_full_name = ' ' THEN
+            v_full_name := SPLIT_PART(NEW.email, '@', 1);
+        END IF;
+
+        -- Create customer record first
+        INSERT INTO public.customers (full_name, email, phone, created_at, updated_at)
+        VALUES (
+            v_full_name,
+            NEW.email,
+            NEW.raw_user_meta_data->>'phone',
+            NOW(),
+            NOW()
+        )
+        RETURNING customer_id INTO v_customer_id;
+
+        -- Create new user linked to Supabase auth and customer
+        INSERT INTO public.users (
+            email,
+            auth_user_id,
+            first_name,
+            last_name,
+            phone,
+            customer_id,
+            roles,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            NEW.email,
+            NEW.id,
+            COALESCE(NEW.raw_user_meta_data->>'first_name', ''),
+            COALESCE(NEW.raw_user_meta_data->>'last_name', ''),
+            NEW.raw_user_meta_data->>'phone',
+            v_customer_id,
+            ARRAY['user'],
+            NOW(),
+            NOW()
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Drop existing trigger if it exists, then create
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_auth_user();
+
+GRANT EXECUTE ON FUNCTION public.handle_new_auth_user() TO service_role;
+
+-- ============================================================
 -- GRANTS FOR ALL TABLES AND SEQUENCES
 -- ============================================================
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
@@ -897,11 +974,11 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon;
 -- SEED DATA
 -- ============================================================
 
--- Default admin user (password: alikhan1122@)
-INSERT INTO public.users (email, password_hash, first_name, last_name, roles)
+-- Default admin user (NOTE: Use Supabase Auth to sign up, then run trigger manually or login via magic link)
+-- Once signed in via Supabase Auth, the trigger will auto-link this user
+INSERT INTO public.users (email, first_name, last_name, roles)
 VALUES (
     'ali@kidz4fun.com',
-    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
     'Ali',
     'Admin',
     ARRAY['user', 'admin']::text[]

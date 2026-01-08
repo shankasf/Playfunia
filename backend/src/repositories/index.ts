@@ -93,6 +93,61 @@ export const UserRepository = {
     return data;
   },
 
+  async findByAuthUserId(authUserId: string) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*, customers(*)')
+      .eq('auth_user_id', authUserId)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async createFromSupabaseAuth(authUser: {
+    id: string;
+    email: string;
+    user_metadata?: {
+      first_name?: string;
+      last_name?: string;
+      phone?: string;
+    };
+  }) {
+    const firstName = authUser.user_metadata?.first_name ?? '';
+    const lastName = authUser.user_metadata?.last_name ?? '';
+    const phone = authUser.user_metadata?.phone;
+
+    // First create a customer record
+    const { data: customer, error: customerError } = await supabase
+      .from('customers')
+      .insert({
+        full_name: `${firstName} ${lastName}`.trim() || 'New User',
+        email: authUser.email.toLowerCase(),
+        phone,
+      })
+      .select()
+      .single();
+
+    if (customerError) throw customerError;
+
+    // Then create the user linked to the customer and Supabase auth
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
+        email: authUser.email.toLowerCase(),
+        first_name: firstName || null,
+        last_name: lastName || null,
+        phone: phone || null,
+        auth_user_id: authUser.id,
+        roles: ['user'],
+        customer_id: customer.customer_id,
+      })
+      .select('*, customers(*)')
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
   async create(userData: {
     email: string;
     password_hash: string;
@@ -209,6 +264,60 @@ export const CustomerRepository = {
     const { data, error } = await supabaseAny.from('customers').select('*');
     if (error) throw error;
     return data ?? [];
+  },
+
+  /**
+   * Find an existing guest customer by email or create a new one.
+   * This ensures guest data is properly stored in the customers table.
+   */
+  async findOrCreateGuest(guestData: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+  }) {
+    const normalizedEmail = guestData.email.toLowerCase().trim();
+
+    // First, try to find existing customer by email
+    const { data: existing, error: findError } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('email', normalizedEmail)
+      .single();
+
+    if (findError && findError.code !== 'PGRST116') throw findError;
+
+    // If customer exists, update their info and return
+    if (existing) {
+      const { data: updated, error: updateError } = await supabase
+        .from('customers')
+        .update({
+          full_name: `${guestData.firstName} ${guestData.lastName}`.trim(),
+          phone: guestData.phone,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('customer_id', existing.customer_id)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+      return updated;
+    }
+
+    // Create new guest customer
+    const { data: newCustomer, error: createError } = await supabase
+      .from('customers')
+      .insert({
+        full_name: `${guestData.firstName} ${guestData.lastName}`.trim(),
+        email: normalizedEmail,
+        phone: guestData.phone,
+        is_guest: true,
+      })
+      .select()
+      .single();
+
+    if (createError) throw createError;
+    return newCustomer;
   },
 };
 

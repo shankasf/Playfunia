@@ -1,10 +1,10 @@
 import { Router } from 'express';
 
 import { getCurrentUserHandler, addChildHandler, deleteChildHandler } from '../controllers/user.controller';
-import { authGuard } from '../middleware/auth.middleware';
+import { supabaseAuthGuard } from '../middleware/supabase-auth.middleware';
 
 export const userRouter = Router();
 
-userRouter.get('/me', authGuard, getCurrentUserHandler);
-userRouter.post('/me/children', authGuard, addChildHandler);
-userRouter.delete('/me/children/:childId', authGuard, deleteChildHandler);
+userRouter.get('/me', supabaseAuthGuard, getCurrentUserHandler);
+userRouter.post('/me/children', supabaseAuthGuard, addChildHandler);
+userRouter.delete('/me/children/:childId', supabaseAuthGuard, deleteChildHandler);

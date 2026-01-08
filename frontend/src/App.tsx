@@ -20,6 +20,9 @@ const ContactPage = lazy(() => import("./pages/ContactPage").then(m => ({ defaul
 const WaiverPage = lazy(() => import("./pages/WaiverPage").then(m => ({ default: m.WaiverPage })));
 const AccountPage = lazy(() => import("./pages/AccountPage").then(m => ({ default: m.AccountPage })));
 const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage").then(m => ({ default: m.AdminDashboardPage })));
+const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage").then(m => ({ default: m.AuthCallbackPage })));
+const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
+const CartPage = lazy(() => import("./pages/CartPage").then(m => ({ default: m.CartPage })));
 
 function App() {
   return (
@@ -63,6 +66,14 @@ function App() {
           element={
             <Suspense fallback={<PageLoader />}>
               <CheckoutPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="cart"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <CartPage />
             </Suspense>
           }
         />
@@ -119,6 +130,22 @@ function App() {
           element={
             <Suspense fallback={<PageLoader />}>
               <AdminDashboardPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="auth/callback"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <AuthCallbackPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="auth/reset-password"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <ResetPasswordPage />
             </Suspense>
           }
         />

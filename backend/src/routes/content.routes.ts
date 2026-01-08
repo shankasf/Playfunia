@@ -12,7 +12,7 @@ import {
   updateFaqHandler,
   updateTestimonialHandler,
 } from '../controllers/content.controller';
-import { authGuard, requireRoles } from '../middleware/auth.middleware';
+import { supabaseAuthGuard, requireRoles } from '../middleware/supabase-auth.middleware';
 import { cachePublic } from '../middleware/cache.middleware';
 
 export const contentRouter = Router();
@@ -23,7 +23,7 @@ contentRouter.get('/testimonials', cachePublic(300), listTestimonialsHandler);
 contentRouter.get('/announcements', cachePublic(60), listAnnouncementsHandler);
 contentRouter.get('/instagram', cachePublic(300), listInstagramPostsHandler);
 
-contentRouter.use(authGuard, requireRoles('admin', 'staff'));
+contentRouter.use(supabaseAuthGuard, requireRoles('admin', 'staff'));
 
 contentRouter.post('/faqs', createFaqHandler);
 contentRouter.put('/faqs/:faqId', updateFaqHandler);

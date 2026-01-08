@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const reserveTicketsSchema = z.object({
   guardianId: z.string().min(1),
+  customerId: z.number().int().positive().optional(),
   type: z.enum(["general", "event"]),
   eventId: z.string().min(1).optional(),
   quantity: z.number().int().min(1),

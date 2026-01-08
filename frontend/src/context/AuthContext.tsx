@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
 
+import { supabase } from '../lib/supabase';
 import { apiGet, apiPost, setAuthToken } from '../api/client';
 
 type MembershipStatus = {
@@ -35,15 +37,35 @@ type User = {
   createdAt?: string;
 };
 
-type AuthResponse = {
-  token: string;
-  user: unknown;
-};
-
 interface AuthContextValue {
   user: User | null;
-  token: string | null;
+  session: Session | null;
   isLoading: boolean;
+  // Email/Password methods
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    phone?: string;
+  }) => Promise<void>;
+  // Magic Link (OTP) method
+  signInWithMagicLink: (email: string) => Promise<{ success: boolean; message: string }>;
+  // Google OAuth
+  signInWithGoogle: () => Promise<void>;
+  // Password reset
+  resetPassword: (email: string) => Promise<{ success: boolean; message: string }>;
+  updatePassword: (newPassword: string) => Promise<void>;
+  // Session management
+  logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  // Role helpers
+  hasRole: (role: string) => boolean;
+  isAdmin: boolean;
+  isStaff: boolean;
+  isTeamMember: boolean;
+  // Legacy methods for backward compatibility during transition
   login: (email: string, password: string) => Promise<void>;
   register: (input: {
     firstName: string;
@@ -52,147 +74,196 @@ interface AuthContextValue {
     password: string;
     phone?: string;
   }) => Promise<void>;
-  logout: () => void;
-  refreshProfile: () => Promise<void>;
-  hasRole: (role: string) => boolean;
-  isAdmin: boolean;
-  isStaff: boolean;
-  isTeamMember: boolean;
+  token: string | null;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-const STORAGE_KEY = 'playfunia_token';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadProfile = useCallback(async (authToken: string) => {
+  // Load user profile from backend
+  const loadProfile = useCallback(async (accessToken: string) => {
     try {
-      const response = await apiGet<{ user: unknown }>('/users/me', {
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
+      setAuthToken(accessToken);
+      const response = await apiGet<{ user: unknown }>('/users/me');
       setUser(normalizeUser(response.user));
     } catch (error) {
-      console.warn('Unable to refresh profile', error);
-      setUser(null);
-      setAuthToken(null);
-      localStorage.removeItem(STORAGE_KEY);
+      console.warn('Unable to load profile, trying to sync...', error);
+      // Profile doesn't exist yet, sync it
+      try {
+        await apiPost('/auth/sync-profile', {});
+        const retryResponse = await apiGet<{ user: unknown }>('/users/me');
+        setUser(normalizeUser(retryResponse.user));
+      } catch (syncError) {
+        console.error('Failed to sync profile', syncError);
+        setUser(null);
+      }
     }
   }, []);
 
+  // Initialize auth state
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      setToken(stored);
-      setAuthToken(stored);
-      loadProfile(stored).finally(() => setIsLoading(false));
-    } else {
-      setIsLoading(false);
-    }
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      setSession(initialSession);
+      if (initialSession?.access_token) {
+        loadProfile(initialSession.access_token).finally(() => setIsLoading(false));
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        setSession(newSession);
+
+        if (newSession?.access_token) {
+          setAuthToken(newSession.access_token);
+          await loadProfile(newSession.access_token);
+        } else {
+          setAuthToken(null);
+          setUser(null);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, [loadProfile]);
 
-  const persistAuth = useCallback(
-    async (data: AuthResponse) => {
-      setToken(data.token);
-      setUser(normalizeUser(data.user));
-      localStorage.setItem(STORAGE_KEY, data.token);
-      setAuthToken(data.token);
-      try {
-        await loadProfile(data.token);
-      } catch (error) {
-        console.warn('Unable to refresh profile after authentication', error);
-      }
-    },
-    [loadProfile]
-  );
-
-  const refreshProfile = useCallback(async () => {
-    const activeToken = token ?? localStorage.getItem(STORAGE_KEY);
-    if (!activeToken) {
-      return;
-    }
-    await loadProfile(activeToken);
-  }, [token, loadProfile]);
-
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const result = await apiPost<AuthResponse, { email: string; password: string }>(
-        '/auth/login',
-        {
-          email,
-          password,
-        }
-      );
-      await persistAuth(result);
-    },
-    [persistAuth]
-  );
-
-  const register = useCallback(
-    async (input: {
-      firstName: string;
-      lastName: string;
-      email: string;
-      password: string;
-      phone?: string;
-    }) => {
-      const result = await apiPost<AuthResponse, typeof input>('/auth/register', input);
-      await persistAuth(result);
-    },
-    [persistAuth]
-  );
-
-  const logout = useCallback(() => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem(STORAGE_KEY);
-    // Also clear waiver auth when main auth logs out
-    localStorage.removeItem('playfunia_waiver_auth');
-    setAuthToken(null);
+  // Sign in with email/password
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw new Error(error.message);
   }, []);
 
-  const hasRole = useCallback(
-    (role: string) => {
-      if (!user) return false;
-      return user.roles.includes(role);
-    },
-    [user]
-  );
+  // Sign up with email/password
+  const signUpWithEmail = useCallback(async (input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    phone?: string;
+  }) => {
+    const { error } = await supabase.auth.signUp({
+      email: input.email,
+      password: input.password,
+      options: {
+        data: {
+          first_name: input.firstName,
+          last_name: input.lastName,
+          phone: input.phone,
+        },
+      },
+    });
+    if (error) throw new Error(error.message);
+  }, []);
+
+  // Sign in with magic link (OTP)
+  const signInWithMagicLink = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) {
+      return { success: false, message: error.message };
+    }
+    return { success: true, message: 'Check your email for a sign-in link!' };
+  }, []);
+
+  // Sign in with Google
+  const signInWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) throw new Error(error.message);
+  }, []);
+
+  // Reset password
+  const resetPassword = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`,
+    });
+    if (error) {
+      return { success: false, message: error.message };
+    }
+    return { success: true, message: 'Password reset email sent!' };
+  }, []);
+
+  // Update password
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw new Error(error.message);
+  }, []);
+
+  // Logout
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
+    setAuthToken(null);
+    localStorage.removeItem('playfunia_waiver_auth');
+  }, []);
+
+  const refreshProfile = useCallback(async () => {
+    if (session?.access_token) {
+      await loadProfile(session.access_token);
+    }
+  }, [session, loadProfile]);
+
+  const hasRole = useCallback((role: string) => {
+    return user?.roles.includes(role) ?? false;
+  }, [user]);
 
   const isAdmin = hasRole('admin');
   const isStaff = hasRole('staff');
   const isTeamMember = isAdmin || isStaff;
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
-      token,
-      isLoading,
-      login,
-      register,
-      logout,
-      refreshProfile,
-      hasRole,
-      isAdmin,
-      isStaff,
-      isTeamMember,
-    }),
-    [
-      user,
-      token,
-      isLoading,
-      login,
-      register,
-      logout,
-      refreshProfile,
-      hasRole,
-      isAdmin,
-      isStaff,
-      isTeamMember,
-    ]
-  );
+  // Legacy methods for backward compatibility
+  const login = signInWithEmail;
+  const register = signUpWithEmail;
+  const token = session?.access_token ?? null;
+
+  const value = useMemo<AuthContextValue>(() => ({
+    user,
+    session,
+    isLoading,
+    signInWithEmail,
+    signUpWithEmail,
+    signInWithMagicLink,
+    signInWithGoogle,
+    resetPassword,
+    updatePassword,
+    logout,
+    refreshProfile,
+    hasRole,
+    isAdmin,
+    isStaff,
+    isTeamMember,
+    // Legacy
+    login,
+    register,
+    token,
+  }), [
+    user, session, isLoading,
+    signInWithEmail, signUpWithEmail, signInWithMagicLink, signInWithGoogle,
+    resetPassword, updatePassword, logout, refreshProfile,
+    hasRole, isAdmin, isStaff, isTeamMember,
+    login, register, token,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

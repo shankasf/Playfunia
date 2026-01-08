@@ -1,13 +1,13 @@
 import { Router } from "express";
 
 import { exportWaiversHandler, listWaiversHandler, signWaiverHandler } from "../controllers/waiver.controller";
-import { authGuard, requireRoles, waiverAuthGuard } from "../middleware/auth.middleware";
+import { supabaseAuthGuard, supabaseWaiverAuthGuard, requireRoles } from "../middleware/supabase-auth.middleware";
 
 export const waiverRouter = Router();
 
 // These routes accept both regular users and waiver-only users
-waiverRouter.post("/", waiverAuthGuard, signWaiverHandler);
-waiverRouter.get("/", waiverAuthGuard, listWaiversHandler);
+waiverRouter.post("/", supabaseWaiverAuthGuard, signWaiverHandler);
+waiverRouter.get("/", supabaseWaiverAuthGuard, listWaiversHandler);
 
 // Admin export requires full auth
-waiverRouter.get("/export", authGuard, requireRoles("admin", "staff"), exportWaiversHandler);
+waiverRouter.get("/export", supabaseAuthGuard, requireRoles("admin", "staff"), exportWaiversHandler);

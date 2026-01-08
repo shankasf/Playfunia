@@ -41,6 +41,7 @@ export interface Database {
           child_name: string | null;
           child_birthdate: string | null;
           notes: string | null;
+          is_guest: boolean | null;
           created_at: string | null;
         };
         Insert: {
@@ -52,6 +53,7 @@ export interface Database {
           child_name?: string | null;
           child_birthdate?: string | null;
           notes?: string | null;
+          is_guest?: boolean | null;
           created_at?: string | null;
         };
         Update: {
@@ -63,6 +65,7 @@ export interface Database {
           child_name?: string | null;
           child_birthdate?: string | null;
           notes?: string | null;
+          is_guest?: boolean | null;
           created_at?: string | null;
         };
       };
@@ -843,7 +846,8 @@ export interface Database {
         Row: {
           user_id: number;
           email: string;
-          password_hash: string;
+          password_hash: string | null;  // Nullable: Supabase Auth handles passwords
+          auth_user_id: string | null;   // Links to Supabase auth.users.id
           first_name: string | null;
           last_name: string | null;
           phone: string | null;
@@ -861,7 +865,8 @@ export interface Database {
         Insert: {
           user_id?: number;
           email: string;
-          password_hash: string;
+          password_hash?: string | null;
+          auth_user_id?: string | null;
           first_name?: string | null;
           last_name?: string | null;
           phone?: string | null;
@@ -878,7 +883,8 @@ export interface Database {
         Update: {
           user_id?: number;
           email?: string;
-          password_hash?: string;
+          password_hash?: string | null;
+          auth_user_id?: string | null;
           first_name?: string | null;
           last_name?: string | null;
           phone?: string | null;

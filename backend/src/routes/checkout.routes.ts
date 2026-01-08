@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import { authGuard } from '../middleware/auth.middleware';
+import { supabaseAuthGuard } from '../middleware/supabase-auth.middleware';
 import {
   createCheckoutIntentHandler,
   finalizeCheckoutHandler,
@@ -15,5 +15,5 @@ checkoutRouter.post('/guest/intent', createGuestCheckoutIntentHandler);
 checkoutRouter.post('/guest/finalize', finalizeGuestCheckoutHandler);
 
 // Authenticated checkout routes
-checkoutRouter.post('/intent', authGuard, createCheckoutIntentHandler);
-checkoutRouter.post('/finalize', authGuard, finalizeCheckoutHandler);
+checkoutRouter.post('/intent', supabaseAuthGuard, createCheckoutIntentHandler);
+checkoutRouter.post('/finalize', supabaseAuthGuard, finalizeCheckoutHandler);

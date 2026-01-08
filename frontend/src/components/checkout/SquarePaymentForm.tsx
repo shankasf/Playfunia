@@ -1,9 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Card, Payments, TokenResult } from '@square/web-payments-sdk-types';
+import type { Card, Payments, TokenResult, ChargeCardVerificationDetails } from '@square/web-payments-sdk-types';
 
 import { initializeSquare } from "../../lib/square";
 import { PrimaryButton } from "../common/PrimaryButton";
 import styles from "./PaymentForm.module.css";
+
+// Billing contact info for SCA/3DS verification
+export type BillingContact = {
+  givenName?: string;
+  familyName?: string;
+  email?: string;
+  phone?: string;
+  addressLines?: string[];
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  countryCode?: string;
+};
 
 type SquarePaymentFormProps = {
   amount: number;
@@ -11,11 +24,12 @@ type SquarePaymentFormProps = {
   description?: string;
   submitLabel?: string;
   processingLabel?: string;
+  billingContact?: BillingContact;
   onSuccess: (sourceId: string, verificationToken?: string) => Promise<void> | void;
 };
 
 export function SquarePaymentForm(props: SquarePaymentFormProps) {
-  const { amount, currency, description, submitLabel, processingLabel, onSuccess } = props;
+  const { amount, currency, description, submitLabel, processingLabel, billingContact, onSuccess } = props;
 
   const [, setPayments] = useState<Payments | null>(null);
   const [card, setCard] = useState<Card | null>(null);
@@ -105,9 +119,32 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
     setErrorMessage(null);
 
     try {
-      // Tokenize the card
+      // Build verification details for SCA/3DS (per Square standard)
+      // Only include verification details if billing contact is provided
+      const verificationDetails: ChargeCardVerificationDetails | undefined = billingContact
+        ? {
+            amount: amount.toFixed(2),
+            currencyCode: currency.toUpperCase(),
+            intent: 'CHARGE',
+            customerInitiated: true,
+            sellerKeyedIn: false,
+            billingContact: {
+              givenName: billingContact.givenName,
+              familyName: billingContact.familyName,
+              email: billingContact.email,
+              phone: billingContact.phone,
+              addressLines: billingContact.addressLines,
+              city: billingContact.city,
+              state: billingContact.state,
+              postalCode: billingContact.postalCode,
+              countryCode: billingContact.countryCode || 'US',
+            },
+          }
+        : undefined;
+
+      // Tokenize the card with optional verification details
       console.log('[Square] Tokenizing card...');
-      const tokenResult: TokenResult = await card.tokenize();
+      const tokenResult: TokenResult = await card.tokenize(verificationDetails);
       console.log('[Square] Token result:', tokenResult);
 
       if (tokenResult.status !== 'OK' || !tokenResult.token) {
@@ -156,22 +193,7 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
 
       <div
         ref={cardContainerRef}
-        style={{
-          minHeight: '56px',
-          background: '#ffffff',
-          borderRadius: '10px',
-          padding: '14px 16px',
-          border: '2px solid #e5e7eb',
-          transition: 'border-color 0.2s, box-shadow 0.2s',
-        }}
-        onFocus={(e) => {
-          e.currentTarget.style.borderColor = '#ff6b9d';
-          e.currentTarget.style.boxShadow = '0 0 0 3px rgba(255, 107, 157, 0.1)';
-        }}
-        onBlur={(e) => {
-          e.currentTarget.style.borderColor = '#e5e7eb';
-          e.currentTarget.style.boxShadow = 'none';
-        }}
+        className={styles.cardContainer}
       />
 
       {errorMessage ? <p className={styles.error}>{errorMessage}</p> : null}

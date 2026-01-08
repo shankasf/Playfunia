@@ -584,6 +584,141 @@ input:focus {
   text-decoration: underline;
 }
 
+/* Google Button */
+.googleButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.875rem 1rem;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 1rem;
+}
+
+.googleButton:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.googleButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+
+.divider span {
+  color: #94a3b8;
+  font-size: 0.875rem;
+}
+
+/* Mode Header */
+.modeHeader {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.modeHeader h2 {
+  margin: 0 0 0.5rem;
+  color: #1e293b;
+  font-size: 1.5rem;
+}
+
+.modeHeader p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+/* Footer Links */
+.footerLinks {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #4f46e5;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+.linkDivider {
+  color: #cbd5e1;
+}
+
+/* Success Message */
+.successMessage {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.successIcon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 1.5rem;
+  background: #dcfce7;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.successIcon svg {
+  width: 32px;
+  height: 32px;
+  color: #16a34a;
+}
+
+.successMessage h2 {
+  margin: 0 0 0.75rem;
+  color: #1e293b;
+  font-size: 1.5rem;
+}
+
+.successMessage p {
+  margin: 0 0 0.5rem;
+  color: #475569;
+}
+
+.hintText {
+  color: #94a3b8 !important;
+  font-size: 0.875rem;
+  margin-top: 1rem !important;
+}
+
 .membership {
   display: flex;
   flex-direction: column;

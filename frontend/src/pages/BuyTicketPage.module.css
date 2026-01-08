@@ -342,3 +342,36 @@
     font-size: 1.1rem;
   }
 }
+
+/* Payment section styles */
+.paymentSection {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(31, 102, 255, 0.04), rgba(255, 107, 157, 0.04));
+  border: 2px solid rgba(31, 102, 255, 0.15);
+  border-radius: 16px;
+  margin-top: 0.5rem;
+}
+
+.paymentSection h3 {
+  font-size: 1.15rem;
+  color: #1a265a;
+  margin: 0;
+  text-align: center;
+}
+
+.backLink {
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0.5rem;
+  transition: color 0.2s;
+}
+
+.backLink:hover {
+  color: #1f66ff;
+}

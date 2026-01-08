@@ -11,6 +11,8 @@ const envSchema = z
     // MONGO_URL: z.string().default('mongodb://localhost:27017/playfunia'),
     SUPABASE_URL: z.string().optional(),
     SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+    SUPABASE_ANON_KEY: z.string().optional(),
+    SUPABASE_JWT_SECRET: z.string().optional(),
     JWT_SECRET: z.string().optional(),
     // Square Payment Integration (primary payment method)
     SQUARE_ACCESS_TOKEN: z.string().optional(),
@@ -27,7 +29,7 @@ const envSchema = z
     DEFAULT_ADMIN_PASSWORD: z.string().optional(),
     INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_USER_ID: z.string().optional(),
-    // SMTP Email Configuration
+    // SMTP Email Configuration (legacy)
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().optional(),
     SMTP_SECURE: z.coerce.boolean().default(false),
@@ -35,6 +37,10 @@ const envSchema = z
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().optional(),
     SMTP_FROM_NAME: z.string().default('Playfunia'),
+    // Resend Email Configuration
+    RESEND_API_KEY: z.string().optional(),
+    EMAIL_FROM: z.string().default('noreply@playfunia.com'),
+    EMAIL_FROM_NAME: z.string().default('Playfunia'),
   })
   .strip();
 
@@ -56,6 +62,8 @@ export const appConfig = {
   port: env.PORT,
   supabaseUrl: env.SUPABASE_URL,
   supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY,
+  supabaseAnonKey: env.SUPABASE_ANON_KEY,
+  supabaseJwtSecret: env.SUPABASE_JWT_SECRET,
   jwtSecret: env.JWT_SECRET,
   // Square Payment Integration
   squareAccessToken: env.SQUARE_ACCESS_TOKEN,
@@ -72,7 +80,7 @@ export const appConfig = {
   defaultAdminPassword: env.DEFAULT_ADMIN_PASSWORD,
   instagramAccessToken: env.INSTAGRAM_ACCESS_TOKEN,
   instagramUserId: env.INSTAGRAM_USER_ID,
-  // SMTP Email Configuration
+  // SMTP Email Configuration (legacy)
   smtpHost: env.SMTP_HOST,
   smtpPort: env.SMTP_PORT,
   smtpSecure: env.SMTP_SECURE,
@@ -80,4 +88,8 @@ export const appConfig = {
   smtpPass: env.SMTP_PASS,
   smtpFrom: env.SMTP_FROM,
   smtpFromName: env.SMTP_FROM_NAME,
+  // Resend Email Configuration
+  resendApiKey: env.RESEND_API_KEY,
+  emailFrom: env.EMAIL_FROM,
+  emailFromName: env.EMAIL_FROM_NAME,
 };

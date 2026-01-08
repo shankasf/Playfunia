@@ -6,6 +6,7 @@ export const squareCheckoutItemSchema = z.discriminatedUnion('type', [
     label: z.string().min(1),
     quantity: z.number().int().min(1),
     unitPrice: z.number().positive(),
+    eventId: z.string().optional(),
     metadata: z.record(z.string(), z.any()).optional(),
   }),
   z.object({

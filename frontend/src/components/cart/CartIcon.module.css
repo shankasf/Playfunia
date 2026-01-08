@@ -1,0 +1,38 @@
+.cartLink {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.cartLink:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.cartIcon {
+  width: 22px;
+  height: 22px;
+  color: #374151;
+}
+
+.badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #7c3aed;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 600;
+}

@@ -3,10 +3,12 @@ import type { CreatePaymentRequest, Money } from 'square';
 
 import { getSquareClient, getSquareLocationId } from '../config/square';
 import { appConfig } from '../config/env';
-import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository } from '../repositories';
+import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { reserveTickets } from './ticket.service';
 import { purchaseMembership } from './membership.service';
+import { sendOrderConfirmation } from './email.service';
+import { generateReceiptPDF } from './receipt.service';
 
 import type {
   SquareCheckoutIntentInput,
@@ -372,7 +374,8 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
       const pricePerTicket = line.quantity > 0 ? roundCurrency(line.total / line.quantity) : item.unitPrice;
       const ticket = await reserveTickets({
         guardianId: userId,
-        type: 'general',
+        type: item.eventId ? 'event' : 'general',
+        eventId: item.eventId,
         quantity: item.quantity,
         price: pricePerTicket,
         metadata: {
@@ -392,6 +395,62 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
         autoRenew: item.autoRenew,
       });
       membershipResults.push({ cartIndex: index, membership });
+    }
+  }
+
+  // Send confirmation email with PDF receipt
+  if (user.email) {
+    const orderNumber = `PF-${order.order_id}`;
+    const orderDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    // Build items for email/receipt
+    const emailItems = summary.lines.map((line, idx) => {
+      const ticketResult = ticketResults.find(t => t.cartIndex === idx);
+      const ticketData = ticketResult?.ticket as { codes?: Array<{ code: string }> } | undefined;
+      return {
+        label: line.label,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        total: line.total,
+        codes: ticketData?.codes?.map(c => c.code),
+      };
+    });
+
+    try {
+      // Generate PDF receipt
+      const receiptPdf = await generateReceiptPDF({
+        receiptNumber: orderNumber,
+        date: orderDate,
+        customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
+        customerEmail: user.email,
+        items: emailItems,
+        subtotal: summary.subtotal,
+        discounts: summary.discounts,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Square)',
+        paymentId,
+      });
+
+      // Send confirmation email
+      await sendOrderConfirmation({
+        email: user.email,
+        customerName: user.first_name ?? 'Customer',
+        orderNumber,
+        orderDate,
+        items: emailItems,
+        subtotal: summary.subtotal,
+        discounts: summary.discounts,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Square)',
+        receiptPdf,
+      });
+    } catch (emailError) {
+      console.error('Failed to send order confirmation email:', emailError);
+      // Don't fail the checkout if email fails
     }
   }
 
@@ -435,16 +494,24 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
     throw new AppError('No payment is required for this cart', 400);
   }
 
-  // Create order record
+  // Create or find guest customer record in Supabase
+  const guestCustomer = await CustomerRepository.findOrCreateGuest({
+    firstName: input.guestFirstName,
+    lastName: input.guestLastName,
+    email: input.guestEmail,
+    phone: input.guestPhone,
+  });
+
+  // Create order record linked to the guest customer
   const order = await OrderRepository.create({
-    customer_id: undefined,
+    customer_id: guestCustomer.customer_id,
     order_type: 'Mixed',
     status: 'Pending',
     subtotal_usd: summary.subtotal,
     discount_usd: summary.discounts.reduce((sum, d) => sum + d.amount, 0),
     tax_usd: 0,
     total_usd: summary.total,
-    notes: `GUEST: ${input.guestFirstName} ${input.guestLastName} | ${input.guestEmail} | ${input.guestPhone}`,
+    notes: `Guest checkout`,
   });
 
   let paymentId: string;
@@ -509,7 +576,8 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
 
   // Fulfill tickets (guests can only buy tickets, not memberships)
   const ticketResults: Array<{ cartIndex: number; ticket: unknown }> = [];
-  const guestGuardianId = `guest_${input.guestEmail}`;
+  // Use the real customer_id from the guest customer record
+  const guestGuardianId = `customer_${guestCustomer.customer_id}`;
 
   for (const [index, item] of input.items.entries()) {
     const line = summary.lines[index];
@@ -519,21 +587,74 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
       const pricePerTicket = line.quantity > 0 ? roundCurrency(line.total / line.quantity) : item.unitPrice;
       const ticket = await reserveTickets({
         guardianId: guestGuardianId,
-        type: 'general',
+        customerId: guestCustomer.customer_id,
+        type: item.eventId ? 'event' : 'general',
+        eventId: item.eventId,
         quantity: item.quantity,
         price: pricePerTicket,
         metadata: {
           ...(item.metadata ?? {}),
           label: item.label,
-          guestName: `${input.guestFirstName} ${input.guestLastName}`,
-          guestEmail: input.guestEmail,
-          guestPhone: input.guestPhone,
           promoCode: input.promoCode,
           discounts: line.discounts,
         },
       });
       ticketResults.push({ cartIndex: index, ticket });
     }
+  }
+
+  // Send confirmation email with PDF receipt for guest
+  const orderNumber = `PF-${order.order_id}`;
+  const orderDate = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  // Build items for email/receipt
+  const emailItems = summary.lines.map((line, idx) => {
+    const ticketResult = ticketResults.find(t => t.cartIndex === idx);
+    const ticketData = ticketResult?.ticket as { codes?: Array<{ code: string }> } | undefined;
+    return {
+      label: line.label,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      total: line.total,
+      codes: ticketData?.codes?.map(c => c.code),
+    };
+  });
+
+  try {
+    // Generate PDF receipt
+    const receiptPdf = await generateReceiptPDF({
+      receiptNumber: orderNumber,
+      date: orderDate,
+      customerName: `${input.guestFirstName} ${input.guestLastName}`,
+      customerEmail: input.guestEmail,
+      items: emailItems,
+      subtotal: summary.subtotal,
+      discounts: summary.discounts,
+      total: summary.total,
+      paymentMethod: 'Credit Card (Square)',
+      paymentId,
+    });
+
+    // Send confirmation email
+    await sendOrderConfirmation({
+      email: input.guestEmail,
+      customerName: input.guestFirstName,
+      orderNumber,
+      orderDate,
+      items: emailItems,
+      subtotal: summary.subtotal,
+      discounts: summary.discounts,
+      total: summary.total,
+      paymentMethod: 'Credit Card (Square)',
+      receiptPdf,
+    });
+  } catch (emailError) {
+    console.error('Failed to send guest order confirmation email:', emailError);
+    // Don't fail the checkout if email fails
   }
 
   return {

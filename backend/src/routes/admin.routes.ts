@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 
-import { authGuard, requireRoles, type AuthenticatedRequest } from '../middleware/auth.middleware';
+import { supabaseAuthGuard, requireRoles, type SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 import { recalculateBookingPricingHandler } from '../controllers/booking.controller';
 import {
   // Dashboard
@@ -142,7 +142,7 @@ adminRouter.get('/waivers/export', adminQueryTokenGuard, exportWaiversHandler);
 adminRouter.get('/contacts/export', adminQueryTokenGuard, exportContactsHandler);
 
 // ============= Protected admin routes =============
-adminRouter.use(authGuard, requireRoles('admin', 'staff'));
+adminRouter.use(supabaseAuthGuard, requireRoles('admin', 'staff'));
 
 // Dashboard
 adminRouter.get('/summary', getAdminSummaryHandler);
@@ -293,8 +293,9 @@ function adminQueryTokenGuard(req: Request, _res: Response, next: NextFunction) 
       return next(new AppError('Forbidden', 403));
     }
 
-    (req as AuthenticatedRequest).user = {
+    (req as SupabaseAuthenticatedRequest).user = {
       id: payload.sub,
+      authUserId: payload.sub,
       email: payload.email,
       roles,
     };
@@ -322,8 +323,9 @@ function adminStreamGuard(req: Request, _res: Response, next: NextFunction) {
       return next(new AppError('Forbidden', 403));
     }
 
-    (req as AuthenticatedRequest).user = {
+    (req as SupabaseAuthenticatedRequest).user = {
       id: payload.sub,
+      authUserId: payload.sub,
       email: payload.email,
       roles,
     };

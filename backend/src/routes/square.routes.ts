@@ -1,6 +1,6 @@
 import { Router } from 'express';
 
-import { authGuard } from '../middleware/auth.middleware';
+import { supabaseAuthGuard } from '../middleware/supabase-auth.middleware';
 import {
   getSquareConfigHandler,
   createSquareCheckoutIntentHandler,
@@ -19,5 +19,5 @@ squareRouter.post('/guest/intent', createSquareGuestCheckoutIntentHandler);
 squareRouter.post('/guest/finalize', finalizeSquareGuestCheckoutHandler);
 
 // Authenticated checkout routes
-squareRouter.post('/intent', authGuard, createSquareCheckoutIntentHandler);
-squareRouter.post('/finalize', authGuard, finalizeSquareCheckoutHandler);
+squareRouter.post('/intent', supabaseAuthGuard, createSquareCheckoutIntentHandler);
+squareRouter.post('/finalize', supabaseAuthGuard, finalizeSquareCheckoutHandler);

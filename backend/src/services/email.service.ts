@@ -1,57 +1,25 @@
-import nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 import { appConfig } from '../config/env';
 
-// Email configuration
-interface EmailConfig {
-  host: string;
-  port: number;
-  secure: boolean;
-  auth: {
-    user: string;
-    pass: string;
-  };
-  from: string;
-  fromName: string;
-}
+// Initialize Resend client
+let resend: Resend | null = null;
 
-let transporter: Transporter | null = null;
+function getResendClient(): Resend | null {
+  if (resend) return resend;
 
-function getEmailConfig(): EmailConfig | null {
-  if (!appConfig.smtpHost || !appConfig.smtpUser || !appConfig.smtpPass) {
+  if (!appConfig.resendApiKey) {
+    console.warn('Email service not configured. Set RESEND_API_KEY environment variable.');
     return null;
   }
 
-  return {
-    host: appConfig.smtpHost,
-    port: appConfig.smtpPort || 587,
-    secure: appConfig.smtpSecure || false,
-    auth: {
-      user: appConfig.smtpUser,
-      pass: appConfig.smtpPass,
-    },
-    from: appConfig.smtpFrom || appConfig.smtpUser,
-    fromName: appConfig.smtpFromName || 'Playfunia',
-  };
+  resend = new Resend(appConfig.resendApiKey);
+  return resend;
 }
 
-function getTransporter(): Transporter | null {
-  if (transporter) return transporter;
-
-  const config = getEmailConfig();
-  if (!config) {
-    console.warn('Email service not configured. Set SMTP_* environment variables.');
-    return null;
-  }
-
-  transporter = nodemailer.createTransport({
-    host: config.host,
-    port: config.port,
-    secure: config.secure,
-    auth: config.auth,
-  });
-
-  return transporter;
+function getFromAddress(): string {
+  const name = appConfig.emailFromName || 'Playfunia';
+  const email = appConfig.emailFrom || 'noreply@playfunia.com';
+  return `${name} <${email}>`;
 }
 
 // Generate 6-digit OTP
@@ -86,7 +54,7 @@ function getBaseTemplate(content: string): string {
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
     }
     .header {
-      background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+      background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
       padding: 30px 20px;
       text-align: center;
     }
@@ -110,7 +78,7 @@ function getBaseTemplate(content: string): string {
       font-size: 36px;
       font-weight: 700;
       letter-spacing: 8px;
-      color: #c44569;
+      color: #7c3aed;
       font-family: 'Courier New', monospace;
     }
     .info-box {
@@ -137,7 +105,7 @@ function getBaseTemplate(content: string): string {
       color: #1f2b66;
     }
     .total-row {
-      background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+      background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
       color: #ffffff;
       padding: 15px 20px;
       border-radius: 10px;
@@ -149,7 +117,7 @@ function getBaseTemplate(content: string): string {
     }
     .button {
       display: inline-block;
-      background: linear-gradient(135deg, #ff6b9d 0%, #c44569 100%);
+      background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
       color: #ffffff;
       text-decoration: none;
       padding: 14px 30px;
@@ -166,7 +134,7 @@ function getBaseTemplate(content: string): string {
       color: #6b7280;
     }
     .footer a {
-      color: #c44569;
+      color: #7c3aed;
       text-decoration: none;
     }
     .success-icon {
@@ -203,13 +171,12 @@ function getBaseTemplate(content: string): string {
 
 // Send email verification OTP
 export async function sendVerificationOTP(email: string, otp: string, firstName?: string): Promise<boolean> {
-  const transport = getTransporter();
-  if (!transport) {
+  const client = getResendClient();
+  if (!client) {
     console.log(`[Email Mock] Verification OTP for ${email}: ${otp}`);
     return true;
   }
 
-  const config = getEmailConfig()!;
   const content = `
     <h2>Verify Your Email</h2>
     <p>Hi${firstName ? ` ${firstName}` : ''},</p>
@@ -222,12 +189,17 @@ export async function sendVerificationOTP(email: string, otp: string, firstName?
   `;
 
   try {
-    await transport.sendMail({
-      from: `"${config.fromName}" <${config.from}>`,
+    const { error } = await client.emails.send({
+      from: getFromAddress(),
       to: email,
       subject: 'Verify Your Email - Playfunia',
       html: getBaseTemplate(content),
     });
+
+    if (error) {
+      console.error('Failed to send verification email:', error);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error('Failed to send verification email:', error);
@@ -252,13 +224,11 @@ export interface BookingEmailData {
 }
 
 export async function sendBookingConfirmation(data: BookingEmailData): Promise<boolean> {
-  const transport = getTransporter();
-  if (!transport) {
+  const client = getResendClient();
+  if (!client) {
     console.log(`[Email Mock] Booking confirmation for ${data.email}: ${data.reference}`);
     return true;
   }
-
-  const config = getEmailConfig()!;
 
   let addOnsHtml = '';
   if (data.addOns && data.addOns.length > 0) {
@@ -323,12 +293,17 @@ export async function sendBookingConfirmation(data: BookingEmailData): Promise<b
   `;
 
   try {
-    await transport.sendMail({
-      from: `"${config.fromName}" <${config.from}>`,
+    const { error } = await client.emails.send({
+      from: getFromAddress(),
       to: data.email,
       subject: `Party Booking Confirmed - ${data.reference} | Playfunia`,
       html: getBaseTemplate(content),
     });
+
+    if (error) {
+      console.error('Failed to send booking confirmation:', error);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error('Failed to send booking confirmation:', error);
@@ -352,13 +327,11 @@ export interface TicketEmailData {
 }
 
 export async function sendTicketConfirmation(data: TicketEmailData): Promise<boolean> {
-  const transport = getTransporter();
-  if (!transport) {
+  const client = getResendClient();
+  if (!client) {
     console.log(`[Email Mock] Ticket confirmation for ${data.email}`);
     return true;
   }
-
-  const config = getEmailConfig()!;
 
   const ticketsHtml = data.tickets.map(ticket => `
     <div class="info-box">
@@ -370,9 +343,9 @@ export async function sendTicketConfirmation(data: TicketEmailData): Promise<boo
         <p style="margin: 0 0 8px; font-size: 12px; color: #6b7280;">Entry Codes:</p>
         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
           ${ticket.codes.map(code => `
-            <span style="background: linear-gradient(135deg, rgba(255, 107, 157, 0.1) 0%, rgba(196, 69, 105, 0.05) 100%);
-                         border: 1px dashed #ff6b9d; border-radius: 8px; padding: 8px 12px;
-                         font-family: monospace; font-weight: 700; color: #c44569;">${code}</span>
+            <span style="background: linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(109, 40, 217, 0.05) 100%);
+                         border: 1px dashed #7c3aed; border-radius: 8px; padding: 8px 12px;
+                         font-family: monospace; font-weight: 700; color: #7c3aed;">${code}</span>
           `).join('')}
         </div>
       </div>
@@ -417,12 +390,17 @@ export async function sendTicketConfirmation(data: TicketEmailData): Promise<boo
   `;
 
   try {
-    await transport.sendMail({
-      from: `"${config.fromName}" <${config.from}>`,
+    const { error } = await client.emails.send({
+      from: getFromAddress(),
       to: data.email,
       subject: 'Your Playfunia Tickets Are Ready!',
       html: getBaseTemplate(content),
     });
+
+    if (error) {
+      console.error('Failed to send ticket confirmation:', error);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error('Failed to send ticket confirmation:', error);
@@ -443,13 +421,11 @@ export interface MembershipEmailData {
 }
 
 export async function sendMembershipConfirmation(data: MembershipEmailData): Promise<boolean> {
-  const transport = getTransporter();
-  if (!transport) {
+  const client = getResendClient();
+  if (!client) {
     console.log(`[Email Mock] Membership confirmation for ${data.email}`);
     return true;
   }
-
-  const config = getEmailConfig()!;
 
   const content = `
     <div class="success-icon">⭐</div>
@@ -498,12 +474,17 @@ export async function sendMembershipConfirmation(data: MembershipEmailData): Pro
   `;
 
   try {
-    await transport.sendMail({
-      from: `"${config.fromName}" <${config.from}>`,
+    const { error } = await client.emails.send({
+      from: getFromAddress(),
       to: data.email,
       subject: `Welcome to ${data.tierName} Membership - Playfunia`,
       html: getBaseTemplate(content),
     });
+
+    if (error) {
+      console.error('Failed to send membership confirmation:', error);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error('Failed to send membership confirmation:', error);
@@ -513,13 +494,12 @@ export async function sendMembershipConfirmation(data: MembershipEmailData): Pro
 
 // Send password reset OTP
 export async function sendPasswordResetOTP(email: string, otp: string, firstName?: string): Promise<boolean> {
-  const transport = getTransporter();
-  if (!transport) {
+  const client = getResendClient();
+  if (!client) {
     console.log(`[Email Mock] Password reset OTP for ${email}: ${otp}`);
     return true;
   }
 
-  const config = getEmailConfig()!;
   const content = `
     <h2>Reset Your Password</h2>
     <p>Hi${firstName ? ` ${firstName}` : ''},</p>
@@ -532,12 +512,17 @@ export async function sendPasswordResetOTP(email: string, otp: string, firstName
   `;
 
   try {
-    await transport.sendMail({
-      from: `"${config.fromName}" <${config.from}>`,
+    const { error } = await client.emails.send({
+      from: getFromAddress(),
       to: email,
       subject: 'Reset Your Password - Playfunia',
       html: getBaseTemplate(content),
     });
+
+    if (error) {
+      console.error('Failed to send password reset email:', error);
+      return false;
+    }
     return true;
   } catch (error) {
     console.error('Failed to send password reset email:', error);
@@ -547,5 +532,140 @@ export async function sendPasswordResetOTP(email: string, otp: string, firstName
 
 // Check if email service is configured
 export function isEmailConfigured(): boolean {
-  return getEmailConfig() !== null;
+  return Boolean(appConfig.resendApiKey);
+}
+
+// Send order confirmation with PDF receipt
+export interface OrderConfirmationEmailData {
+  email: string;
+  customerName: string;
+  orderNumber: string;
+  orderDate: string;
+  items: Array<{
+    label: string;
+    quantity: number;
+    unitPrice: number;
+    total: number;
+    codes?: string[];
+  }>;
+  subtotal: number;
+  discounts: Array<{ label: string; amount: number }>;
+  total: number;
+  paymentMethod: string;
+  receiptPdf?: Buffer;
+}
+
+export async function sendOrderConfirmation(data: OrderConfirmationEmailData): Promise<boolean> {
+  const client = getResendClient();
+  if (!client) {
+    console.log(`[Email Mock] Order confirmation for ${data.email}: Order #${data.orderNumber}`);
+    return true;
+  }
+
+  const itemsHtml = data.items.map(item => `
+    <div class="info-row">
+      <span class="info-label">${item.label} x${item.quantity}</span>
+      <span class="info-value">$${item.total.toFixed(2)}</span>
+    </div>
+    ${item.codes && item.codes.length > 0 ? `
+      <div style="margin: 8px 0 12px 0; padding: 10px; background: rgba(124, 58, 237, 0.05); border-radius: 8px;">
+        <p style="margin: 0 0 6px; font-size: 11px; color: #6b7280; text-transform: uppercase;">Entry Codes</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          ${item.codes.map(code => `
+            <span style="background: #fff; border: 1px dashed #7c3aed; border-radius: 6px; padding: 6px 10px;
+                         font-family: monospace; font-weight: 700; color: #7c3aed; font-size: 13px;">${code}</span>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+  `).join('');
+
+  const discountsHtml = data.discounts.length > 0 ? data.discounts.map(d => `
+    <div class="info-row">
+      <span class="info-label">${d.label}</span>
+      <span class="info-value" style="color: #22c55e;">-$${d.amount.toFixed(2)}</span>
+    </div>
+  `).join('') : '';
+
+  const content = `
+    <div class="success-icon">✓</div>
+    <h2>Order Confirmed!</h2>
+    <p>Hi ${data.customerName},</p>
+    <p>Thank you for your purchase! Your order has been confirmed and payment received.</p>
+
+    <div class="info-box">
+      <div class="info-row">
+        <span class="info-label">Order Number</span>
+        <span class="info-value">${data.orderNumber}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Date</span>
+        <span class="info-value">${data.orderDate}</span>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <h3 style="margin: 0 0 12px; font-size: 14px; color: #1f2b66;">Order Details</h3>
+      ${itemsHtml}
+      ${discountsHtml}
+      <div class="total-row">
+        <span>Total Paid</span>
+        <span>$${data.total.toFixed(2)}</span>
+      </div>
+    </div>
+
+    <p style="font-size: 13px; color: #6b7280;">
+      Payment Method: ${data.paymentMethod}<br>
+      ${data.receiptPdf ? 'A PDF receipt is attached to this email for your records.' : ''}
+    </p>
+
+    <p><strong>What's next?</strong></p>
+    <ul style="color: #4b5563;">
+      <li>Show your entry codes at the front desk</li>
+      <li>Each code is valid for one child's admission</li>
+      <li>Tickets are valid for 30 days from purchase</li>
+      <li>Grip socks are required (available for purchase if needed)</li>
+    </ul>
+
+    <p>See you soon at Playfunia!</p>
+  `;
+
+  try {
+    const emailOptions: {
+      from: string;
+      to: string;
+      subject: string;
+      html: string;
+      attachments?: Array<{ filename: string; content: Buffer }>;
+    } = {
+      from: getFromAddress(),
+      to: data.email,
+      subject: `Order Confirmed - #${data.orderNumber} | Playfunia`,
+      html: getBaseTemplate(content),
+    };
+
+    if (data.receiptPdf) {
+      emailOptions.attachments = [
+        {
+          filename: `Playfunia_Receipt_${data.orderNumber}.pdf`,
+          content: data.receiptPdf,
+        },
+      ];
+    }
+
+    console.log(`[Email] Attempting to send order confirmation to ${data.email} for order #${data.orderNumber}`);
+
+    const { data: responseData, error } = await client.emails.send(emailOptions);
+
+    if (error) {
+      console.error('[Email] Failed to send order confirmation:', JSON.stringify(error));
+      return false;
+    }
+
+    console.log(`[Email] Order confirmation sent successfully to ${data.email} for order #${data.orderNumber}`, responseData);
+    return true;
+  } catch (error) {
+    console.error('Failed to send order confirmation:', error);
+    return false;
+  }
 }

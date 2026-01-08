@@ -1,8 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 
-import { createGuestCheckoutIntent, finalizeGuestCheckout } from "../api/checkout";
-import { getAllPricing, type AllPricing, type TicketBundle } from "../api/pricing";
+import { getAllPricing, type AllPricing } from "../api/pricing";
 import { PrimaryButton } from "../components/common/PrimaryButton";
 import { useAuth } from "../context/AuthContext";
 import { useCheckout } from "../context/CheckoutContext";
@@ -16,32 +15,21 @@ type PricingInfo = {
 };
 
 type GuestForm = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
   waiverAccepted: boolean;
 };
 
 export function BuyTicketPage() {
   const { user } = useAuth();
   const { addTicketPurchase } = useCheckout();
-  const navigate = useNavigate();
   const [quantity, setQuantity] = useState(1);
-  const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<{ type: "idle" | "success" | "error"; message?: string }>({ type: "idle" });
-  const [codes, setCodes] = useState<Array<{ code: string; status: string }>>([]);
 
   // Pricing data from API
   const [pricingData, setPricingData] = useState<AllPricing | null>(null);
-  const [pricingLoading, setPricingLoading] = useState(true);
+  const [, setPricingLoading] = useState(true);
 
   // Guest form state
   const [guestForm, setGuestForm] = useState<GuestForm>({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
     waiverAccepted: false,
   });
 
@@ -137,74 +125,34 @@ export function BuyTicketPage() {
     return pricingData.config[key];
   };
 
-  const handleGuestChange = (field: keyof GuestForm, value: string | boolean) => {
+  const handleGuestChange = (field: keyof GuestForm, value: boolean) => {
     setGuestForm(prev => ({ ...prev, [field]: value }));
   };
 
   const handleGuestSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!guestForm.firstName || !guestForm.lastName || !guestForm.email || !guestForm.phone) {
-      setStatus({ type: "error", message: "Please fill in all contact fields." });
-      return;
-    }
-
     if (!guestForm.waiverAccepted) {
       setStatus({ type: "error", message: "Please accept the waiver agreement to continue." });
       return;
     }
 
-    setSubmitting(true);
-    setStatus({ type: "idle" });
-    setCodes([]);
+    // Add ticket to cart
+    const cartId = `ticket-${Date.now()}`;
+    addTicketPurchase({
+      id: cartId,
+      type: "ticket",
+      label: pricing.label,
+      quantity,
+      unitPrice: Number(pricing.unitPrice.toFixed(2)),
+      total: pricing.total,
+      status: "pending",
+    });
 
-    try {
-      const items = [{
-        type: "ticket" as const,
-        label: pricing.label,
-        quantity,
-        unitPrice: Number(pricing.unitPrice.toFixed(2)),
-      }];
-
-      // Create guest checkout intent
-      const intentResult = await createGuestCheckoutIntent({
-        items,
-        guestFirstName: guestForm.firstName,
-        guestLastName: guestForm.lastName,
-        guestEmail: guestForm.email,
-        guestPhone: guestForm.phone,
-      });
-
-      // For mock payments, finalize immediately
-      if (intentResult.mock) {
-        const finalResult = await finalizeGuestCheckout({
-          items,
-          paymentIntentId: intentResult.paymentIntentId!,
-          guestFirstName: guestForm.firstName,
-          guestLastName: guestForm.lastName,
-          guestEmail: guestForm.email,
-          guestPhone: guestForm.phone,
-        });
-
-        const ticketCodes = finalResult.tickets.flatMap(t => t.ticket.codes);
-        setCodes(ticketCodes);
-        setStatus({
-          type: "success",
-          message: `Purchase complete! ${quantity} ticket${quantity === 1 ? "" : "s"} reserved. A confirmation will be sent to ${guestForm.email}.`,
-        });
-      } else {
-        // TODO: Integrate Stripe Elements for real payment
-        setStatus({
-          type: "success",
-          message: "Payment initiated. Please complete checkout.",
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "We could not complete your purchase right now.";
-      setStatus({ type: "error", message });
-    } finally {
-      setSubmitting(false);
-    }
+    setStatus({
+      type: "success",
+      message: `${quantity} play pass${quantity === 1 ? "" : "es"} added to cart! Click the cart icon to complete your purchase.`,
+    });
   };
 
   // Show guest form for non-authenticated users
@@ -220,75 +168,10 @@ export function BuyTicketPage() {
 
           <form className={styles.layout} onSubmit={handleGuestSubmit}>
             <div className={styles.card}>
-              {/* Guest Contact Form */}
-              <div className={styles.guestFormSection}>
-                <h2>Your Contact Information</h2>
-                <p className={styles.guestFormHint}>
-                  Already have an account? <Link to="/account" className={styles.signInLink}>Sign in</Link> for faster checkout.
-                </p>
-                <div className={styles.inputRow}>
-                  <div className={styles.field}>
-                    <label htmlFor="guest-first-name">First Name</label>
-                    <input
-                      type="text"
-                      id="guest-first-name"
-                      value={guestForm.firstName}
-                      onChange={e => handleGuestChange("firstName", e.target.value)}
-                      placeholder="Jane"
-                      required
-                    />
-                  </div>
-                  <div className={styles.field}>
-                    <label htmlFor="guest-last-name">Last Name</label>
-                    <input
-                      type="text"
-                      id="guest-last-name"
-                      value={guestForm.lastName}
-                      onChange={e => handleGuestChange("lastName", e.target.value)}
-                      placeholder="Doe"
-                      required
-                    />
-                  </div>
-                </div>
-                <div className={styles.inputRow}>
-                  <div className={styles.field}>
-                    <label htmlFor="guest-email">Email</label>
-                    <input
-                      type="email"
-                      id="guest-email"
-                      value={guestForm.email}
-                      onChange={e => handleGuestChange("email", e.target.value)}
-                      placeholder="jane@example.com"
-                      required
-                    />
-                  </div>
-                  <div className={styles.field}>
-                    <label htmlFor="guest-phone">Phone</label>
-                    <input
-                      type="tel"
-                      id="guest-phone"
-                      value={guestForm.phone}
-                      onChange={e => handleGuestChange("phone", e.target.value)}
-                      placeholder="(555) 123-4567"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <label className={styles.guestWaiverCheckbox}>
-                  <input
-                    type="checkbox"
-                    checked={guestForm.waiverAccepted}
-                    onChange={e => handleGuestChange("waiverAccepted", e.target.checked)}
-                  />
-                  <span>
-                    I agree to the Playfunia <a href="/waiver" target="_blank" rel="noopener noreferrer">waiver and liability release</a>.
-                    I understand I will need to sign the full waiver on arrival.
-                  </span>
-                </label>
-              </div>
-
               <h2>Choose how many kids are playing</h2>
+              <p className={styles.guestFormHint}>
+                Already have an account? <Link to="/account" className={styles.signInLink}>Sign in</Link> for faster checkout.
+              </p>
               <div className={styles.field}>
                 <label htmlFor="ticket-quantity">Number of kids</label>
                 <select
@@ -343,6 +226,18 @@ export function BuyTicketPage() {
                 </div>
               </div>
 
+              <label className={styles.guestWaiverCheckbox}>
+                <input
+                  type="checkbox"
+                  checked={guestForm.waiverAccepted}
+                  onChange={e => handleGuestChange("waiverAccepted", e.target.checked)}
+                />
+                <span>
+                  I agree to the Playfunia <a href="/waiver" target="_blank" rel="noopener noreferrer">waiver and liability release</a>.
+                  I understand I will need to sign the full waiver on arrival.
+                </span>
+              </label>
+
               {status.type === "error" ? (
                 <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
               ) : null}
@@ -350,28 +245,10 @@ export function BuyTicketPage() {
                 <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
               ) : null}
 
-              <PrimaryButton type="submit" disabled={submitting}>
-                {submitting ? "Processing..." : "Purchase play passes"}
+              <PrimaryButton type="submit" disabled={status.type === "success"}>
+                Add to Cart
               </PrimaryButton>
             </div>
-
-            {codes.length > 0 ? (
-              <div className={styles.card}>
-                <h2>Your play codes</h2>
-                <p className={styles.helper}>
-                  Present these codes once. Staff will mark them as redeemed at the door. You will also receive them by
-                  email.
-                </p>
-                <div className={styles.codeGrid}>
-                  {codes.map(item => (
-                    <div key={item.code} className={styles.codeCard}>
-                      <span>{item.code}</span>
-                      <span>{item.status === "unused" ? "Ready to use" : "Redeemed"}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </form>
         </div>
       </section>
@@ -390,34 +267,22 @@ export function BuyTicketPage() {
       return;
     }
 
-    setSubmitting(true);
-    setStatus({ type: "idle" });
-    setCodes([]);
+    // Add ticket to cart
+    const cartId = `ticket-${Date.now()}`;
+    addTicketPurchase({
+      id: cartId,
+      type: "ticket",
+      label: pricing.label,
+      quantity,
+      unitPrice: Number(pricing.unitPrice.toFixed(2)),
+      total: pricing.total,
+      status: "pending",
+    });
 
-    try {
-      const cartId = `ticket-${Date.now()}`;
-      addTicketPurchase({
-        id: cartId,
-        type: "ticket",
-        label: pricing.label,
-        quantity,
-        unitPrice: Number(pricing.unitPrice.toFixed(2)),
-        total: Number(pricing.total.toFixed(2)),
-        status: "pending",
-        codes: [],
-      });
-
-      setStatus({
-        type: "success",
-        message: `Added ${quantity} ticket${quantity === 1 ? "" : "s"} to checkout. Complete payment on the next screen.`,
-      });
-      navigate("/checkout", { state: { from: "buy-ticket" } });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "We could not stage tickets for checkout right now.";
-      setStatus({ type: "error", message });
-    } finally {
-      setSubmitting(false);
-    }
+    setStatus({
+      type: "success",
+      message: `${quantity} play pass${quantity === 1 ? "" : "es"} added to cart! Click the cart icon to complete your purchase.`,
+    });
   };
 
   return (
@@ -507,28 +372,10 @@ export function BuyTicketPage() {
               <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
             ) : null}
 
-            <PrimaryButton type="submit" disabled={submitting || !hasValidWaiver}>
-              {submitting ? "Processing..." : "Reserve digital passes"}
+            <PrimaryButton type="submit" disabled={!hasValidWaiver || status.type === "success"}>
+              Add to Cart
             </PrimaryButton>
           </div>
-
-          {codes.length > 0 ? (
-            <div className={styles.card}>
-              <h2>Your play codes</h2>
-              <p className={styles.helper}>
-                Present these codes once. Staff will mark them as redeemed at the door. You will also receive them by
-                email.
-              </p>
-              <div className={styles.codeGrid}>
-                {codes.map(item => (
-                  <div key={item.code} className={styles.codeCard}>
-                    <span>{item.code}</span>
-                    <span>{item.status === "unused" ? "Ready to use" : "Redeemed"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </form>
       </div>
     </section>

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 
-import { TicketTypeRepository, UserRepository, OrderRepository, OrderItemRepository } from '../repositories';
+import { TicketTypeRepository, UserRepository, OrderRepository, OrderItemRepository, EventRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { publishAdminEvent } from './admin-events.service';
 
@@ -21,15 +21,23 @@ export async function listTicketTypes() {
 }
 
 export async function reserveTickets(input: ReserveTicketsInput) {
-  // Handle guest checkouts - guardianId may be "guest_email@example.com"
-  const isGuestCheckout = input.guardianId.startsWith('guest_');
-
   let customerId: number | undefined;
 
-  if (isGuestCheckout) {
-    // Guest checkout - no customer account, tickets are tracked by metadata
-    customerId = undefined;
+  // If customerId is directly provided (from guest checkout with real customer record), use it
+  if (input.customerId) {
+    customerId = input.customerId;
+  } else if (input.guardianId.startsWith('guest_') || input.guardianId.startsWith('customer_')) {
+    // Legacy guest checkout format or new customer_ format
+    // For customer_ format, extract the ID
+    if (input.guardianId.startsWith('customer_')) {
+      const extractedId = parseInt(input.guardianId.replace('customer_', ''), 10);
+      if (!isNaN(extractedId)) {
+        customerId = extractedId;
+      }
+    }
+    // For legacy guest_ format, customerId stays undefined (backwards compatibility)
   } else {
+    // Regular authenticated user checkout
     const guardianId = parseInt(input.guardianId, 10);
     if (isNaN(guardianId)) {
       throw new AppError('Invalid guardian ID', 400);
@@ -68,11 +76,34 @@ export async function reserveTickets(input: ReserveTicketsInput) {
     line_total_usd: total,
   });
 
+  // Decrement tickets_remaining for event tickets
+  if (input.type === 'event' && input.eventId) {
+    const eventId = parseInt(input.eventId, 10);
+    if (!isNaN(eventId)) {
+      try {
+        await EventRepository.decrementTickets(eventId, input.quantity);
+      } catch (err) {
+        console.error('Failed to decrement event tickets:', err);
+        // Don't fail the order if decrement fails - the order is already created
+      }
+    }
+  }
+
+  // Generate unique codes for each ticket
+  const codes: Array<{ code: string; status: string }> = [];
+  for (let i = 0; i < input.quantity; i++) {
+    codes.push({
+      code: `PF-${randomUUID().substring(0, 8).toUpperCase()}`,
+      status: 'unused',
+    });
+  }
+
   publishAdminEvent('ticket.reserved', {
     orderId: order.order_id,
     guardianId: input.guardianId,
     quantity: input.quantity,
     total,
+    codes,
   });
 
   return {
@@ -83,6 +114,7 @@ export async function reserveTickets(input: ReserveTicketsInput) {
     total,
     status: order.status,
     createdAt: order.created_at,
+    codes,
   };
 }
 

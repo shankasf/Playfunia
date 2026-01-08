@@ -6,11 +6,11 @@ import {
   listTicketsHandler,
   listAllTicketsHandler,
 } from "../controllers/ticket.controller";
-import { authGuard, requireRoles } from "../middleware/auth.middleware";
+import { supabaseAuthGuard, requireRoles } from "../middleware/supabase-auth.middleware";
 
 export const ticketRouter = Router();
 
-ticketRouter.use(authGuard);
+ticketRouter.use(supabaseAuthGuard);
 ticketRouter.post("/reserve", reserveTicketsHandler);
 ticketRouter.get("/", listTicketsHandler);
 ticketRouter.get("/admin", requireRoles("admin", "staff"), listAllTicketsHandler);

@@ -311,6 +311,66 @@
   font-size: 0.95rem;
 }
 
+.slotsErrorBox {
+  padding: 1.25rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.slotsErrorBox p {
+  margin: 0 0 1rem;
+  color: #991b1b;
+  font-size: 0.95rem;
+}
+
+.authPrompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.authButton {
+  display: inline-block;
+  padding: 0.6rem 1.25rem;
+  background: #7c3aed;
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: background 0.2s;
+}
+
+.authButton:hover {
+  background: #6d28d9;
+}
+
+.authButtonSecondary {
+  display: inline-block;
+  padding: 0.6rem 1.25rem;
+  background: #fff;
+  color: #7c3aed;
+  border: 1px solid #7c3aed;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.authButtonSecondary:hover {
+  background: #f5f3ff;
+}
+
+.authOr {
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
 /* Ticket/Guest Selectors */
 .ticketSection {
   margin-bottom: 2rem;

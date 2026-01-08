@@ -17,6 +17,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1rem;
+  align-items: start;
 }
 
 .childrenList {
@@ -173,8 +174,13 @@ textarea:focus {
 }
 
 .error {
-  color: #ef4444;
+  color: #dc2626;
   font-weight: 600;
+  font-size: 1rem;
+  padding: 0.75rem 1rem;
+  background-color: rgba(239, 68, 68, 0.1);
+  border-radius: var(--radius-sm);
+  border-left: 4px solid #dc2626;
 }
 
 .success {

@@ -1,11 +1,11 @@
 import type { Response } from 'express';
 
-import type { AuthenticatedRequest } from '../middleware/auth.middleware';
+import type { SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 import { getUserProfile, addChildForUser, deleteChildForUser } from '../services/auth.service';
 import { asyncHandler } from '../utils/async-handler';
 import { AppError } from '../utils/app-error';
 
-export const getCurrentUserHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const getCurrentUserHandler = asyncHandler(async (req: SupabaseAuthenticatedRequest, res: Response) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
@@ -14,7 +14,7 @@ export const getCurrentUserHandler = asyncHandler(async (req: AuthenticatedReque
   return res.status(200).json({ user: profile });
 });
 
-export const addChildHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const addChildHandler = asyncHandler(async (req: SupabaseAuthenticatedRequest, res: Response) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized' });
   }
@@ -34,7 +34,7 @@ export const addChildHandler = asyncHandler(async (req: AuthenticatedRequest, re
   return res.status(201).json({ child });
 });
 
-export const deleteChildHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+export const deleteChildHandler = asyncHandler(async (req: SupabaseAuthenticatedRequest, res: Response) => {
   if (!req.user) {
     return res.status(401).json({ message: 'Unauthorized' });
   }

@@ -5,7 +5,6 @@ import { useAuth } from "../context/AuthContext";
 import { useCheckout } from "../context/CheckoutContext";
 import { fetchMembershipPlans, MembershipPlanDto } from "../api/memberships";
 import { formatDate } from "../lib/dateUtils";
-import { useNavigate } from "react-router-dom";
 import styles from "./MembershipPage.module.css";
 
 const DURATION_OPTIONS = [
@@ -18,7 +17,6 @@ const DURATION_OPTIONS = [
 export function MembershipPage() {
   const { user } = useAuth();
   const { addMembershipPurchase } = useCheckout();
-  const navigate = useNavigate();
   const [plans, setPlans] = useState<MembershipPlanDto[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState<string | null>(null);
@@ -134,9 +132,8 @@ export function MembershipPage() {
 
       setStatus({
         type: "success",
-        message: `${plan.name} added to checkout. Complete payment to activate your membership.`,
+        message: `${plan.name} added to cart! Click the cart icon to complete payment and activate your membership.`,
       });
-      navigate("/checkout", { state: { from: "membership" } });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Membership purchase failed. Try again shortly.";
       setStatus({ type: "error", message });
@@ -341,8 +338,8 @@ export function MembershipPage() {
               <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
             ) : null}
 
-            <PrimaryButton type="submit" disabled={submitting || !selectedPlanId}>
-              {submitting ? "Activating..." : "Activate membership"}
+            <PrimaryButton type="submit" disabled={submitting || !selectedPlanId || status.type === "success"}>
+              {submitting ? "Adding..." : "Add to Cart"}
             </PrimaryButton>
           </form>
         </div>

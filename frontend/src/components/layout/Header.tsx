@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 
 import { useAuth } from '../../context/AuthContext';
 import { PrimaryButton } from '../common/PrimaryButton';
+import { CartIcon } from '../cart/CartIcon';
 import styles from './Header.module.css';
 
 const navLinks = [
@@ -22,8 +23,7 @@ export function Header() {
 
   const closeMenu = () => setOpen(false);
   const toggleMenu = () => setOpen((prev) => !prev);
-  const adminTarget = isTeamMember ? '/admin' : `/account?redirect=${encodeURIComponent('/admin')}`;
-  const adminLabel = isTeamMember ? 'Admin' : 'Admin login';
+  const adminTarget = '/admin';
 
   return (
     <header className={styles.wrapper}>
@@ -53,9 +53,14 @@ export function Header() {
               <PrimaryButton to="/account" className={styles.accountButton}>
                 {user ? 'Account' : 'Sign in'}
               </PrimaryButton>
-              <PrimaryButton to={adminTarget} className={styles.adminButton}>
-                {adminLabel}
-              </PrimaryButton>
+              {isTeamMember && (
+                <PrimaryButton to={adminTarget} className={styles.adminButton}>
+                  Admin
+                </PrimaryButton>
+              )}
+            </div>
+            <div className={styles.cartWrapper}>
+              <CartIcon />
             </div>
             <button
               className={styles.menuButton}
@@ -93,9 +98,11 @@ export function Header() {
             <PrimaryButton to="/account" onClick={closeMenu}>
               {user ? 'Account' : 'Sign in'}
             </PrimaryButton>
-            <PrimaryButton to={adminTarget} onClick={closeMenu} className={styles.adminButton}>
-              {adminLabel}
-            </PrimaryButton>
+            {isTeamMember && (
+              <PrimaryButton to="/admin" onClick={closeMenu} className={styles.adminButton}>
+                Admin
+              </PrimaryButton>
+            )}
           </div>
         </nav>
       </div>

@@ -6,22 +6,22 @@ import {
   listMembershipStatusesHandler,
   recordMembershipVisitHandler,
 } from '../controllers/membership.controller';
-import { authGuard, requireRoles } from '../middleware/auth.middleware';
+import { supabaseAuthGuard, requireRoles } from '../middleware/supabase-auth.middleware';
 import { cachePublic } from '../middleware/cache.middleware';
 
 export const membershipRouter = Router();
 
 membershipRouter.get('/', cachePublic(300), listMembershipsHandler);
-membershipRouter.post('/purchase', authGuard, purchaseMembershipHandler);
+membershipRouter.post('/purchase', supabaseAuthGuard, purchaseMembershipHandler);
 membershipRouter.get(
   '/admin',
-  authGuard,
+  supabaseAuthGuard,
   requireRoles('admin', 'staff'),
   listMembershipStatusesHandler,
 );
 membershipRouter.post(
   '/:userId/visit',
-  authGuard,
+  supabaseAuthGuard,
   requireRoles('admin', 'staff'),
   recordMembershipVisitHandler,
 );

@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 
 import { getStripeClient } from '../config/stripe';
 import { appConfig } from '../config/env';
-import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository } from '../repositories';
+import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { reserveTickets } from './ticket.service';
 import { purchaseMembership } from './membership.service';
@@ -541,12 +541,19 @@ export async function createGuestCheckoutPaymentIntent(input: GuestCheckoutInten
 export async function finalizeGuestCheckout(input: GuestCheckoutFinalizeInput) {
   const summary = await buildGuestSummary(input.items, input.promoCode);
 
+  // Create or find guest customer record in Supabase
+  const guestCustomer = await CustomerRepository.findOrCreateGuest({
+    firstName: input.guestFirstName,
+    lastName: input.guestLastName,
+    email: input.guestEmail,
+    phone: input.guestPhone,
+  });
+
+  const guestGuardianId = `customer_${guestCustomer.customer_id}`;
+
   // Mock mode - auto-succeed
   if (appConfig.mockPayments) {
     const ticketResults: Array<{ cartIndex: number; ticket: Awaited<ReturnType<typeof reserveTickets>> }> = [];
-
-    // Use guest email as a unique identifier for tickets
-    const guestGuardianId = `guest_${input.guestEmail}`;
 
     for (let index = 0; index < input.items.length; index++) {
       const item = input.items[index];
@@ -557,15 +564,13 @@ export async function finalizeGuestCheckout(input: GuestCheckoutFinalizeInput) {
         const pricePerTicket = item.quantity > 0 ? line.total / item.quantity : item.unitPrice;
         const ticket = await reserveTickets({
           guardianId: guestGuardianId,
+          customerId: guestCustomer.customer_id,
           type: 'general',
           quantity: item.quantity,
           price: pricePerTicket,
           metadata: {
             ...(item.metadata ?? {}),
             label: item.label,
-            guestName: `${input.guestFirstName} ${input.guestLastName}`,
-            guestEmail: input.guestEmail,
-            guestPhone: input.guestPhone,
             promoCode: input.promoCode,
             discounts: line.discounts,
           },
@@ -600,9 +605,6 @@ export async function finalizeGuestCheckout(input: GuestCheckoutFinalizeInput) {
 
   const ticketResults: Array<{ cartIndex: number; ticket: Awaited<ReturnType<typeof reserveTickets>> }> = [];
 
-  // Use guest email as a unique identifier for tickets
-  const guestGuardianId = `guest_${input.guestEmail}`;
-
   for (let index = 0; index < input.items.length; index++) {
     const item = input.items[index];
     const line = summary.lines[index];
@@ -612,15 +614,13 @@ export async function finalizeGuestCheckout(input: GuestCheckoutFinalizeInput) {
       const pricePerTicket = item.quantity > 0 ? line.total / item.quantity : item.unitPrice;
       const ticket = await reserveTickets({
         guardianId: guestGuardianId,
+        customerId: guestCustomer.customer_id,
         type: 'general',
         quantity: item.quantity,
         price: pricePerTicket,
         metadata: {
           ...(item.metadata ?? {}),
           label: item.label,
-          guestName: `${input.guestFirstName} ${input.guestLastName}`,
-          guestEmail: input.guestEmail,
-          guestPhone: input.guestPhone,
           promoCode: input.promoCode,
           discounts: line.discounts,
         },

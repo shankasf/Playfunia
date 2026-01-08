@@ -389,7 +389,7 @@ export function WaiverForm({
             )}
           </label>
           <label>
-            Relationship to attending child(ren)
+            Relationship to child(ren)
             <select
               value={relationship}
               onChange={(event) => setRelationship(event.target.value)}

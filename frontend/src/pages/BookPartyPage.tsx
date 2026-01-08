@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { PrimaryButton } from '../components/common/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
 import { useCheckout } from '../context/CheckoutContext';
 import {
@@ -154,7 +153,9 @@ export function BookPartyPage() {
 
   // Pricing data from API
   const [addOnPricing, setAddOnPricing] = useState<PartyAddOnPricing[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [pricingLoading, setPricingLoading] = useState(true);
 
   // Build add-on options from API data
@@ -583,9 +584,24 @@ export function BookPartyPage() {
         };
 
         const result = await createGuestBooking(payload);
+        // Add to cart for guest checkout
+        addBookingDepositItem({
+          id: `booking-${result.bookingId}`,
+          type: 'booking',
+          bookingId: result.bookingId,
+          reference: result.reference,
+          location,
+          eventDate: selectedDate.toISOString().slice(0, 10),
+          startTime: selectedSlot,
+          total: result.total,
+          depositAmount: result.depositAmount,
+          balanceRemaining: result.balanceRemaining,
+          status: 'awaiting_deposit',
+        });
+        clearBookingState();
         setStatus({
           type: 'success',
-          message: `Party reserved! Confirmation sent to ${result.guestEmail}. Our team will contact you for payment.`
+          message: `Party reserved! Click the cart icon to pay your deposit. Confirmation sent to ${result.guestEmail}.`
         });
       } else {
         // Authenticated booking
@@ -614,9 +630,8 @@ export function BookPartyPage() {
           balanceRemaining: result.balanceRemaining,
           status: 'awaiting_deposit',
         });
-        clearBookingState(); // Clear saved state after successful booking
-        setStatus({ type: 'success', message: 'Party reserved! Continue to checkout.' });
-        navigate('/checkout');
+        clearBookingState();
+        setStatus({ type: 'success', message: 'Party added to cart! Click the cart icon to complete your deposit payment.' });
       }
     } catch (error) {
       setStatus({
@@ -683,6 +698,33 @@ export function BookPartyPage() {
             </div>
           </div>
 
+          {/* Package Selection */}
+          {packages.length > 0 && (
+            <div className={styles.section}>
+              <h2>Choose package type</h2>
+              <div className={styles.packageGrid}>
+                {packages.map((pkg) => (
+                  <button
+                    key={pkg.id}
+                    type="button"
+                    className={`${styles.packageCard} ${pkg.id === selectedPackageId ? styles.packageCardSelected : ''}`}
+                    onClick={() => setSelectedPackageId(pkg.id)}
+                  >
+                    <div className={styles.packageCardHeader}>
+                      <h3>{pkg.name}</h3>
+                      <span className={styles.packageCardPrice}>${pkg.basePrice}</span>
+                    </div>
+                    {pkg.description && <p className={styles.packageCardDesc}>{pkg.description}</p>}
+                    <div className={styles.packageCardMeta}>
+                      <span>{pkg.durationMinutes} min</span>
+                      <span>Up to {pkg.maxGuests} guests</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Date Selector */}
           <div className={styles.section}>
             <div className={styles.sectionHeader}>
@@ -743,7 +785,20 @@ export function BookPartyPage() {
             ) : slotsLoading ? (
               <p className={styles.slotsLoading}>Loading available times...</p>
             ) : slotsError ? (
-              <p className={styles.slotsEmpty}>{slotsError.message}</p>
+              <div className={styles.slotsErrorBox}>
+                <p>{slotsError.message}</p>
+                {slotsError.requiresAuth && (
+                  <div className={styles.authPrompt}>
+                    <Link to="/account?return=/book-party" className={styles.authButton}>
+                      Sign in
+                    </Link>
+                    <span className={styles.authOr}>or</span>
+                    <Link to="/account?return=/book-party&signup=true" className={styles.authButtonSecondary}>
+                      Create account
+                    </Link>
+                  </div>
+                )}
+              </div>
             ) : slots && slots.slots.length > 0 ? (
               <div className={styles.timeSlots}>
                 {slots.slots.map((slot) => {
@@ -856,33 +911,6 @@ export function BookPartyPage() {
               </div>
             </div>
           </div>
-
-          {/* Package Selection (if multiple) */}
-          {packages.length > 1 && (
-            <div className={styles.section}>
-              <h2>Choose package type</h2>
-              <div className={styles.packageGrid}>
-                {packages.map((pkg) => (
-                  <button
-                    key={pkg.id}
-                    type="button"
-                    className={`${styles.packageCard} ${pkg.id === selectedPackageId ? styles.packageCardSelected : ''}`}
-                    onClick={() => setSelectedPackageId(pkg.id)}
-                  >
-                    <div className={styles.packageCardHeader}>
-                      <h3>{pkg.name}</h3>
-                      <span className={styles.packageCardPrice}>${pkg.basePrice}</span>
-                    </div>
-                    {pkg.description && <p className={styles.packageCardDesc}>{pkg.description}</p>}
-                    <div className={styles.packageCardMeta}>
-                      <span>{pkg.durationMinutes} min</span>
-                      <span>Up to {pkg.maxGuests} guests</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Add-ons */}
           <div className={styles.addOnsSection}>
