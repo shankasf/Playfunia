@@ -69,6 +69,11 @@ export const bookingEstimateSchema = z.object({
 
 export type BookingEstimateInput = z.infer<typeof bookingEstimateSchema>;
 
+const additionalChildSchema = z.object({
+  name: z.string().min(1).max(100),
+  birthDate: z.string().optional(),
+});
+
 export const createGuestBookingSchema = z.object({
   guestFirstName: z.string().min(1).max(100),
   guestLastName: z.string().min(1).max(100),
@@ -76,6 +81,7 @@ export const createGuestBookingSchema = z.object({
   guestPhone: z.string().min(10).max(20),
   childName: z.string().min(1).max(100),
   childBirthDate: childBirthDateSchema.optional(),
+  additionalChildren: z.array(additionalChildSchema).max(10).optional(),
   partyPackageId: z.string().min(1),
   location: z.string().min(1),
   eventDate: z.coerce.date(),
@@ -83,6 +89,8 @@ export const createGuestBookingSchema = z.object({
   notes: z.string().max(500).optional(),
   guests: z.number().int().positive().max(60),
   addOns: z.array(addOnSchema).optional(),
+  paymentOption: z.enum(['full', 'split']).optional(),
+  onlinePaymentAmount: z.number().positive().optional(),
 });
 
 export type CreateGuestBookingInput = z.infer<typeof createGuestBookingSchema>;

@@ -10,10 +10,17 @@ import {
   finalizeSquareGuestCheckout,
   SquareConfig,
 } from '../api/square';
+import {
+  formatNameInput,
+  formatPhoneInput,
+  isValidName,
+  isValidPhone,
+  isValidEmail,
+} from '../utils/validation';
 import styles from './CartPage.module.css';
 
 export function CartPage() {
-  const { items, removeItem, markTicketFulfilled, markMembershipActivated, markBookingDepositPaid, clear } = useCheckout();
+  const { items, removeItem, updateTicketQuantity, markTicketFulfilled, markMembershipActivated, markBookingDepositPaid, clear } = useCheckout();
   const { user, refreshProfile } = useAuth();
 
   const [squareConfig, setSquareConfig] = useState<SquareConfig | null>(null);
@@ -60,17 +67,51 @@ export function CartPage() {
     }
   };
 
+  const handleTicketIncrement = (id: string, currentQty: number) => {
+    if (currentQty < 10) {
+      updateTicketQuantity(id, currentQty + 1);
+    }
+  };
+
+  const handleTicketDecrement = (id: string, currentQty: number) => {
+    if (currentQty <= 1) {
+      handleRemoveItem(id);
+    } else {
+      updateTicketQuantity(id, currentQty - 1);
+    }
+  };
+
   const validateGuestInfo = () => {
-    if (!guestFirstName.trim() || !guestLastName.trim()) {
-      setError('Please enter your full name.');
+    if (!guestFirstName.trim()) {
+      setError('Please enter your first name.');
       return false;
     }
-    if (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+    if (!isValidName(guestFirstName)) {
+      setError('First name can only contain letters, spaces, hyphens, and apostrophes.');
+      return false;
+    }
+    if (!guestLastName.trim()) {
+      setError('Please enter your last name.');
+      return false;
+    }
+    if (!isValidName(guestLastName)) {
+      setError('Last name can only contain letters, spaces, hyphens, and apostrophes.');
+      return false;
+    }
+    if (!guestEmail.trim()) {
+      setError('Please enter your email address.');
+      return false;
+    }
+    if (!isValidEmail(guestEmail)) {
       setError('Please enter a valid email address.');
       return false;
     }
-    if (!guestPhone.trim() || guestPhone.trim().length < 10) {
-      setError('Please enter a valid phone number.');
+    if (!guestPhone.trim()) {
+      setError('Please enter your phone number.');
+      return false;
+    }
+    if (!isValidPhone(guestPhone)) {
+      setError('Please enter a valid 10-digit phone number.');
       return false;
     }
     return true;
@@ -187,7 +228,26 @@ export function CartPage() {
         return (
           <>
             <span className={styles.itemLabel}>{item.label}</span>
-            <span className={styles.itemMeta}>Quantity: {item.quantity}</span>
+            <div className={styles.quantityControls}>
+              <button
+                type="button"
+                className={styles.qtyBtn}
+                onClick={() => handleTicketDecrement(item.id, item.quantity)}
+                aria-label="Decrease quantity"
+              >
+                −
+              </button>
+              <span className={styles.qtyDisplay}>{item.quantity}</span>
+              <button
+                type="button"
+                className={styles.qtyBtn}
+                onClick={() => handleTicketIncrement(item.id, item.quantity)}
+                disabled={item.quantity >= 10}
+                aria-label="Increase quantity"
+              >
+                +
+              </button>
+            </div>
           </>
         );
       case 'membership':
@@ -281,15 +341,17 @@ export function CartPage() {
                       type="text"
                       placeholder="First name"
                       value={guestFirstName}
-                      onChange={(e) => setGuestFirstName(e.target.value)}
+                      onChange={(e) => setGuestFirstName(formatNameInput(e.target.value))}
                       className={styles.input}
+                      maxLength={100}
                     />
                     <input
                       type="text"
                       placeholder="Last name"
                       value={guestLastName}
-                      onChange={(e) => setGuestLastName(e.target.value)}
+                      onChange={(e) => setGuestLastName(formatNameInput(e.target.value))}
                       className={styles.input}
+                      maxLength={100}
                     />
                   </div>
                   <input
@@ -301,10 +363,11 @@ export function CartPage() {
                   />
                   <input
                     type="tel"
-                    placeholder="Phone number"
+                    placeholder="Phone (10 digits)"
                     value={guestPhone}
-                    onChange={(e) => setGuestPhone(e.target.value)}
+                    onChange={(e) => setGuestPhone(formatPhoneInput(e.target.value))}
                     className={styles.input}
+                    maxLength={10}
                   />
                 </div>
               )}

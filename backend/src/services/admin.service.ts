@@ -577,8 +577,105 @@ export async function updateTicketPurchase(purchaseId: number, updates: Partial<
   return TicketPurchaseRepository.update(purchaseId, updates);
 }
 
+export async function deleteTicketPurchase(purchaseId: number) {
+  return TicketPurchaseRepository.delete(purchaseId);
+}
+
 export async function redeemTicketCode(purchaseId: number, code: string) {
   return TicketPurchaseRepository.redeemCode(purchaseId, code);
+}
+
+/**
+ * Look up a ticket by its code (e.g., PF-ABC12345)
+ * Returns the purchase and code status
+ */
+export async function lookupTicketByCode(code: string) {
+  const normalizedCode = code.trim().toUpperCase();
+  const purchase = await TicketPurchaseRepository.findByCode(normalizedCode);
+
+  if (!purchase) {
+    return null;
+  }
+
+  // Find the specific code in the codes array
+  const codes = purchase.codes as Array<{ code: string; status: string; redeemedAt?: string }>;
+  const codeEntry = codes.find(c => c.code === normalizedCode);
+
+  return {
+    purchase,
+    codeEntry,
+  };
+}
+
+/**
+ * Validate a ticket code without redeeming it
+ */
+export async function validateTicketCode(code: string) {
+  const result = await lookupTicketByCode(code);
+
+  if (!result || !result.codeEntry) {
+    return {
+      valid: false,
+      status: 'invalid',
+      message: 'Ticket code not found',
+      ticket: null,
+    };
+  }
+
+  const { purchase, codeEntry } = result;
+  const isValid = codeEntry.status === 'unused';
+
+  return {
+    valid: isValid,
+    status: codeEntry.status,
+    message: isValid
+      ? 'Ticket is valid and ready to be redeemed'
+      : codeEntry.status === 'redeemed'
+        ? `Ticket was already redeemed on ${codeEntry.redeemedAt}`
+        : `Ticket status: ${codeEntry.status}`,
+    ticket: {
+      purchaseId: purchase.purchase_id,
+      code: codeEntry.code,
+      status: codeEntry.status,
+      redeemedAt: codeEntry.redeemedAt || null,
+      ticketType: purchase.ticket_type,
+      quantity: purchase.quantity,
+      eventId: purchase.event_id,
+      customerId: purchase.customer_id,
+      createdAt: purchase.created_at,
+    },
+  };
+}
+
+/**
+ * Redeem a ticket code (looks up by code, doesn't need purchaseId)
+ */
+export async function redeemTicketByCode(code: string, redeemedBy?: string) {
+  const normalizedCode = code.trim().toUpperCase();
+  const result = await lookupTicketByCode(normalizedCode);
+
+  if (!result || !result.codeEntry) {
+    throw new Error('Ticket code not found');
+  }
+
+  const { purchase, codeEntry } = result;
+
+  if (codeEntry.status === 'redeemed') {
+    throw new Error(`Ticket was already redeemed on ${codeEntry.redeemedAt}`);
+  }
+
+  // Redeem the code
+  const updatedPurchase = await TicketPurchaseRepository.redeemCode(purchase.purchase_id, normalizedCode);
+
+  return {
+    success: true,
+    purchaseId: purchase.purchase_id,
+    code: normalizedCode,
+    redeemedAt: new Date().toISOString(),
+    redeemedBy,
+    ticketType: purchase.ticket_type,
+    customer: purchase.customers,
+  };
 }
 
 // ============= App Payments Management =============

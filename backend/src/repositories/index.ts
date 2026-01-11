@@ -567,6 +567,14 @@ export const PartyBookingRepository = {
     balance_remaining?: number;
     payment_status?: string;
     child_ids?: number[];
+    // Partial payment fields
+    payment_option?: 'full' | 'split';
+    online_payment_amount?: number;
+    venue_payment_amount?: number;
+    // Guest contact fields
+    guest_name?: string;
+    guest_email?: string;
+    guest_phone?: string;
   }) {
     const { data, error } = await supabase
       .from('party_bookings')
@@ -1694,6 +1702,15 @@ export const TicketPurchaseRepository = {
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     return data ?? [];
+  },
+
+  async delete(purchaseId: number) {
+    const { error } = await supabase
+      .from('ticket_purchases')
+      .delete()
+      .eq('purchase_id', purchaseId);
+    if (error) throw error;
+    return true;
   },
 };
 

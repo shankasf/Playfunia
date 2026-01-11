@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import type { PartyPackage } from "../../data/types";
 import styles from "./PartyPackages.module.css";
 
@@ -7,6 +8,12 @@ interface Props {
 }
 
 export function PartyPackages({ packages, isLoading }: Props) {
+  const navigate = useNavigate();
+
+  const handleAddToCart = (packageId: string) => {
+    navigate(`/book-party?package=${packageId}`);
+  };
+
   return (
     <section className={styles.section} id="parties">
       <div className={styles.heroImage}>
@@ -46,6 +53,14 @@ export function PartyPackages({ packages, isLoading }: Props) {
               <li>Grip socks required for all guests</li>
               <li>Additional child $40 | Additional guest $10</li>
             </ul>
+            <button
+              type="button"
+              className={styles.addToCartButton}
+              onClick={() => pkg?.id && handleAddToCart(pkg.id)}
+              disabled={isLoading || !pkg?.id}
+            >
+              Add to Cart
+            </button>
           </article>
         ))}
       </div>

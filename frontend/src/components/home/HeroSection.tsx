@@ -33,8 +33,8 @@ export function HeroSection() {
         </div>
         <div className={styles.metrics}>
           <div className={styles.metricCard}>
-            <strong>2</strong>
-            <span>Mall locations (NY & NJ)</span>
+            <strong>1</strong>
+            <span>Mall location (Albany, NY)</span>
           </div>
           <div className={styles.metricCard}>
             <strong>1-13</strong>

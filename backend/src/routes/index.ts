@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import { authRouter } from './auth.routes';
 import { bookingRouter } from './booking.routes';
+import { chatbotRouter } from './chatbot.routes';
 import { healthRouter } from './health.routes';
 import { membershipRouter } from './membership.routes';
 import { partyPackageRouter } from './party-package.routes';
@@ -19,6 +20,7 @@ import { pricingRouter } from './pricing.routes';
 export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
+apiRouter.use('/chatbot', chatbotRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/users', userRouter);
 apiRouter.use('/bookings', bookingRouter);

@@ -116,24 +116,55 @@ export async function supabaseAuthGuard(req: Request, _res: Response, next: Next
  * Optional Supabase Auth Guard - Attaches user if valid token present, but doesn't require it.
  * Use for routes that work for both guests and authenticated users.
  */
-export async function optionalSupabaseAuthGuard(req: Request, res: Response, next: NextFunction) {
+export async function optionalSupabaseAuthGuard(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    // No auth header - continue as guest
+
+  // No auth header or empty token - continue as guest
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return next();
   }
 
-  // Try to authenticate, but don't fail if it doesn't work
-  try {
-    await new Promise<void>((resolve, reject) => {
-      supabaseAuthGuard(req, res, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
-  } catch {
-    // Invalid token - continue as guest
+  const token = authHeader.replace('Bearer ', '').trim();
+
+  // Empty token after stripping Bearer - continue as guest
+  if (!token) {
+    return next();
   }
+
+  // Try to verify and attach user, but don't fail if it doesn't work
+  try {
+    const jwtSecret = appConfig.supabaseJwtSecret;
+    if (!jwtSecret) {
+      // No JWT secret configured - continue as guest
+      return next();
+    }
+
+    const payload = jwt.verify(token, jwtSecret, {
+      algorithms: ['HS256'],
+    }) as SupabaseJWTPayload;
+
+    if (payload.role !== 'authenticated') {
+      // Not an authenticated token - continue as guest
+      return next();
+    }
+
+    // Look up the user
+    const user = await UserRepository.findByAuthUserId(payload.sub);
+    if (user) {
+      (req as SupabaseAuthenticatedRequest).user = {
+        id: String(user.user_id),
+        authUserId: payload.sub,
+        email: user.email,
+        roles: user.roles ?? ['user'],
+        type: 'user',
+        phone: user.phone ?? undefined,
+      };
+    }
+    // If user not found, continue as guest (don't create user for optional auth)
+  } catch {
+    // Any error (expired token, invalid token, etc.) - continue as guest
+  }
+
   return next();
 }
 

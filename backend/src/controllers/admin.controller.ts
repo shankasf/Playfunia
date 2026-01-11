@@ -665,6 +665,78 @@ export const redeemTicketCodeHandler = asyncHandler(async (req, res) => {
   return res.status(200).json({ ticket });
 });
 
+/**
+ * Validate a ticket code (check if it's valid without redeeming)
+ * POST /admin/tickets/validate
+ */
+export const validateTicketCodeHandler = asyncHandler(async (req, res) => {
+  const { code } = req.body;
+  if (!code || typeof code !== 'string') {
+    throw new AppError('Ticket code is required', 400);
+  }
+
+  const result = await AdminService.validateTicketCode(code);
+  return res.status(200).json(result);
+});
+
+/**
+ * Look up a ticket by its code
+ * GET /admin/tickets/lookup/:code
+ */
+export const lookupTicketByCodeHandler = asyncHandler(async (req, res) => {
+  const { code } = req.params;
+  if (!code) {
+    throw new AppError('Ticket code is required', 400);
+  }
+
+  const result = await AdminService.lookupTicketByCode(code);
+  if (!result) {
+    throw new AppError('Ticket code not found', 404);
+  }
+
+  const { purchase, codeEntry } = result;
+  return res.status(200).json({
+    ticket: {
+      purchaseId: purchase.purchase_id,
+      code: codeEntry?.code,
+      status: codeEntry?.status,
+      redeemedAt: codeEntry?.redeemedAt || null,
+      ticketType: purchase.ticket_type,
+      quantity: purchase.quantity,
+      eventId: purchase.event_id,
+      customer: purchase.customers || null,
+      createdAt: purchase.created_at,
+      allCodes: purchase.codes,
+    },
+  });
+});
+
+/**
+ * Redeem a ticket by code only (no purchaseId needed)
+ * POST /admin/tickets/redeem-code
+ */
+export const redeemTicketByCodeHandler = asyncHandler(async (req, res) => {
+  const { code, redeemedBy } = req.body;
+  if (!code || typeof code !== 'string') {
+    throw new AppError('Ticket code is required', 400);
+  }
+
+  const result = await AdminService.redeemTicketByCode(code, redeemedBy);
+  publishAdminEvent('ticket.redeemed', { code, redeemedBy });
+  return res.status(200).json(result);
+});
+
+/**
+ * Delete a ticket purchase
+ * DELETE /admin/tickets/:id
+ */
+export const deleteTicketPurchaseHandler = asyncHandler(async (req, res) => {
+  const purchaseId = parseIntParam(req.params.id);
+  await AdminService.deleteTicketPurchase(purchaseId);
+  publishAdminEvent('ticket.deleted', { purchaseId });
+  return res.status(200).json({ success: true, message: 'Ticket purchase deleted' });
+});
+
 // ============= App Payments =============
 export const listAppPaymentsHandler = asyncHandler(async (req, res) => {
   const purpose = req.query.purpose as string | undefined;

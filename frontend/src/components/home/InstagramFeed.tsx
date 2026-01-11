@@ -53,7 +53,7 @@ export function InstagramFeed() {
                 <h2 id="instagram-heading">See the smiles happening right now</h2>
                 <p>
                     Catch the latest parties, play sessions, and toddler giggles in real time.
-                    Follow us <a href="https://instagram.com/playfunia" target="_blank" rel="noreferrer">@playfunia</a>
+                    Follow us <a href="https://instagram.com/playfunia_" target="_blank" rel="noreferrer">@playfunia_</a>
                 </p>
             </div>
 
@@ -92,12 +92,12 @@ export function InstagramFeed() {
 
             <div className={styles.followCta}>
                 <a
-                    href="https://instagram.com/playfunia"
+                    href="https://instagram.com/playfunia_"
                     target="_blank"
                     rel="noreferrer"
                     className={styles.followButton}
                 >
-                    Follow @playfunia on Instagram
+                    Follow @playfunia_ on Instagram
                 </a>
             </div>
         </section>

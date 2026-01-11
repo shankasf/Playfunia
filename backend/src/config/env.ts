@@ -29,6 +29,10 @@ const envSchema = z
     DEFAULT_ADMIN_PASSWORD: z.string().optional(),
     INSTAGRAM_ACCESS_TOKEN: z.string().optional(),
     INSTAGRAM_USER_ID: z.string().optional(),
+    // OpenAI API for chatbot
+    OPENAI_API_KEY: z.string().optional(),
+    // Chatbot service URL
+    CHATBOT_SERVICE_URL: z.string().default('http://localhost:8000'),
     // SMTP Email Configuration (legacy)
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().optional(),
@@ -80,6 +84,8 @@ export const appConfig = {
   defaultAdminPassword: env.DEFAULT_ADMIN_PASSWORD,
   instagramAccessToken: env.INSTAGRAM_ACCESS_TOKEN,
   instagramUserId: env.INSTAGRAM_USER_ID,
+  openaiApiKey: env.OPENAI_API_KEY,
+  chatbotServiceUrl: env.CHATBOT_SERVICE_URL,
   // SMTP Email Configuration (legacy)
   smtpHost: env.SMTP_HOST,
   smtpPort: env.SMTP_PORT,

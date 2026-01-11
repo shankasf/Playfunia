@@ -29,10 +29,13 @@ The PlayFunia digital platform is a full-stack playground experience that brings
 **Core capabilities**
 - **Marketing Microsite**: Responsive, themed landing pages for admissions, memberships, parties, events, testimonials, FAQs, and contact information.
 - **Account & Authentication**: Guardian registration, login, JWT-based sessions, and stored membership data.
-- **Booking Engine**: Endpoints for party reservations, schedule availability, price estimates, cancellation, admin status updates.
+- **Booking Engine**: Endpoints for party reservations, schedule availability, price estimates, cancellation, admin status updates, and partial payment/deposit handling.
+- **Payment Processing**: Integrated Square payment gateway for secure deposit and full payment processing with webhook support.
+- **Email Service**: OTP verification and booking confirmation emails via integrated email service.
 - **Content Services**: CMS-like APIs for FAQs, announcements, testimonials, and front-page highlights.
-- **Data Integration**: Supabase (PostgreSQL) for users, children, memberships, packages, bookings, events, waivers, testimonials, FAQs, announcements, and content.
-- **Virtual Concierge Chatbot**: React widget + FastAPI service backed by OpenAI and local ChromaDB RAG, guiding families with up-to-date facility info.
+- **Data Integration**: Supabase (PostgreSQL) for users, children, memberships, packages, bookings, events, waivers, testimonials, FAQs, announcements, and content. Dynamic pricing fetched from database.
+- **Virtual Concierge Chatbot**: React widget + FastAPI service backed by OpenAI and local ChromaDB RAG, guiding families with up-to-date facility info. Enhanced UI with markdown support and typing indicators.
+- **Admin Dashboard**: Comprehensive admin panel for managing bookings, users, and system settings with role-based access control.
 - **Infrastructure**: Docker Compose orchestrations, environment templates, and seeding scripts for realistic data.
 
 ---
@@ -110,7 +113,7 @@ FastAPI Chatbot (Python) runs alongside frontend/backend, enriches answers with 
 │   ├── package.json            # CRA config
 │   └── start-dev.bat           # Launch script for frontend + backend
 │
-├── chatbot/                    # FastAPI skeleton (future virtual concierge)
+├── chatbot_service/            # FastAPI chatbot with OpenAI + ChromaDB RAG
 ├── docker/                     # Docker Compose/environment configs
 ├── docs/                       # Additional documentation (future design docs)
 ├── kidz4fun.txt                # Source-of-truth business information (locations, pricing, policies)
@@ -123,9 +126,9 @@ FastAPI Chatbot (Python) runs alongside frontend/backend, enriches answers with 
 ## Environments & Secrets
 | Service   | File                    | Variables                                                                                             |
 |-----------|------------------------|--------------------------------------------------------------------------------------------------------|
-| Backend   | `backend/.env`         | `NODE_ENV`, `PORT`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `FRONTEND_URL`, `CORS_ORIGIN`, `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD` |
-| Frontend  | `frontend/.env` (opt.) | `REACT_APP_API_URL` (defaults to `http://localhost:5000/api`), `REACT_APP_STRIPE_PUBLISHABLE_KEY`    |
-| Chatbot   | `chatbot/.env` (future)| `OPENAI_API_KEY`, `BACKEND_BASE_URL`, etc.                                                            |
+| Backend   | `backend/.env`         | `NODE_ENV`, `PORT`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECRET`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_ENVIRONMENT`, `EMAIL_SERVICE_API_KEY`, `FRONTEND_URL`, `CORS_ORIGIN`, `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD` |
+| Frontend  | `frontend/.env` (opt.) | `REACT_APP_API_URL` (defaults to `http://localhost:5000/api`), `REACT_APP_SQUARE_APP_ID`, `REACT_APP_SQUARE_LOCATION_ID` |
+| Chatbot   | `chatbot_service/.env` | `OPENAI_API_KEY`, `BACKEND_BASE_URL`, etc.                                                            |
 
 The repo includes `.env.example` templates. Never commit production credentials. Use secret managers (e.g., Azure Key Vault, AWS Secrets Manager) for deployments.
 
@@ -218,6 +221,11 @@ The repo includes `.env.example` templates. Never commit production credentials.
 | ...    | (Similar for testimonials/ann.)   |                                                        |
 | POST   | `/api/waivers`                    | Guardian signs waiver                                  |
 | GET    | `/api/waivers`                    | Guardian lists signed waivers                          |
+| GET    | `/api/admin/users`                | Admin list all users                                   |
+| POST   | `/api/admin/users`                | Admin create new user                                  |
+| PUT    | `/api/admin/users/:id`            | Admin update user                                      |
+| DELETE | `/api/admin/users/:id`            | Admin delete user                                      |
+| POST   | `/api/chatbot/message`            | Send message to AI chatbot                             |
 
 ---
 
@@ -251,13 +259,19 @@ The repo includes `.env.example` templates. Never commit production credentials.
 ---
 
 ## Roadmap & Next Steps
-- Hook chatbot FastAPI service to backend for concierge assistance.
-- Finalize Stripe onboarding for production keys and extend deposit handling to membership payments.
-- Implement guardian portal features (child management, waiver uploads, loyalty points).
-- Build admin dashboard UI (analytics, booking calendar, content editor).
-- Add automated tests and CI pipelines.
-- Implement i18n for multilingual support (EN/ES).
-- Enhance accessibility (WCAG 2.1) evaluations and keyboard navigation.
+**Completed:**
+- ✅ Chatbot FastAPI service integrated with enhanced UI (markdown support, typing indicators)
+- ✅ Square payment integration for party booking deposits
+- ✅ Email service for OTP verification and booking confirmations
+- ✅ Admin dashboard with user management and booking controls
+- ✅ Dynamic pricing fetched from Supabase database
+
+**In Progress:**
+- Implement guardian portal features (child management, waiver uploads, loyalty points)
+- Add automated tests and CI pipelines
+- Implement i18n for multilingual support (EN/ES)
+- Enhance accessibility (WCAG 2.1) evaluations and keyboard navigation
+- Add analytics and reporting features to admin dashboard
 
 For any questions, consult `kidz4fun.txt` for business context or reach out to the engineering team. Happy hacking!
 

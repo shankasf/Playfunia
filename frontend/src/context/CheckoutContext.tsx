@@ -55,6 +55,7 @@ interface CheckoutContextValue {
   addBookingDepositItem: (item: BookingCartItem) => void;
   markBookingDepositPaid: (bookingId: string, balanceRemaining: number) => void;
   addTicketPurchase: (item: TicketCartItem) => void;
+  updateTicketQuantity: (itemId: string, newQuantity: number) => void;
   markTicketFulfilled: (itemId: string, update: { ticketId?: string; codes?: string[]; discounts?: DiscountLine[]; promoCode?: string }) => void;
   addMembershipPurchase: (item: MembershipCartItem) => void;
   markMembershipActivated: (itemId: string, activatedAt?: string) => void;
@@ -133,6 +134,26 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     setItems(prev => [...prev, item]);
   };
 
+  const updateTicketQuantity = (itemId: string, newQuantity: number) => {
+    if (newQuantity <= 0) {
+      // Remove item if quantity is 0 or less
+      removeItem(itemId);
+      return;
+    }
+    setItems(prev =>
+      prev.map(item => {
+        if (item.type === "ticket" && item.id === itemId && item.status === "pending") {
+          return {
+            ...item,
+            quantity: newQuantity,
+            total: Number((item.unitPrice * newQuantity).toFixed(2)),
+          };
+        }
+        return item;
+      }),
+    );
+  };
+
   const markTicketFulfilled = (
     itemId: string,
     update: { ticketId?: string; codes?: string[]; discounts?: DiscountLine[]; promoCode?: string },
@@ -186,6 +207,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
       addBookingDepositItem,
       markBookingDepositPaid,
       addTicketPurchase,
+      updateTicketQuantity,
       markTicketFulfilled,
       addMembershipPurchase,
       markMembershipActivated,

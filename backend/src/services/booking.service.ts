@@ -334,7 +334,7 @@ export async function estimateBookingPrice(input: BookingEstimateInput) {
 
 export async function listAllBookings() {
   const bookings = await PartyBookingRepository.findAll();
-  
+
   return bookings.map(b => ({
     id: String(b.booking_id),
     reference: b.reference,
@@ -355,6 +355,14 @@ export async function listAllBookings() {
     partyPackage: b.party_packages,
     customer: b.customers,
     createdAt: b.created_at,
+    // Partial payment tracking
+    paymentOption: (b as { payment_option?: string }).payment_option || 'full',
+    onlinePaymentAmount: (b as { online_payment_amount?: number }).online_payment_amount ?? b.deposit_amount ?? 0,
+    venuePaymentAmount: (b as { venue_payment_amount?: number }).venue_payment_amount ?? b.balance_remaining ?? 0,
+    // Guest info
+    guestName: (b as { guest_name?: string }).guest_name,
+    guestEmail: (b as { guest_email?: string }).guest_email,
+    guestPhone: (b as { guest_phone?: string }).guest_phone,
   }));
 }
 
@@ -598,6 +606,53 @@ interface GuestBookingResult {
   guestEmail: string;
 }
 
+/**
+ * Calculate deposit amount based on payment option
+ * - 'full': Pay full amount online
+ * - 'split': Pay custom amount online, rest at venue (minimum $100)
+ */
+function calculateDepositAmount(
+  total: number,
+  paymentOption?: 'full' | 'split',
+  customAmount?: number
+): number {
+  if (paymentOption === 'split' && customAmount !== undefined) {
+    // Ensure minimum $100 and max total
+    return Math.max(100, Math.min(total, customAmount));
+  }
+  // Default to full payment
+  return total;
+}
+
+/**
+ * Build notes field for guest booking including all children
+ */
+function buildGuestBookingNotes(input: CreateGuestBookingInput): string {
+  const lines = [
+    'GUEST BOOKING',
+    `Name: ${input.guestFirstName} ${input.guestLastName}`,
+    `Email: ${input.guestEmail}`,
+    `Phone: ${input.guestPhone}`,
+    '',
+    'CHILDREN:',
+    `1. ${input.childName}${input.childBirthDate ? ` (DOB: ${input.childBirthDate.toISOString().slice(0, 10)})` : ''} [Birthday Child]`,
+  ];
+
+  // Add additional children
+  if (input.additionalChildren && input.additionalChildren.length > 0) {
+    input.additionalChildren.forEach((child, index) => {
+      lines.push(`${index + 2}. ${child.name}${child.birthDate ? ` (DOB: ${child.birthDate})` : ''}`);
+    });
+  }
+
+  // Add custom notes if any
+  if (input.notes) {
+    lines.push('', 'NOTES:', input.notes);
+  }
+
+  return lines.join('\n').trim();
+}
+
 export async function createGuestBooking(input: CreateGuestBookingInput): Promise<GuestBookingResult> {
   const packageId = parseInt(input.partyPackageId, 10);
   if (isNaN(packageId)) {
@@ -640,6 +695,10 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
 
   const reference = `BK-${DateTime.now().toFormat('yyyyLLddHHmm')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
+  // Calculate payment amounts
+  const onlineAmount = calculateDepositAmount(pricing.total, input.paymentOption, input.onlinePaymentAmount);
+  const venueAmount = pricing.total - onlineAmount;
+
   // Create booking without customer_id (guest booking)
   const booking = await PartyBookingRepository.create({
     package_id: partyPackage.package_id,
@@ -652,16 +711,24 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
     start_time: startDateTime.toFormat('HH:mm'),
     end_time: endDateTime.toFormat('HH:mm'),
     guests: input.guests,
-    notes: `GUEST BOOKING\nName: ${input.guestFirstName} ${input.guestLastName}\nEmail: ${input.guestEmail}\nPhone: ${input.guestPhone}\nChild: ${input.childName}${input.childBirthDate ? ` (DOB: ${input.childBirthDate.toISOString().slice(0, 10)})` : ''}\n\n${input.notes || ''}`.trim(),
+    notes: buildGuestBookingNotes(input),
     add_ons: addOnDetails.selected,
     subtotal: pricing.subtotal,
     cleaning_fee: pricing.cleaningFee,
     total: pricing.total,
-    deposit_amount: pricing.depositAmount,
-    balance_remaining: pricing.balanceRemaining,
-    payment_status: 'awaiting_deposit',
+    deposit_amount: onlineAmount,
+    balance_remaining: venueAmount,
+    payment_status: input.paymentOption === 'full' ? 'awaiting_full_payment' : 'awaiting_deposit',
     status: 'Pending',
     child_ids: [],
+    // Payment tracking fields
+    payment_option: input.paymentOption || 'full',
+    online_payment_amount: onlineAmount,
+    venue_payment_amount: venueAmount,
+    // Guest contact info (separate columns for easy admin lookup)
+    guest_name: `${input.guestFirstName} ${input.guestLastName}`.trim(),
+    guest_email: input.guestEmail,
+    guest_phone: input.guestPhone,
   });
 
   publishAdminEvent('booking.created', {
@@ -671,6 +738,7 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
     eventDate: booking.event_date,
     startTime: booking.start_time,
     depositAmount: booking.deposit_amount,
+    paymentOption: input.paymentOption || 'full',
     isGuestBooking: true,
     guestEmail: input.guestEmail,
   });

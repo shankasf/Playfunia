@@ -75,11 +75,8 @@ export const checkBookingAvailabilityHandler = asyncHandler(
   },
 );
 
+// Public endpoint - accessible to both guests and authenticated users
 export const listBookingSlotsHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  if (!req.user) {
-    throw new AppError("Unauthorized", 401);
-  }
-
   const query = parseWithSchema(bookingSlotsQuerySchema, {
     location: req.query.location,
     eventDate: req.query.eventDate,
@@ -88,12 +85,9 @@ export const listBookingSlotsHandler = asyncHandler(async (req: AuthenticatedReq
   return res.status(200).json(result);
 });
 
+// Public endpoint - accessible to both guests and authenticated users
 export const estimateBookingPriceHandler = asyncHandler(
   async (req: AuthenticatedRequest, res: Response) => {
-    if (!req.user) {
-      throw new AppError("Unauthorized", 401);
-    }
-
     const payload = parseWithSchema(bookingEstimateSchema, req.body);
     const result = await estimateBookingPrice(payload);
     return res.status(200).json(result);

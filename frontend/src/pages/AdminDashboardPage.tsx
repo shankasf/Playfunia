@@ -15,6 +15,7 @@ import {
   MembershipValidationResult,
   cancelAdminBooking,
   createAdminEventSource,
+  deleteAdminTicketPurchase,
   deleteAdminWaiverSubmission,
   fetchAdminBookings,
   fetchAdminMemberships,
@@ -102,6 +103,7 @@ export function AdminDashboardPage() {
   const [waiverForm, setWaiverForm] = useState<WaiverFormState>(emptyWaiverForm());
   const [waiverActionMessage, setWaiverActionMessage] = useState<string | null>(null);
   const [waiverActionBusy, setWaiverActionBusy] = useState(false);
+  const [waiverDisplayCount, setWaiverDisplayCount] = useState(10);
   const [ticketCode, setTicketCode] = useState('');
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
   const [visitLoading, setVisitLoading] = useState<string | null>(null);
@@ -352,6 +354,22 @@ export function AdminDashboardPage() {
       await refreshAll({ silent: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to redeem code.';
+      setTicketMessage(message);
+    }
+  };
+
+  const handleDeleteTicket = async (ticketId: string, ticketType: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete this ${ticketType} ticket purchase? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteAdminTicketPurchase(ticketId);
+      setTicketMessage('Ticket purchase deleted.');
+      await refreshAll({ silent: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete ticket.';
       setTicketMessage(message);
     }
   };
@@ -640,11 +658,143 @@ export function AdminDashboardPage() {
               </button>
             </div>
             {ticketMessage && <p className={styles.feedback}>{ticketMessage}</p>}
-            {renderTicketLog(ticketState)}
+            {renderTicketLog(ticketState, handleDeleteTicket)}
           </section>
         </div>
 
         <aside className={styles.columnAside}>
+          <section className={styles.panel}>
+            <header className={styles.panelHeader}>
+              <h2>Membership roster</h2>
+            </header>
+            {membershipMessage && <p className={styles.feedback}>{membershipMessage}</p>}
+            {renderMembershipList(membershipState, visitLoading, handleRecordVisit, handleSelectMembership, selectedMembershipId)}
+          </section>
+
+          {selectedMembershipId && (
+            <section className={styles.panel}>
+              <header className={styles.panelHeader}>
+                <h2>Edit membership</h2>
+              </header>
+              <div className={styles.formGrid}>
+                <label>
+                  Tier
+                  <select
+                    value={membershipForm.tier}
+                    onChange={(event) =>
+                      setMembershipForm((prev) => ({ ...prev, tier: event.target.value }))
+                    }
+                  >
+                    <option value="explorer">Silver (Explorer)</option>
+                    <option value="adventurer">Gold (Adventurer)</option>
+                    <option value="champion">Platinum (Champion)</option>
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select
+                    value={membershipForm.status}
+                    onChange={(event) =>
+                      setMembershipForm((prev) => ({
+                        ...prev,
+                        status: event.target.value as 'active' | 'cancelled' | 'expired',
+                      }))
+                    }
+                  >
+                    <option value="active">Active</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="expired">Expired</option>
+                  </select>
+                </label>
+                <label>
+                  Visits used this period
+                  <input
+                    type="number"
+                    min={0}
+                    value={membershipForm.visitsUsed}
+                    onChange={(event) =>
+                      setMembershipForm((prev) => ({
+                        ...prev,
+                        visitsUsed: parseInt(event.target.value, 10) || 0,
+                      }))
+                    }
+                  />
+                </label>
+                <label className={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={membershipForm.autoRenew}
+                    onChange={(event) =>
+                      setMembershipForm((prev) => ({ ...prev, autoRenew: event.target.checked }))
+                    }
+                  />
+                  Auto-renew
+                </label>
+              </div>
+              <div className={styles.formActions}>
+                <button type="button" onClick={handleMembershipUpdate} disabled={membershipActionBusy}>
+                  {membershipActionBusy ? 'Saving...' : 'Save changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMembershipId(null)}
+                  className={styles.secondaryButton}
+                >
+                  Close
+                </button>
+              </div>
+            </section>
+          )}
+
+          <section className={styles.panel}>
+            <header className={styles.panelHeader}>
+              <h2>Entry validation</h2>
+            </header>
+            <div className={styles.ticketActions}>
+              <input
+                type="text"
+                placeholder="Scan code or search email"
+                value={validateInput}
+                onChange={(event) => setValidateInput(event.target.value)}
+              />
+              <button type="button" onClick={handleValidationLookup}>
+                Validate
+              </button>
+            </div>
+            {validationMessage && <p className={styles.feedback}>{validationMessage}</p>}
+            {validationResult && (
+              <div
+                className={styles.validationResult}
+                data-status={validationResult.membership ? 'allowed' : 'denied'}
+              >
+                <h3>
+                  {validationProfile
+                    ? formatGuardian({
+                      firstName: validationProfile.firstName,
+                      lastName: validationProfile.lastName,
+                      email: validationProfile.email,
+                    })
+                    : validationResult.userId}
+                </h3>
+                <p>
+                  Tier: <strong>{validationResult.membership?.tierName ?? 'None'}</strong>
+                </p>
+                <p>
+                  Visits used this period: {validationResult.membership?.visitsUsed ?? 0}
+                  {typeof validationResult.membership?.visitsPerMonth === 'number'
+                    ? ` / ${validationResult.membership.visitsPerMonth}`
+                    : ''}
+                </p>
+                <p>
+                  Last visit:{' '}
+                  {validationResult.membership?.lastVisitAt
+                    ? formatDate(validationResult.membership.lastVisitAt)
+                    : '--'}
+                </p>
+              </div>
+            )}
+          </section>
+
           <section className={styles.panel}>
             <header className={styles.panelHeader}>
               <h2>Waiver intake</h2>
@@ -661,7 +811,14 @@ export function AdminDashboardPage() {
                 )}
               </div>
             </header>
-            {renderWaiverList(waiverState, handleSelectWaiver, handleDeleteWaiver, selectedWaiverId)}
+            {renderWaiverList(
+              waiverState,
+              handleSelectWaiver,
+              handleDeleteWaiver,
+              selectedWaiverId,
+              waiverDisplayCount,
+              () => setWaiverDisplayCount((prev) => prev + 10)
+            )}
 
             {selectedWaiverId && (
               <section className={styles.waiverEdit} aria-label="Edit waiver">
@@ -880,138 +1037,6 @@ export function AdminDashboardPage() {
               </section>
             )}
           </section>
-
-          <section className={styles.panel}>
-            <header className={styles.panelHeader}>
-              <h2>Membership roster</h2>
-            </header>
-            {membershipMessage && <p className={styles.feedback}>{membershipMessage}</p>}
-            {renderMembershipList(membershipState, visitLoading, handleRecordVisit, handleSelectMembership, selectedMembershipId)}
-          </section>
-
-          {selectedMembershipId && (
-            <section className={styles.panel}>
-              <header className={styles.panelHeader}>
-                <h2>Edit membership</h2>
-              </header>
-              <div className={styles.formGrid}>
-                <label>
-                  Tier
-                  <select
-                    value={membershipForm.tier}
-                    onChange={(event) =>
-                      setMembershipForm((prev) => ({ ...prev, tier: event.target.value }))
-                    }
-                  >
-                    <option value="explorer">Silver (Explorer)</option>
-                    <option value="adventurer">Gold (Adventurer)</option>
-                    <option value="champion">Platinum (Champion)</option>
-                  </select>
-                </label>
-                <label>
-                  Status
-                  <select
-                    value={membershipForm.status}
-                    onChange={(event) =>
-                      setMembershipForm((prev) => ({
-                        ...prev,
-                        status: event.target.value as 'active' | 'cancelled' | 'expired',
-                      }))
-                    }
-                  >
-                    <option value="active">Active</option>
-                    <option value="cancelled">Cancelled</option>
-                    <option value="expired">Expired</option>
-                  </select>
-                </label>
-                <label>
-                  Visits used this period
-                  <input
-                    type="number"
-                    min={0}
-                    value={membershipForm.visitsUsed}
-                    onChange={(event) =>
-                      setMembershipForm((prev) => ({
-                        ...prev,
-                        visitsUsed: parseInt(event.target.value, 10) || 0,
-                      }))
-                    }
-                  />
-                </label>
-                <label className={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={membershipForm.autoRenew}
-                    onChange={(event) =>
-                      setMembershipForm((prev) => ({ ...prev, autoRenew: event.target.checked }))
-                    }
-                  />
-                  Auto-renew
-                </label>
-              </div>
-              <div className={styles.formActions}>
-                <button type="button" onClick={handleMembershipUpdate} disabled={membershipActionBusy}>
-                  {membershipActionBusy ? 'Saving...' : 'Save changes'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedMembershipId(null)}
-                  className={styles.secondaryButton}
-                >
-                  Close
-                </button>
-              </div>
-            </section>
-          )}
-
-          <section className={styles.panel}>
-            <header className={styles.panelHeader}>
-              <h2>Entry validation</h2>
-            </header>
-            <div className={styles.ticketActions}>
-              <input
-                type="text"
-                placeholder="Scan code or search email"
-                value={validateInput}
-                onChange={(event) => setValidateInput(event.target.value)}
-              />
-              <button type="button" onClick={handleValidationLookup}>
-                Validate
-              </button>
-            </div>
-            {validationMessage && <p className={styles.feedback}>{validationMessage}</p>}
-            {validationResult && (
-              <div
-                className={styles.validationResult}
-                data-status={validationResult.membership ? 'allowed' : 'denied'}
-              >
-                <h3>
-                  {validationProfile
-                    ? formatGuardian({
-                      firstName: validationProfile.firstName,
-                      lastName: validationProfile.lastName,
-                      email: validationProfile.email,
-                    })
-                    : validationResult.userId}
-                </h3>
-                <p>
-                  Tier: <strong>{validationResult.membership?.tierName ?? 'None'}</strong>
-                </p>
-                <p>
-                  Visits used this period: {validationResult.membership?.visitsUsed ?? 0}
-                  {typeof validationResult.membership?.visitsPerMonth === 'number'
-                    ? ` / ${validationResult.membership.visitsPerMonth}`
-                    : ''}
-                </p>
-                <p>
-                  Last visit:{' '}
-                  {validationResult.membership?.lastVisitAt
-                    ? formatDate(validationResult.membership.lastVisitAt)
-                    : '--'}
-                </p>
-              </div>
-            )}
-          </section>
         </aside>
       </div>
 
@@ -1054,52 +1079,96 @@ function renderBookingTable(
             <th>Reference</th>
             <th>Location</th>
             <th>Date</th>
-            <th>Guardian</th>
+            <th>Customer</th>
             <th>Status</th>
-            <th>Balance</th>
+            <th>Payment</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {state.data.map((booking) => (
-            <tr
-              key={booking.id}
-              className={booking.id === selectedId ? styles.rowSelected : undefined}
-            >
-              <td>{booking.reference}</td>
-              <td>{booking.location}</td>
-              <td>
-                {formatDate(booking.eventDate)} &middot; {booking.startTime}
-              </td>
-              <td>{formatGuardian(booking.guardian)}</td>
-              <td>{booking.status}</td>
-              <td>{formatCurrency(booking.balanceRemaining)}</td>
-              <td>
-                <div className={styles.bookingActions}>
-                  <button
-                    type="button"
-                    className={styles.editBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSelect(booking);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.deleteBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(booking);
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
+          {state.data.map((booking) => {
+            const isGuest = !booking.guardian && booking.guestName;
+            const customerDisplay = isGuest
+              ? `${booking.guestName} (Guest)`
+              : formatGuardian(booking.guardian);
+            // Calculate paid and due amounts based on payment status
+            const isPaid = booking.paymentStatus === 'deposit_paid' || booking.paymentStatus === 'paid';
+            const paidAmount = isPaid ? (booking.depositAmount ?? 0) : 0;
+            const dueAmount = booking.balanceRemaining ?? 0;
+            const hasSplitPayment = dueAmount > 0 && paidAmount > 0;
+            return (
+              <tr
+                key={booking.id}
+                className={booking.id === selectedId ? styles.rowSelected : undefined}
+              >
+                <td>{booking.reference}</td>
+                <td>{booking.location}</td>
+                <td>
+                  {formatDate(booking.eventDate)} &middot; {booking.startTime}
+                </td>
+                <td>
+                  <div className={styles.customerCell}>
+                    <span>{customerDisplay}</span>
+                    {isGuest && booking.guestEmail && (
+                      <small className={styles.guestEmail}>{booking.guestEmail}</small>
+                    )}
+                  </div>
+                </td>
+                <td>{booking.status}</td>
+                <td>
+                  <div className={styles.paymentCell}>
+                    {isPaid ? (
+                      <>
+                        <span className={styles.paymentPaid}>
+                          Paid: {formatCurrency(paidAmount)}
+                        </span>
+                        {dueAmount > 0 && (
+                          <small className={styles.paymentDue}>
+                            Due: {formatCurrency(dueAmount)}
+                          </small>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span className={styles.paymentPending}>
+                          Awaiting: {formatCurrency(booking.depositAmount ?? 0)}
+                        </span>
+                        {hasSplitPayment && (
+                          <small className={styles.paymentDue}>
+                            + {formatCurrency(dueAmount)} at venue
+                          </small>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </td>
+                <td>
+                  <div className={styles.bookingActions}>
+                    <button
+                      type="button"
+                      className={styles.editBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect(booking);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.deleteBtn}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(booking);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1111,64 +1180,85 @@ function renderWaiverList(
   onSelect: (waiver: AdminWaiver) => void,
   onDelete: (waiverId: string, guardianName: string) => void,
   selectedId: string | null,
+  displayCount: number,
+  onLoadMore: () => void,
 ) {
   if (state.status === 'loading') return <p>Loading waivers...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
   if (state.data.length === 0) return <p>No waivers yet.</p>;
+
+  const visibleWaivers = state.data.slice(0, displayCount);
+  const hasMore = state.data.length > displayCount;
+  const remaining = state.data.length - displayCount;
+
   return (
-    <ul className={styles.waiverList}>
-      {state.data.map((waiver) => (
-        <li
-          key={waiver.id}
-          onClick={() => onSelect(waiver)}
-          className={waiver.id === selectedId ? styles.waiverSelected : undefined}
-        >
-          <div>
-            <strong>{waiver.guardianName}</strong>
-            <span>{waiver.guardianEmail}</span>
-            {waiver.visitCount && waiver.visitCount > 1 && (
-              <small className={styles.repeatVisitor}>
-                🔁 {waiver.visitCount} visits
-              </small>
-            )}
-            {waiver.marketingOptIn && <small>Marketing opt-in</small>}
-          </div>
-          <div className={styles.waiverMeta}>
-            <span>{formatDate(waiver.signedAt)}</span>
-            <div className={styles.waiverActions}>
-              <button
-                type="button"
-                className={styles.editBtn}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onSelect(waiver);
-                }}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className={styles.deleteBtn}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete(waiver.id, waiver.guardianName);
-                }}
-              >
-                Delete
-              </button>
+    <>
+      <ul className={styles.waiverList}>
+        {visibleWaivers.map((waiver) => (
+          <li
+            key={waiver.id}
+            onClick={() => onSelect(waiver)}
+            className={waiver.id === selectedId ? styles.waiverSelected : undefined}
+          >
+            <div>
+              <strong>{waiver.guardianName}</strong>
+              <span>{waiver.guardianEmail}</span>
+              {waiver.visitCount && waiver.visitCount > 1 && (
+                <small className={styles.repeatVisitor}>
+                  🔁 {waiver.visitCount} visits
+                </small>
+              )}
+              {waiver.marketingOptIn && <small>Marketing opt-in</small>}
             </div>
-          </div>
-        </li>
-      ))}
-    </ul>
+            <div className={styles.waiverMeta}>
+              <span>{formatDate(waiver.signedAt)}</span>
+              <div className={styles.waiverActions}>
+                <button
+                  type="button"
+                  className={styles.editBtn}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelect(waiver);
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className={styles.deleteBtn}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDelete(waiver.id, waiver.guardianName);
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {hasMore && (
+        <button
+          type="button"
+          className={styles.loadMoreBtn}
+          onClick={onLoadMore}
+        >
+          Show more ({remaining} remaining)
+        </button>
+      )}
+    </>
   );
 }
 
-function renderTicketLog(state: {
-  status: LoadState;
-  data: AdminTicketLogEntry[];
-  error?: string;
-}) {
+function renderTicketLog(
+  state: {
+    status: LoadState;
+    data: AdminTicketLogEntry[];
+    error?: string;
+  },
+  onDelete: (ticketId: string, ticketType: string) => void
+) {
   if (state.status === 'loading') return <p>Loading ticket log...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
   if (state.data.length === 0) return <p>No ticket redemptions yet.</p>;
@@ -1178,25 +1268,47 @@ function renderTicketLog(state: {
         <thead>
           <tr>
             <th>Type</th>
-            <th>Quantity</th>
-            <th>Total</th>
+            <th>Qty</th>
             <th>Guardian</th>
+            <th>Payment</th>
             <th>Purchased</th>
             <th>Redeemed</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {state.data.map((entry) => {
             const redeemed = entry.codes.filter((code) => code.status === 'redeemed').length;
+            const allRedeemed = redeemed === entry.codes.length;
             return (
               <tr key={entry.id}>
                 <td>{entry.type}</td>
                 <td>{entry.quantity}</td>
-                <td>{formatCurrency(entry.total)}</td>
                 <td>{formatGuardian(entry.guardian)}</td>
+                <td>
+                  <div className={styles.paymentCell}>
+                    <span className={styles.paymentPaid}>
+                      Paid: {formatCurrency(entry.total)}
+                    </span>
+                    <small className={styles.paymentComplete}>
+                      Full payment
+                    </small>
+                  </div>
+                </td>
                 <td>{formatDate(entry.createdAt)}</td>
                 <td>
-                  {redeemed}/{entry.codes.length}
+                  <span className={allRedeemed ? styles.redemptionComplete : styles.redemptionPending}>
+                    {redeemed}/{entry.codes.length}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className={styles.deleteBtn}
+                    onClick={() => onDelete(entry.id, entry.type)}
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             );

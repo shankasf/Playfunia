@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { getAllPricing, type AllPricing } from "../api/pricing";
 import { PrimaryButton } from "../components/common/PrimaryButton";
 import { useAuth } from "../context/AuthContext";
-import { useCheckout } from "../context/CheckoutContext";
+import { useCheckout, type TicketCartItem } from "../context/CheckoutContext";
 import styles from "./BuyTicketPage.module.css";
 
 type PricingInfo = {
@@ -20,9 +20,19 @@ type GuestForm = {
 
 export function BuyTicketPage() {
   const { user } = useAuth();
-  const { addTicketPurchase } = useCheckout();
+  const { items, addTicketPurchase, updateTicketQuantity, removeItem } = useCheckout();
   const [quantity, setQuantity] = useState(1);
   const [status, setStatus] = useState<{ type: "idle" | "success" | "error"; message?: string }>({ type: "idle" });
+
+  // Find existing pending ticket in cart
+  const existingTicket = useMemo(() => {
+    return items.find(
+      (item): item is TicketCartItem => item.type === "ticket" && item.status === "pending"
+    );
+  }, [items]);
+
+  // Get cart quantity for display
+  const cartQuantity = existingTicket?.quantity ?? 0;
 
   // Pricing data from API
   const [pricingData, setPricingData] = useState<AllPricing | null>(null);
@@ -127,6 +137,28 @@ export function BuyTicketPage() {
 
   const handleGuestChange = (field: keyof GuestForm, value: boolean) => {
     setGuestForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Handlers for cart quantity controls
+  const handleIncrement = () => {
+    if (existingTicket) {
+      const newQty = existingTicket.quantity + 1;
+      if (newQty <= 10) {
+        updateTicketQuantity(existingTicket.id, newQty);
+      }
+    }
+  };
+
+  const handleDecrement = () => {
+    if (existingTicket) {
+      const newQty = existingTicket.quantity - 1;
+      if (newQty <= 0) {
+        removeItem(existingTicket.id);
+        setStatus({ type: "idle" });
+      } else {
+        updateTicketQuantity(existingTicket.id, newQty);
+      }
+    }
   };
 
   const handleGuestSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -241,13 +273,39 @@ export function BuyTicketPage() {
               {status.type === "error" ? (
                 <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
               ) : null}
-              {status.type === "success" ? (
-                <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
+              {status.type === "success" || existingTicket ? (
+                <p className={`${styles.status} ${styles.statusSuccess}`}>
+                  {cartQuantity} play pass{cartQuantity === 1 ? "" : "es"} in cart.{" "}
+                  <Link to="/cart" className={styles.cartLink}>View cart</Link>
+                </p>
               ) : null}
 
-              <PrimaryButton type="submit" disabled={status.type === "success"}>
-                Add to Cart
-              </PrimaryButton>
+              {existingTicket ? (
+                <div className={styles.quantityControls}>
+                  <button
+                    type="button"
+                    className={styles.quantityBtn}
+                    onClick={handleDecrement}
+                    aria-label="Decrease quantity"
+                  >
+                    −
+                  </button>
+                  <span className={styles.quantityDisplay}>{cartQuantity}</span>
+                  <button
+                    type="button"
+                    className={styles.quantityBtn}
+                    onClick={handleIncrement}
+                    disabled={cartQuantity >= 10}
+                    aria-label="Increase quantity"
+                  >
+                    +
+                  </button>
+                </div>
+              ) : (
+                <PrimaryButton type="submit">
+                  Add to Cart
+                </PrimaryButton>
+              )}
             </div>
           </form>
         </div>
@@ -368,13 +426,39 @@ export function BuyTicketPage() {
             {status.type === "error" ? (
               <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
             ) : null}
-            {status.type === "success" ? (
-              <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
+            {status.type === "success" || existingTicket ? (
+              <p className={`${styles.status} ${styles.statusSuccess}`}>
+                {cartQuantity} play pass{cartQuantity === 1 ? "" : "es"} in cart.{" "}
+                <Link to="/cart" className={styles.cartLink}>View cart</Link>
+              </p>
             ) : null}
 
-            <PrimaryButton type="submit" disabled={!hasValidWaiver || status.type === "success"}>
-              Add to Cart
-            </PrimaryButton>
+            {existingTicket ? (
+              <div className={styles.quantityControls}>
+                <button
+                  type="button"
+                  className={styles.quantityBtn}
+                  onClick={handleDecrement}
+                  aria-label="Decrease quantity"
+                >
+                  −
+                </button>
+                <span className={styles.quantityDisplay}>{cartQuantity}</span>
+                <button
+                  type="button"
+                  className={styles.quantityBtn}
+                  onClick={handleIncrement}
+                  disabled={cartQuantity >= 10}
+                  aria-label="Increase quantity"
+                >
+                  +
+                </button>
+              </div>
+            ) : (
+              <PrimaryButton type="submit" disabled={!hasValidWaiver}>
+                Add to Cart
+              </PrimaryButton>
+            )}
           </div>
         </form>
       </div>

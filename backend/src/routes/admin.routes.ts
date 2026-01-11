@@ -79,7 +79,11 @@ import {
   getTicketPurchaseHandler,
   updateTicketPurchaseHandler,
   redeemTicketCodeHandler,
-  
+  validateTicketCodeHandler,
+  lookupTicketByCodeHandler,
+  redeemTicketByCodeHandler,
+  deleteTicketPurchaseHandler,
+
   // App Payments
   listAppPaymentsHandler,
   getAppPaymentHandler,
@@ -225,8 +229,14 @@ adminRouter.get('/ticket-purchases/:id', getTicketPurchaseHandler);
 adminRouter.patch('/ticket-purchases/:id', updateTicketPurchaseHandler);
 adminRouter.post('/tickets/redeem', redeemTicketCodeHandler);
 
+// Ticket Code Operations (new endpoints for code-based lookup/redemption)
+adminRouter.post('/tickets/validate', validateTicketCodeHandler);
+adminRouter.get('/tickets/lookup/:code', lookupTicketByCodeHandler);
+adminRouter.post('/tickets/redeem-code', redeemTicketByCodeHandler);
+
 // Tickets log (alias for frontend compatibility)
 adminRouter.get('/tickets/log', listTicketPurchasesHandler);
+adminRouter.delete('/tickets/:id', deleteTicketPurchaseHandler);
 
 // App Payments
 adminRouter.get('/payments', listAppPaymentsHandler);

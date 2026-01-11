@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiGet, apiPatch, apiPost } from './client';
+import { API_BASE_URL, apiDelete, apiGet, apiPatch, apiPost } from './client';
 
 export type AdminSummary = {
   generatedAt: string;
@@ -38,12 +38,20 @@ export type AdminBooking = {
   startTime: string;
   endTime: string;
   status: 'Pending' | 'Confirmed' | 'Cancelled';
-  paymentStatus: 'awaiting_deposit' | 'deposit_paid' | string;
+  paymentStatus: 'awaiting_deposit' | 'awaiting_full_payment' | 'deposit_paid' | 'paid' | string;
   depositAmount: number;
   balanceRemaining: number;
   notes: string | null;
   guardian?: { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
   partyPackage?: { id?: string; name?: string } | null;
+  // Partial payment tracking
+  paymentOption?: 'full' | 'split';
+  onlinePaymentAmount?: number;
+  venuePaymentAmount?: number;
+  // Guest info (for guest bookings without customer account)
+  guestName?: string | null;
+  guestEmail?: string | null;
+  guestPhone?: string | null;
 };
 
 export type AdminBookingUpdatePayload = Partial<{
@@ -202,6 +210,13 @@ export async function redeemTicketCode(code: string) {
     { code }
   );
   return response.ticket;
+}
+
+export async function deleteAdminTicketPurchase(purchaseId: string) {
+  const response = await apiDelete<{ success: boolean; message: string }>(
+    `/admin/tickets/${purchaseId}`
+  );
+  return response;
 }
 
 export async function fetchAdminMemberships() {

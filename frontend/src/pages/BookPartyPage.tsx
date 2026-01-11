@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCheckout } from '../context/CheckoutContext';
 import {
@@ -10,6 +10,14 @@ import {
   formatWeekday,
   formatDayNumber,
 } from '../lib/dateUtils';
+import {
+  formatNameInput,
+  formatPhoneInput,
+  isValidName,
+  isValidPhone,
+  isValidEmail,
+  isValidChildDOB,
+} from '../utils/validation';
 import {
   BookingEstimate,
   BookingSlotsResponse,
@@ -32,6 +40,12 @@ const PARTY_LOCATIONS = ['Albany'] as const;
 const DAYS_TO_SHOW = 5;
 const BOOKING_STATE_KEY = 'playfunia_booking_state';
 
+type GuestChild = {
+  id: string;
+  name: string;
+  birthDate: string;
+};
+
 type SavedBookingState = {
   location: string;
   selectedDate: string | null;
@@ -49,6 +63,7 @@ type SavedBookingState = {
   guestPhone: string;
   guestChildName: string;
   guestChildBirthDate: string;
+  guestChildren: GuestChild[];
   guestWaiverAgreed: boolean;
   waiverAgreement: boolean;
   waiverConfirmed: boolean;
@@ -127,6 +142,8 @@ export function BookPartyPage() {
   const { user, refreshProfile } = useAuth();
   const { addBookingDepositItem } = useCheckout();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const packageFromUrl = searchParams.get('package');
 
   const hasValidWaiver = user?.hasValidWaiver ?? false;
 
@@ -180,6 +197,7 @@ export function BookPartyPage() {
   const [guestPhone, setGuestPhone] = useState('');
   const [guestChildName, setGuestChildName] = useState('');
   const [guestChildBirthDate, setGuestChildBirthDate] = useState('');
+  const [guestChildren, setGuestChildren] = useState<GuestChild[]>([]);
   const [guestWaiverAgreed, setGuestWaiverAgreed] = useState(false);
 
   // Waiver
@@ -196,6 +214,10 @@ export function BookPartyPage() {
 
   // Estimate
   const [estimate, setEstimate] = useState<BookingEstimate | null>(null);
+
+  // Payment option: 'full' = pay full amount online, 'split' = pay partial online, rest at venue
+  const [paymentOption, setPaymentOption] = useState<'full' | 'split'>('full');
+  const [onlinePaymentAmount, setOnlinePaymentAmount] = useState<number>(0);
 
   // Track if state has been restored from sessionStorage
   const [stateRestored, setStateRestored] = useState(false);
@@ -224,6 +246,7 @@ export function BookPartyPage() {
       setGuestPhone(saved.guestPhone);
       setGuestChildName(saved.guestChildName);
       setGuestChildBirthDate(saved.guestChildBirthDate);
+      setGuestChildren(saved.guestChildren || []);
       setGuestWaiverAgreed(saved.guestWaiverAgreed);
       setWaiverAgreement(saved.waiverAgreement);
       setWaiverConfirmed(saved.waiverConfirmed);
@@ -276,6 +299,7 @@ export function BookPartyPage() {
       guestPhone,
       guestChildName,
       guestChildBirthDate,
+      guestChildren,
       guestWaiverAgreed,
       waiverAgreement,
       waiverConfirmed,
@@ -299,6 +323,7 @@ export function BookPartyPage() {
     guestPhone,
     guestChildName,
     guestChildBirthDate,
+    guestChildren,
     guestWaiverAgreed,
     waiverAgreement,
     waiverConfirmed,
@@ -345,7 +370,10 @@ export function BookPartyPage() {
         const result = await fetchPartyPackages();
         if (!active) return;
         setPackages(result);
-        if (result.length > 0) {
+        // Use package from URL if provided and valid, otherwise use first package
+        if (packageFromUrl && result.some(p => p.id === packageFromUrl)) {
+          setSelectedPackageId(packageFromUrl);
+        } else if (result.length > 0 && !selectedPackageId) {
           setSelectedPackageId(result[0].id);
         }
       } catch (error) {
@@ -354,7 +382,8 @@ export function BookPartyPage() {
     }
     loadPackages();
     return () => { active = false; };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packageFromUrl]);
 
   // Initialize children selections
   useEffect(() => {
@@ -382,6 +411,18 @@ export function BookPartyPage() {
     const firstName = newChildFirstName.trim();
     if (!firstName) {
       setAddChildError('First name is required');
+      return;
+    }
+    if (!isValidName(firstName)) {
+      setAddChildError('First name can only contain letters, spaces, hyphens, and apostrophes');
+      return;
+    }
+    if (newChildLastName.trim() && !isValidName(newChildLastName)) {
+      setAddChildError('Last name can only contain letters, spaces, hyphens, and apostrophes');
+      return;
+    }
+    if (newChildBirthDate && !isValidChildDOB(newChildBirthDate)) {
+      setAddChildError('Child must be between 0-13 years old');
       return;
     }
 
@@ -528,21 +569,65 @@ export function BookPartyPage() {
 
     // Guest booking validation
     if (!user) {
-      if (!guestFirstName.trim() || !guestLastName.trim()) {
-        setStatus({ type: 'error', message: 'Please enter your full name.' });
+      if (!guestFirstName.trim()) {
+        setStatus({ type: 'error', message: 'Please enter your first name.' });
         return;
       }
-      if (!guestEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guestEmail)) {
+      if (!isValidName(guestFirstName)) {
+        setStatus({ type: 'error', message: 'First name can only contain letters, spaces, hyphens, and apostrophes.' });
+        return;
+      }
+      if (!guestLastName.trim()) {
+        setStatus({ type: 'error', message: 'Please enter your last name.' });
+        return;
+      }
+      if (!isValidName(guestLastName)) {
+        setStatus({ type: 'error', message: 'Last name can only contain letters, spaces, hyphens, and apostrophes.' });
+        return;
+      }
+      if (!guestEmail.trim()) {
+        setStatus({ type: 'error', message: 'Please enter your email address.' });
+        return;
+      }
+      if (!isValidEmail(guestEmail)) {
         setStatus({ type: 'error', message: 'Please enter a valid email address.' });
         return;
       }
-      if (!guestPhone.trim() || guestPhone.trim().length < 10) {
-        setStatus({ type: 'error', message: 'Please enter a valid phone number.' });
+      if (!guestPhone.trim()) {
+        setStatus({ type: 'error', message: 'Please enter your phone number.' });
+        return;
+      }
+      if (!isValidPhone(guestPhone)) {
+        setStatus({ type: 'error', message: 'Please enter a valid 10-digit phone number.' });
         return;
       }
       if (!guestChildName.trim()) {
         setStatus({ type: 'error', message: 'Please enter the birthday child\'s name.' });
         return;
+      }
+      if (!isValidName(guestChildName)) {
+        setStatus({ type: 'error', message: 'Child name can only contain letters, spaces, hyphens, and apostrophes.' });
+        return;
+      }
+      // Validate child birth date if provided
+      if (guestChildBirthDate && !isValidChildDOB(guestChildBirthDate)) {
+        setStatus({ type: 'error', message: 'Please enter a valid birth date. Child must be between 0-13 years old.' });
+        return;
+      }
+      // Check additional children have valid names and DOBs
+      for (const child of guestChildren) {
+        if (!child.name.trim()) {
+          setStatus({ type: 'error', message: 'Please enter names for all children or remove empty entries.' });
+          return;
+        }
+        if (!isValidName(child.name)) {
+          setStatus({ type: 'error', message: 'Child names can only contain letters, spaces, hyphens, and apostrophes.' });
+          return;
+        }
+        if (child.birthDate && !isValidChildDOB(child.birthDate)) {
+          setStatus({ type: 'error', message: 'Please enter valid birth dates. Children must be between 0-13 years old.' });
+          return;
+        }
       }
       if (!guestWaiverAgreed) {
         setStatus({ type: 'error', message: 'Please agree to the waiver terms.' });
@@ -567,6 +652,9 @@ export function BookPartyPage() {
     try {
       if (!user) {
         // Guest booking
+        const totalAmount = cartTotal + 50; // total + cleaning fee
+        const depositAmount = paymentOption === 'full' ? totalAmount : onlinePaymentAmount;
+
         const payload: CreateGuestBookingPayload = {
           guestFirstName: guestFirstName.trim(),
           guestLastName: guestLastName.trim(),
@@ -574,6 +662,9 @@ export function BookPartyPage() {
           guestPhone: guestPhone.trim(),
           childName: guestChildName.trim(),
           childBirthDate: guestChildBirthDate || undefined,
+          additionalChildren: guestChildren.length > 0
+            ? guestChildren.map(c => ({ name: c.name.trim(), birthDate: c.birthDate || undefined }))
+            : undefined,
           partyPackageId: selectedPackageId,
           location,
           eventDate: selectedDate.toISOString().slice(0, 10),
@@ -581,6 +672,8 @@ export function BookPartyPage() {
           guests: Math.max(packageQty * (selectedPackage?.maxGuests ?? 12) + extraChildQty, 1),
           notes: notes.trim() || undefined,
           addOns: addOnPayload.length ? addOnPayload : undefined,
+          paymentOption,
+          onlinePaymentAmount: depositAmount,
         };
 
         const result = await createGuestBooking(payload);
@@ -982,9 +1075,10 @@ export function BookPartyPage() {
                       <input
                         type="text"
                         value={newChildFirstName}
-                        onChange={(e) => setNewChildFirstName(e.target.value)}
+                        onChange={(e) => setNewChildFirstName(formatNameInput(e.target.value))}
                         placeholder="First name"
                         disabled={addingChild}
+                        maxLength={100}
                       />
                     </label>
                     <label>
@@ -992,15 +1086,16 @@ export function BookPartyPage() {
                       <input
                         type="text"
                         value={newChildLastName}
-                        onChange={(e) => setNewChildLastName(e.target.value)}
+                        onChange={(e) => setNewChildLastName(formatNameInput(e.target.value))}
                         placeholder="Last name (optional)"
                         disabled={addingChild}
+                        maxLength={100}
                       />
                     </label>
                   </div>
                   <div className={styles.formRow}>
                     <label>
-                      <span>Birth date</span>
+                      <span>Birth date (0-13 yrs)</span>
                       <input
                         type="date"
                         value={newChildBirthDate}
@@ -1067,9 +1162,10 @@ export function BookPartyPage() {
                   <input
                     type="text"
                     value={guestFirstName}
-                    onChange={(e) => setGuestFirstName(e.target.value)}
+                    onChange={(e) => setGuestFirstName(formatNameInput(e.target.value))}
                     placeholder="Your first name"
                     required
+                    maxLength={100}
                   />
                 </label>
                 <label>
@@ -1077,9 +1173,10 @@ export function BookPartyPage() {
                   <input
                     type="text"
                     value={guestLastName}
-                    onChange={(e) => setGuestLastName(e.target.value)}
+                    onChange={(e) => setGuestLastName(formatNameInput(e.target.value))}
                     placeholder="Your last name"
                     required
+                    maxLength={100}
                   />
                 </label>
               </div>
@@ -1096,38 +1193,101 @@ export function BookPartyPage() {
                   />
                 </label>
                 <label>
-                  <span>Phone *</span>
+                  <span>Phone * (10 digits)</span>
                   <input
                     type="tel"
                     value={guestPhone}
-                    onChange={(e) => setGuestPhone(e.target.value)}
-                    placeholder="(555) 123-4567"
+                    onChange={(e) => setGuestPhone(formatPhoneInput(e.target.value))}
+                    placeholder="5551234567"
                     required
+                    maxLength={10}
                   />
                 </label>
               </div>
 
-              <h3 className={styles.guestChildHeader}>Birthday child</h3>
-              <div className={styles.formRow}>
-                <label>
-                  <span>Child&apos;s name *</span>
-                  <input
-                    type="text"
-                    value={guestChildName}
-                    onChange={(e) => setGuestChildName(e.target.value)}
-                    placeholder="Child's full name"
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Birth date (optional)</span>
-                  <input
-                    type="date"
-                    value={guestChildBirthDate}
-                    onChange={(e) => setGuestChildBirthDate(e.target.value)}
-                  />
-                </label>
+              <h3 className={styles.guestChildHeader}>Children celebrating</h3>
+
+              {/* First/primary child */}
+              <div className={styles.guestChildCard}>
+                <div className={styles.guestChildCardHeader}>
+                  <span className={styles.guestChildBadge}>Birthday Child</span>
+                </div>
+                <div className={styles.formRow}>
+                  <label>
+                    <span>Child&apos;s name *</span>
+                    <input
+                      type="text"
+                      value={guestChildName}
+                      onChange={(e) => setGuestChildName(formatNameInput(e.target.value))}
+                      placeholder="Child's full name"
+                      required
+                      maxLength={100}
+                    />
+                  </label>
+                  <label>
+                    <span>Birth date (optional, 0-13 yrs)</span>
+                    <input
+                      type="date"
+                      value={guestChildBirthDate}
+                      onChange={(e) => setGuestChildBirthDate(e.target.value)}
+                    />
+                  </label>
+                </div>
               </div>
+
+              {/* Additional children */}
+              {guestChildren.map((child, index) => (
+                <div key={child.id} className={styles.guestChildCard}>
+                  <div className={styles.guestChildCardHeader}>
+                    <span className={styles.guestChildBadge}>Child {index + 2}</span>
+                    <button
+                      type="button"
+                      className={styles.removeChildBtn}
+                      onClick={() => setGuestChildren(prev => prev.filter(c => c.id !== child.id))}
+                      aria-label="Remove child"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className={styles.formRow}>
+                    <label>
+                      <span>Child&apos;s name *</span>
+                      <input
+                        type="text"
+                        value={child.name}
+                        onChange={(e) => setGuestChildren(prev =>
+                          prev.map(c => c.id === child.id ? { ...c, name: formatNameInput(e.target.value) } : c)
+                        )}
+                        placeholder="Child's full name"
+                        required
+                        maxLength={100}
+                      />
+                    </label>
+                    <label>
+                      <span>Birth date (optional, 0-13 yrs)</span>
+                      <input
+                        type="date"
+                        value={child.birthDate}
+                        onChange={(e) => setGuestChildren(prev =>
+                          prev.map(c => c.id === child.id ? { ...c, birthDate: e.target.value } : c)
+                        )}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ))}
+
+              {/* Add another child button */}
+              <button
+                type="button"
+                className={styles.addGuestChildBtn}
+                onClick={() => setGuestChildren(prev => [
+                  ...prev,
+                  { id: `guest-child-${Date.now()}`, name: '', birthDate: '' }
+                ])}
+              >
+                + Add another child
+              </button>
 
               <label className={styles.guestWaiverCheckbox}>
                 <input
@@ -1251,9 +1411,102 @@ export function BookPartyPage() {
                   <span>Total</span>
                   <span>${(cartTotal + 50).toLocaleString()}</span>
                 </div>
-                <div className={styles.cartDeposit}>
-                  <span>Deposit due now (50%)</span>
-                  <span>${((cartTotal + 50) / 2).toLocaleString()}</span>
+              </div>
+
+              {/* Payment Options */}
+              <div className={styles.paymentOptions}>
+                <h3 className={styles.paymentOptionsTitle}>How would you like to pay?</h3>
+
+                <label className={`${styles.paymentOption} ${paymentOption === 'full' ? styles.paymentOptionSelected : ''}`}>
+                  <input
+                    type="radio"
+                    name="paymentOption"
+                    checked={paymentOption === 'full'}
+                    onChange={() => setPaymentOption('full')}
+                  />
+                  <div className={styles.paymentOptionContent}>
+                    <span className={styles.paymentOptionLabel}>Pay full amount online</span>
+                    <span className={styles.paymentOptionAmount}>${(cartTotal + 50).toLocaleString()}</span>
+                  </div>
+                </label>
+
+                <label className={`${styles.paymentOption} ${paymentOption === 'split' ? styles.paymentOptionSelected : ''}`}>
+                  <input
+                    type="radio"
+                    name="paymentOption"
+                    checked={paymentOption === 'split'}
+                    onChange={() => {
+                      setPaymentOption('split');
+                      // Default to 50% online
+                      setOnlinePaymentAmount(Math.round((cartTotal + 50) / 2));
+                    }}
+                  />
+                  <div className={styles.paymentOptionContent}>
+                    <span className={styles.paymentOptionLabel}>Split payment</span>
+                    <span className={styles.paymentOptionHint}>Pay partial online, rest at venue</span>
+                  </div>
+                </label>
+
+                {paymentOption === 'split' && (
+                  <div className={styles.splitPaymentConfig}>
+                    <div className={styles.splitQuickButtons}>
+                      <span className={styles.splitQuickLabel}>Quick select:</span>
+                      <button
+                        type="button"
+                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal + 50) * 0.25) ? styles.splitQuickBtnActive : ''}`}
+                        onClick={() => setOnlinePaymentAmount(Math.max(100, Math.round((cartTotal + 50) * 0.25)))}
+                      >
+                        25%
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal + 50) * 0.5) ? styles.splitQuickBtnActive : ''}`}
+                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal + 50) * 0.5))}
+                      >
+                        50%
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal + 50) * 0.75) ? styles.splitQuickBtnActive : ''}`}
+                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal + 50) * 0.75))}
+                      >
+                        75%
+                      </button>
+                    </div>
+                    <div className={styles.splitAmountEditor}>
+                      <label className={styles.splitAmountLabel}>Enter amount to pay online:</label>
+                      <div className={styles.splitAmountInputRow}>
+                        <span className={styles.splitCurrencyLarge}>$</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={cartTotal + 50}
+                          step={1}
+                          value={onlinePaymentAmount}
+                          onChange={(e) => setOnlinePaymentAmount(Math.max(1, Math.min(cartTotal + 50, Number(e.target.value) || 0)))}
+                          className={styles.splitAmountInput}
+                        />
+                      </div>
+                    </div>
+                    <div className={styles.splitBreakdown}>
+                      <div className={styles.splitRow}>
+                        <span>Online payment</span>
+                        <span className={styles.splitOnline}>${onlinePaymentAmount.toLocaleString()}</span>
+                      </div>
+                      <div className={styles.splitRow}>
+                        <span>Due at venue (cash/card)</span>
+                        <span className={styles.splitVenue}>${(cartTotal + 50 - onlinePaymentAmount).toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <p className={styles.splitNote}>Minimum online payment: $100</p>
+                  </div>
+                )}
+
+                <div className={styles.paymentDue}>
+                  <span>Due now</span>
+                  <span className={styles.paymentDueAmount}>
+                    ${paymentOption === 'full' ? (cartTotal + 50).toLocaleString() : onlinePaymentAmount.toLocaleString()}
+                  </span>
                 </div>
               </div>
 

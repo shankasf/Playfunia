@@ -344,6 +344,104 @@
   padding: 0.4rem 0.7rem;
 }
 
+.customerCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.guestEmail {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.paymentCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.paymentCell small {
+  font-size: 0.7rem;
+  color: #6b7280;
+}
+
+.paymentFull {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #166534;
+  background: #dcfce7;
+  border-radius: 4px;
+}
+
+.paymentSplit {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 4px;
+}
+
+.paymentPaid {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #166534;
+  background: #dcfce7;
+  border-radius: 4px;
+}
+
+.paymentPending {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 4px;
+}
+
+.paymentDue {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #dc2626;
+}
+
+.paymentComplete {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #16a34a;
+  margin-top: 0.15rem;
+}
+
+.redemptionComplete {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #166534;
+  background: #dcfce7;
+  border-radius: 4px;
+}
+
+.redemptionPending {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 4px;
+}
+
 .table th {
   text-align: left;
   padding: 0.75rem 0.65rem;
@@ -614,6 +712,26 @@
   font-weight: 600;
   color: #1d2a5b;
   white-space: nowrap;
+}
+
+.loadMoreBtn {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.loadMoreBtn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.4);
 }
 
 .waiverEdit {

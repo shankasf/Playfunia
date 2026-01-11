@@ -378,9 +378,13 @@ export function WaiverPage() {
                 <p>You're all set. Enjoy your visit to Playfunia!</p>
               </div>
               <div className={styles.waiverActions}>
-                <PrimaryButton to={returnUrl ?? '/'} className={styles.primaryAction}>
-                  {returnUrl ? 'Continue' : 'Back to Home'}
-                </PrimaryButton>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={() => { logoutWaiverUser(); setIsReturningUser(false); setConfirmResubmit(false); }}
+                >
+                  Sign in with different email/phone
+                </button>
               </div>
             </div>
           ) : isReturningUser && !showForm ? (

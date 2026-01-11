@@ -1,10 +1,17 @@
 import { randomUUID } from 'crypto';
 
-import { TicketTypeRepository, UserRepository, OrderRepository, OrderItemRepository, EventRepository } from '../repositories';
+import { TicketTypeRepository, UserRepository, OrderRepository, OrderItemRepository, EventRepository, TicketPurchaseRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { publishAdminEvent } from './admin-events.service';
 
 import type { RedeemTicketInput, ReserveTicketsInput } from '../schemas/ticket.schema';
+
+/**
+ * Generate a unique ticket code in format PF-XXXXXXXX
+ */
+function generateTicketCode(): string {
+  return `PF-${randomUUID().substring(0, 8).toUpperCase()}`;
+}
 
 export async function listTicketTypes() {
   const ticketTypes = await TicketTypeRepository.findAll(true);
@@ -93,13 +100,36 @@ export async function reserveTickets(input: ReserveTicketsInput) {
   const codes: Array<{ code: string; status: string }> = [];
   for (let i = 0; i < input.quantity; i++) {
     codes.push({
-      code: `PF-${randomUUID().substring(0, 8).toUpperCase()}`,
+      code: generateTicketCode(),
       status: 'unused',
     });
   }
 
+  // Create ticket_purchase record with codes for redemption tracking
+  let ticketPurchase = null;
+  if (customerId) {
+    try {
+      ticketPurchase = await TicketPurchaseRepository.create({
+        customer_id: customerId,
+        ticket_type_id: ticketTypeId && !isNaN(ticketTypeId) ? ticketTypeId : undefined,
+        event_id: input.type === 'event' && input.eventId ? parseInt(input.eventId, 10) : undefined,
+        ticket_type: input.type || 'general',
+        quantity: input.quantity,
+        unit_price: input.price,
+        total,
+        codes,
+        status: 'confirmed',
+        metadata: input.metadata,
+      });
+    } catch (err) {
+      console.error('Failed to create ticket_purchase record:', err);
+      // Continue - order is already created, codes can still be used
+    }
+  }
+
   publishAdminEvent('ticket.reserved', {
     orderId: order.order_id,
+    purchaseId: ticketPurchase?.purchase_id,
     guardianId: input.guardianId,
     quantity: input.quantity,
     total,
@@ -108,6 +138,7 @@ export async function reserveTickets(input: ReserveTicketsInput) {
 
   return {
     id: String(order.order_id),
+    purchaseId: ticketPurchase?.purchase_id,
     type: input.type,
     quantity: input.quantity,
     price: input.price,
@@ -154,9 +185,120 @@ export async function listAllTickets() {
   }));
 }
 
+/**
+ * Lookup a ticket by its code
+ * Returns ticket info including customer details and redemption status
+ */
+export async function lookupTicketByCode(code: string) {
+  const normalizedCode = code.trim().toUpperCase();
+
+  // Find ticket purchase containing this code
+  const purchase = await TicketPurchaseRepository.findByCode(normalizedCode);
+
+  if (!purchase) {
+    throw new AppError('Ticket code not found', 404);
+  }
+
+  // Find the specific code in the codes array
+  const codes = purchase.codes as Array<{ code: string; status: string; redeemedAt?: string }>;
+  const codeEntry = codes.find(c => c.code === normalizedCode);
+
+  if (!codeEntry) {
+    throw new AppError('Ticket code not found in purchase', 404);
+  }
+
+  return {
+    purchaseId: purchase.purchase_id,
+    code: codeEntry.code,
+    status: codeEntry.status,
+    redeemedAt: codeEntry.redeemedAt || null,
+    ticketType: purchase.ticket_type,
+    quantity: purchase.quantity,
+    eventId: purchase.event_id,
+    customerId: purchase.customer_id,
+    customer: purchase.customers || null,
+    createdAt: purchase.created_at,
+  };
+}
+
+/**
+ * Validate a ticket code (check if it's valid and unused)
+ */
+export async function validateTicketCode(code: string) {
+  try {
+    const ticket = await lookupTicketByCode(code);
+    return {
+      valid: ticket.status === 'unused',
+      status: ticket.status,
+      message: ticket.status === 'unused'
+        ? 'Ticket is valid and ready to be redeemed'
+        : ticket.status === 'redeemed'
+          ? `Ticket was already redeemed on ${ticket.redeemedAt}`
+          : `Ticket status: ${ticket.status}`,
+      ticket,
+    };
+  } catch (err) {
+    return {
+      valid: false,
+      status: 'invalid',
+      message: err instanceof AppError ? err.message : 'Invalid ticket code',
+      ticket: null,
+    };
+  }
+}
+
+/**
+ * Redeem a ticket code
+ */
+export async function redeemTicketByCode(code: string, redeemedBy?: string) {
+  const normalizedCode = code.trim().toUpperCase();
+
+  // Find ticket purchase containing this code
+  const purchase = await TicketPurchaseRepository.findByCode(normalizedCode);
+
+  if (!purchase) {
+    throw new AppError('Ticket code not found', 404);
+  }
+
+  // Find and update the specific code
+  const codes = purchase.codes as Array<{ code: string; status: string; redeemedAt?: string; redeemedBy?: string }>;
+  const codeEntry = codes.find(c => c.code === normalizedCode);
+
+  if (!codeEntry) {
+    throw new AppError('Ticket code not found in purchase', 404);
+  }
+
+  if (codeEntry.status === 'redeemed') {
+    throw new AppError(`Ticket was already redeemed on ${codeEntry.redeemedAt}`, 400);
+  }
+
+  // Use the repository's redeemCode method
+  const updatedPurchase = await TicketPurchaseRepository.redeemCode(purchase.purchase_id, normalizedCode);
+
+  publishAdminEvent('ticket.redeemed', {
+    purchaseId: purchase.purchase_id,
+    code: normalizedCode,
+    redeemedBy,
+  });
+
+  return {
+    success: true,
+    purchaseId: purchase.purchase_id,
+    code: normalizedCode,
+    redeemedAt: new Date().toISOString(),
+    redeemedBy,
+    ticketType: purchase.ticket_type,
+    customer: purchase.customers || null,
+  };
+}
+
 export async function redeemTicket(input: RedeemTicketInput) {
-  // For now, update order status to Fulfilled
-  // In production, this would check against a codes table or admissions
+  // Check if input.code is a ticket code (starts with PF-) or an order ID
+  if (input.code.toUpperCase().startsWith('PF-')) {
+    return redeemTicketByCode(input.code);
+  }
+
+  // Legacy: treat as order ID
   const orderId = parseInt(input.code, 10);
   if (isNaN(orderId)) {
     throw new AppError('Invalid ticket code', 400);

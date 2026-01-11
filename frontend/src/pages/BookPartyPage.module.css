@@ -733,6 +733,126 @@
   text-decoration: underline;
 }
 
+/* Form rows for guest form */
+.guestFormSection .formRow,
+.guestChildCard .formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 0;
+}
+
+.guestFormSection > .formRow {
+  margin-bottom: 1rem;
+}
+
+.guestFormSection .formRow label,
+.guestChildCard .formRow label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.guestFormSection .formRow label span,
+.guestChildCard .formRow label span {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.guestFormSection .formRow input,
+.guestChildCard .formRow input {
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background: #fff;
+  transition: all 0.2s;
+}
+
+.guestFormSection .formRow input:focus,
+.guestChildCard .formRow input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.guestFormSection .formRow input::placeholder,
+.guestChildCard .formRow input::placeholder {
+  color: #9ca3af;
+}
+
+@media (max-width: 640px) {
+  .guestFormSection .formRow,
+  .guestChildCard .formRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Guest child cards */
+.guestChildCard {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.guestChildCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.guestChildBadge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 20px;
+}
+
+.removeChildBtn {
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.removeChildBtn:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.addGuestChildBtn {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  background: #fff;
+  border: 2px dashed #d1d5db;
+  border-radius: 10px;
+  color: #6b7280;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.addGuestChildBtn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #f0f9ff;
+}
+
 .childrenList {
   display: flex;
   flex-direction: column;
@@ -1042,6 +1162,270 @@
   color: #1a1a2e;
 }
 
+/* Payment Options */
+.paymentOptions {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 10px;
+}
+
+.paymentOptionsTitle {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.paymentOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  margin-bottom: 0.5rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.paymentOption:hover {
+  border-color: #d0d0d0;
+}
+
+.paymentOption.paymentOptionSelected {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.paymentOption input {
+  margin-top: 3px;
+  accent-color: #4ade80;
+}
+
+.paymentOptionContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.paymentOptionLabel {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #1a1a2e;
+}
+
+.paymentOptionAmount {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #4ade80;
+}
+
+.paymentOptionHint {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.splitPaymentConfig {
+  margin-top: 0.5rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.splitQuickButtons {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.splitQuickLabel {
+  font-size: 0.85rem;
+  color: #6b7280;
+  margin-right: 0.25rem;
+}
+
+.splitQuickBtn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.splitQuickBtn:hover {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.splitQuickBtnActive {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+.splitQuickBtnActive:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.splitLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+.splitInputWrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0 0.5rem;
+}
+
+.splitCurrency {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.splitInput {
+  width: 80px;
+  padding: 0.5rem 0.25rem;
+  border: none;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a2e;
+  background: transparent;
+}
+
+.splitInput:focus {
+  outline: none;
+}
+
+.splitBreakdown {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.splitRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #5f6368;
+  margin-bottom: 0.35rem;
+}
+
+.splitOnline {
+  font-weight: 600;
+  color: #4ade80;
+}
+
+.splitVenue {
+  font-weight: 600;
+  color: #f59e0b;
+}
+
+.splitNote {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* Editable Split Amount */
+.splitAmountEditor {
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.splitAmountLabel {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.splitAmountInputRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  background: #fff;
+  border: 2px solid #4ade80;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  max-width: 180px;
+  margin: 0 auto;
+}
+
+.splitCurrencyLarge {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+.splitAmountInput {
+  width: 100px;
+  padding: 0;
+  border: none;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1a1a2e;
+  background: transparent;
+  text-align: left;
+}
+
+.splitAmountInput:focus {
+  outline: none;
+}
+
+.splitAmountInput::-webkit-inner-spin-button,
+.splitAmountInput::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.splitAmountInput[type=number] {
+  -moz-appearance: textfield;
+}
+
+.paymentDue {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.paymentDue span:first-child {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.paymentDueAmount {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #4ade80;
+}
+
+/* Keep for backwards compatibility */
 .cartDeposit {
   display: flex;
   justify-content: space-between;

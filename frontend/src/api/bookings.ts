@@ -56,6 +56,7 @@ export type CreateGuestBookingPayload = {
   guestPhone: string;
   childName: string;
   childBirthDate?: string;
+  additionalChildren?: Array<{ name: string; birthDate?: string }>;
   partyPackageId: string;
   location: string;
   eventDate: string;
@@ -63,6 +64,8 @@ export type CreateGuestBookingPayload = {
   guests: number;
   notes?: string;
   addOns?: BookingAddOnSelection[];
+  paymentOption?: 'full' | 'split';
+  onlinePaymentAmount?: number;
 };
 
 export type CreateBookingResponse = {

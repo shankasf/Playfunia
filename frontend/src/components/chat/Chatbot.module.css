@@ -47,9 +47,12 @@
 }
 
 .header h3 {
-  font-size: 1rem;
+  font-size: 1.05rem;
   margin: 0;
   color: var(--color-secondary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .closeButton {
@@ -69,60 +72,140 @@
 }
 
 .message {
-  padding: 0.75rem 1rem;
+  padding: 0.85rem 1.1rem;
   border-radius: var(--radius-md);
-  font-size: 0.95rem;
-  line-height: 1.4;
+  font-size: 0.938rem;
+  line-height: 1.6;
   box-shadow: var(--shadow-soft);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: 0.01em;
+  max-width: 92%;
+  word-wrap: break-word;
 }
 
 .messageUser {
-  background: rgba(99, 102, 241, 0.1);
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(99, 102, 241, 0.08));
   justify-self: end;
+  border-bottom-right-radius: 4px;
 }
 
 .messageBot {
-  background: rgba(148, 163, 184, 0.12);
+  background: linear-gradient(135deg, rgba(248, 250, 252, 1), rgba(241, 245, 249, 1));
   justify-self: start;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-bottom-left-radius: 4px;
+}
+
+/* Links styling */
+.message a,
+.link {
+  color: #6366f1;
+  text-decoration: none;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(99, 102, 241, 0.3);
+  transition: all 0.2s ease;
+  word-break: break-all;
+}
+
+.message a:hover,
+.link:hover {
+  color: #4f46e5;
+  border-bottom-color: #4f46e5;
+}
+
+/* Phone link styling */
+.phoneLink {
+  color: #059669;
+  text-decoration: none;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.phoneLink:hover {
+  background: rgba(16, 185, 129, 0.2);
+  color: #047857;
+}
+
+/* Bold text styling */
+.message strong {
+  font-weight: 700;
+  color: #1e293b;
 }
 
 .composer {
   border-top: 1px solid rgba(148, 163, 184, 0.24);
-  padding: 0.75rem;
+  padding: 0.65rem;
   display: flex;
   gap: 0.5rem;
+  align-items: flex-end;
 }
 
 .composer textarea {
   flex: 1;
   border: 1px solid rgba(148, 163, 184, 0.4);
   border-radius: var(--radius-md);
-  padding: 0.65rem 0.85rem;
+  padding: 0.55rem 0.8rem;
   resize: none;
-  min-height: 44px;
-  font-family: inherit;
+  min-height: 36px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.composer textarea:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.composer textarea::placeholder {
+  color: rgba(100, 116, 139, 0.7);
 }
 
 .composer button {
-  background: var(--color-secondary);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   color: #fff;
   border: none;
-  border-radius: var(--radius-md);
-  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
   font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.8rem;
   cursor: pointer;
-  min-width: 92px;
+  min-width: 54px;
+  height: fit-content;
+  align-self: flex-end;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.composer button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.composer button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .composer button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  background: rgba(148, 163, 184, 0.5);
 }
 
 .status {
   font-size: 0.85rem;
   color: var(--color-text-muted);
-  padding: 0 1.25rem 0.75rem;
+  padding: 0.5rem 1.25rem 0.75rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-style: italic;
 }
 
 @media (max-width: 540px) {

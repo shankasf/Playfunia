@@ -38,6 +38,12 @@ async function addAdminUsers() {
       lastName: 'Shankaran',
       fullName: 'Sagar Shankaran',
     },
+    {
+      email: 'playfuniausa@gmail.com',
+      firstName: 'Playfunia',
+      lastName: 'USA',
+      fullName: 'Playfunia USA',
+    },
   ];
 
   for (const admin of adminUsers) {
