@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import useSWR from 'swr';
 
-import { apiGet } from "../api/client";
+import { SWR_KEYS } from '../lib/swr';
 import {
   sampleAnnouncements,
   sampleEvents,
@@ -8,7 +8,7 @@ import {
   sampleMemberships,
   samplePackages,
   sampleTestimonials,
-} from "../data/sampleData";
+} from '../data/sampleData';
 import type {
   Announcement,
   EventItem,
@@ -16,7 +16,7 @@ import type {
   MembershipPlan,
   PartyPackage,
   Testimonial,
-} from "../data/types";
+} from '../data/types';
 
 type FetchState<T> = {
   data: T;
@@ -32,92 +32,80 @@ interface HomeContent {
   announcements: FetchState<Announcement[]>;
 }
 
+/**
+ * Extract data from API response, handling both wrapped and unwrapped formats
+ */
+function extractData<T>(response: unknown, key: string): T[] {
+  if (!response) return [];
+  const obj = response as Record<string, unknown>;
+  return (obj[key] ?? response) as T[];
+}
+
+/**
+ * Hook to fetch all home page content with SWR caching
+ *
+ * Benefits:
+ * - Instant page refresh: cached data shows immediately
+ * - Automatic revalidation in background
+ * - Request deduplication
+ * - Focus/reconnect revalidation
+ */
 export function useHomeContent(): HomeContent {
-  const [memberships, setMemberships] = useState<FetchState<MembershipPlan[]>>({
-    data: sampleMemberships,
-    isLoading: true,
-  });
-  const [packages, setPackages] = useState<FetchState<PartyPackage[]>>({
-    data: samplePackages,
-    isLoading: true,
-  });
-  const [events, setEvents] = useState<FetchState<EventItem[]>>({
-    data: sampleEvents,
-    isLoading: true,
-  });
-  const [testimonials, setTestimonials] = useState<FetchState<Testimonial[]>>({
-    data: sampleTestimonials,
-    isLoading: true,
-  });
-  const [faqs, setFaqs] = useState<FetchState<FaqItem[]>>({
-    data: sampleFaqs,
-    isLoading: true,
-  });
-  const [announcements, setAnnouncements] = useState<FetchState<Announcement[]>>({
-    data: sampleAnnouncements,
-    isLoading: true,
-  });
+  // Use SWR for each content type - requests are deduped and cached
+  const { data: membershipRes, isLoading: membershipsLoading } = useSWR<{ memberships: MembershipPlan[] }>(
+    SWR_KEYS.memberships,
+    { fallbackData: { memberships: sampleMemberships } }
+  );
 
-  useEffect(() => {
-    let isCancelled = false;
+  const { data: packageRes, isLoading: packagesLoading } = useSWR<{ packages: PartyPackage[] }>(
+    SWR_KEYS.partyPackages,
+    { fallbackData: { packages: samplePackages } }
+  );
 
-    async function fetchContent() {
-      try {
-        const [membershipRes, packageRes, eventRes, testimonialRes, faqRes, announcementRes] = await Promise.all([
-          apiGet<{ memberships: MembershipPlan[] }>("/memberships"),
-          apiGet<{ packages: PartyPackage[] }>("/party-packages"),
-          apiGet<{ events: EventItem[] }>("/events"),
-          apiGet<{ testimonials: Testimonial[] }>("/content/testimonials"),
-          apiGet<{ faqs: FaqItem[] }>("/content/faqs"),
-          apiGet<{ announcements: Announcement[] }>("/content/announcements"),
-        ]);
+  const { data: eventRes, isLoading: eventsLoading } = useSWR<{ events: EventItem[] }>(
+    SWR_KEYS.events,
+    { fallbackData: { events: sampleEvents } }
+  );
 
-        if (isCancelled) return;
+  const { data: testimonialRes, isLoading: testimonialsLoading } = useSWR<{ testimonials: Testimonial[] }>(
+    SWR_KEYS.testimonials,
+    { fallbackData: { testimonials: sampleTestimonials } }
+  );
 
-        const membershipData =
-          (membershipRes as { memberships?: MembershipPlan[] }).memberships ?? (membershipRes as unknown as MembershipPlan[]);
-        const packageData =
-          (packageRes as { packages?: PartyPackage[] }).packages ?? (packageRes as unknown as PartyPackage[]);
-        const eventData = (eventRes as { events?: EventItem[] }).events ?? (eventRes as unknown as EventItem[]);
-        const testimonialData =
-          (testimonialRes as { testimonials?: Testimonial[] }).testimonials ?? (testimonialRes as unknown as Testimonial[]);
-        const faqData = (faqRes as { faqs?: FaqItem[] }).faqs ?? (faqRes as unknown as FaqItem[]);
-        const announcementData =
-          (announcementRes as { announcements?: Announcement[] }).announcements ??
-          (announcementRes as unknown as Announcement[]);
+  const { data: faqRes, isLoading: faqsLoading } = useSWR<{ faqs: FaqItem[] }>(
+    SWR_KEYS.faqs,
+    { fallbackData: { faqs: sampleFaqs } }
+  );
 
-        setMemberships({ data: membershipData, isLoading: false });
-        setPackages({ data: packageData, isLoading: false });
-        setEvents({ data: eventData, isLoading: false });
-        setTestimonials({ data: testimonialData, isLoading: false });
-        setFaqs({ data: faqData, isLoading: false });
-        setAnnouncements({ data: announcementData, isLoading: false });
-      } catch (error) {
-        console.warn("Falling back to sample content", error);
-        if (!isCancelled) {
-          setMemberships(prev => ({ ...prev, isLoading: false }));
-          setPackages(prev => ({ ...prev, isLoading: false }));
-          setEvents(prev => ({ ...prev, isLoading: false }));
-          setTestimonials(prev => ({ ...prev, isLoading: false }));
-          setFaqs(prev => ({ ...prev, isLoading: false }));
-          setAnnouncements(prev => ({ ...prev, isLoading: false }));
-        }
-      }
-    }
-
-    fetchContent();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
+  const { data: announcementRes, isLoading: announcementsLoading } = useSWR<{ announcements: Announcement[] }>(
+    SWR_KEYS.announcements,
+    { fallbackData: { announcements: sampleAnnouncements } }
+  );
 
   return {
-    memberships,
-    packages,
-    events,
-    testimonials,
-    faqs,
-    announcements,
+    memberships: {
+      data: extractData<MembershipPlan>(membershipRes, 'memberships'),
+      isLoading: membershipsLoading,
+    },
+    packages: {
+      data: extractData<PartyPackage>(packageRes, 'packages'),
+      isLoading: packagesLoading,
+    },
+    events: {
+      data: extractData<EventItem>(eventRes, 'events'),
+      isLoading: eventsLoading,
+    },
+    testimonials: {
+      data: extractData<Testimonial>(testimonialRes, 'testimonials'),
+      isLoading: testimonialsLoading,
+    },
+    faqs: {
+      data: extractData<FaqItem>(faqRes, 'faqs'),
+      isLoading: faqsLoading,
+    },
+    announcements: {
+      data: extractData<Announcement>(announcementRes, 'announcements'),
+      isLoading: announcementsLoading,
+    },
   };
 }

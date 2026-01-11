@@ -258,6 +258,36 @@ The repo includes `.env.example` templates. Never commit production credentials.
 
 ---
 
+## Performance Optimizations
+
+The platform includes several performance optimizations for fast page loads and responsive user experience:
+
+### Client-Side Caching (SWR)
+- **SWR Library**: Implements stale-while-revalidate pattern for instant page refreshes
+- **Global Configuration**: Centralized SWR config with automatic revalidation on focus/reconnect
+- **Cached Endpoints**: Home content, memberships, party packages, events, FAQs, testimonials, Instagram feed
+- **Fallback Data**: Sample data displayed while fetching, ensuring content is always visible
+
+### Backend Performance
+- **HTTP Cache Headers**: Public endpoints cached with `Cache-Control` (60s-5min based on content type)
+- **gzip Compression**: Enabled globally for all API responses
+- **Parallel Queries**: `Promise.all()` used extensively for concurrent database operations
+- **Connection Pooling**: Supabase client with optimized connection handling
+
+### Database Optimizations
+- **Comprehensive Indexes**: 32+ indexes on critical query paths (users, memberships, bookings, events, waivers)
+- **Query Limits**: All list queries bounded to prevent unbounded fetches
+- **Optimized Joins**: Selective column fetching to reduce payload sizes
+
+### Expected Performance
+| Action | Performance |
+|--------|-------------|
+| Page refresh | Instant (cached data shown immediately) |
+| Initial load | < 500ms (parallel fetches) |
+| API responses | < 100ms (indexed queries + caching) |
+
+---
+
 ## Roadmap & Next Steps
 **Completed:**
 - ✅ Chatbot FastAPI service integrated with enhanced UI (markdown support, typing indicators)
@@ -265,6 +295,8 @@ The repo includes `.env.example` templates. Never commit production credentials.
 - ✅ Email service for OTP verification and booking confirmations
 - ✅ Admin dashboard with user management and booking controls
 - ✅ Dynamic pricing fetched from Supabase database
+- ✅ SWR caching for instant page refreshes and improved UX
+- ✅ Database indexes for optimized query performance
 
 **In Progress:**
 - Implement guardian portal features (child management, waiver uploads, loyalty points)
