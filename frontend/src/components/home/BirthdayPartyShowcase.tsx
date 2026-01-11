@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LazyImage } from "../common/LazyImage";
 import { PrimaryButton } from "../common/PrimaryButton";
 import styles from "./BirthdayPartyShowcase.module.css";
@@ -23,7 +24,7 @@ const partyImages = [
   },
 ];
 
-export function BirthdayPartyShowcase() {
+export const BirthdayPartyShowcase = memo(function BirthdayPartyShowcase() {
   return (
     <section className={styles.section} aria-labelledby="party-heading">
       <div className={styles.inner}>
@@ -60,4 +61,4 @@ export function BirthdayPartyShowcase() {
       </div>
     </section>
   );
-}
+});

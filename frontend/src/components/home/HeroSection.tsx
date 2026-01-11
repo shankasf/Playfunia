@@ -1,10 +1,11 @@
+import { memo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { PrimaryButton } from "../common/PrimaryButton";
 import styles from "./HeroSection.module.css";
 
 const heroImage = "/images/hero-ballpit-logo.jpg";
 
-export function HeroSection() {
+export const HeroSection = memo(function HeroSection() {
   const { user } = useAuth();
   const greeting = user
     ? `Hey ${user.firstName}, ready for more Playfunia adventures?`
@@ -48,4 +49,4 @@ export function HeroSection() {
       </div>
     </section>
   );
-}
+});

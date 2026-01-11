@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LazyImage } from "../common/LazyImage";
 import styles from "./PlayZonesShowcase.module.css";
 
@@ -41,7 +42,7 @@ const galleryImages = [
   "/images/playground/kids/horse-seats.jpg",
 ];
 
-export function PlayZonesShowcase() {
+export const PlayZonesShowcase = memo(function PlayZonesShowcase() {
   return (
     <section className={styles.section} aria-labelledby="play-zones-heading">
       <div className={styles.inner}>
@@ -90,4 +91,4 @@ export function PlayZonesShowcase() {
       </div>
     </section>
   );
-}
+});

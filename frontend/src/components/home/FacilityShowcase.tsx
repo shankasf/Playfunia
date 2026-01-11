@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { LazyImage } from "../common/LazyImage";
 import styles from "./FacilityShowcase.module.css";
 
@@ -40,7 +41,7 @@ const facilityImages = [
   },
 ];
 
-export function FacilityShowcase() {
+export const FacilityShowcase = memo(function FacilityShowcase() {
   return (
     <section className={styles.section} aria-labelledby="facility-heading">
       <div className={styles.inner}>
@@ -73,4 +74,4 @@ export function FacilityShowcase() {
       </div>
     </section>
   );
-}
+});

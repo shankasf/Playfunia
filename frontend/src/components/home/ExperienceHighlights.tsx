@@ -1,3 +1,4 @@
+import { memo } from "react";
 import styles from "./ExperienceHighlights.module.css";
 
 const highlights = [
@@ -18,7 +19,7 @@ const highlights = [
   },
 ];
 
-export function ExperienceHighlights() {
+export const ExperienceHighlights = memo(function ExperienceHighlights() {
   return (
     <section className={styles.section}>
       <div className={styles.inner}>
@@ -34,4 +35,4 @@ export function ExperienceHighlights() {
       </div>
     </section>
   );
-}
+});

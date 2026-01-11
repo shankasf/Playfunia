@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, memo } from "react";
 import styles from "./VideoGallery.module.css";
 
 const videos = [
@@ -46,7 +46,7 @@ const videos = [
   },
 ];
 
-export function VideoGallery() {
+export const VideoGallery = memo(function VideoGallery() {
   const [playingId, setPlayingId] = useState<number | null>(null);
   const videoRefs = useRef<{ [key: number]: HTMLVideoElement | null }>({});
 
@@ -123,4 +123,4 @@ export function VideoGallery() {
       </div>
     </section>
   );
-}
+});
