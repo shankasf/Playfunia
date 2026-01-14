@@ -15,6 +15,7 @@ import {
   MembershipValidationResult,
   cancelAdminBooking,
   createAdminEventSource,
+  deleteAdminMembership,
   deleteAdminTicketPurchase,
   deleteAdminWaiverSubmission,
   fetchAdminBookings,
@@ -453,6 +454,25 @@ export function AdminDashboardPage() {
     }
   };
 
+  const handleDeleteMembership = async (membershipId: string, memberName: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the membership for "${memberName}"? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteAdminMembership(membershipId);
+      if (selectedMembershipId === membershipId) {
+        setSelectedMembershipId(null);
+      }
+      setMembershipMessage('Membership deleted successfully.');
+      await refreshAll({ silent: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to delete membership.';
+      setMembershipMessage(message);
+    }
+  };
+
   const handleValidationLookup = async () => {
     if (!validateInput.trim()) return;
     setValidationMessage(null);
@@ -668,7 +688,7 @@ export function AdminDashboardPage() {
               <h2>Membership roster</h2>
             </header>
             {membershipMessage && <p className={styles.feedback}>{membershipMessage}</p>}
-            {renderMembershipList(membershipState, visitLoading, handleRecordVisit, handleSelectMembership, selectedMembershipId)}
+            {renderMembershipList(membershipState, visitLoading, handleRecordVisit, handleSelectMembership, handleDeleteMembership, selectedMembershipId)}
           </section>
 
           {selectedMembershipId && (
@@ -1324,6 +1344,7 @@ function renderMembershipList(
   visitLoading: string | null,
   onRecordVisit: (membershipId: string) => void,
   onEdit: (member: AdminMembership) => void,
+  onDelete: (membershipId: string, memberName: string) => void,
   selectedMembershipId: string | null
 ) {
   if (state.status === 'loading') return <p>Loading memberships...</p>;
@@ -1375,6 +1396,18 @@ function renderMembershipList(
                     style={{ marginLeft: '0.5rem' }}
                   >
                     Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const name = `${member.firstName} ${member.lastName ?? ''}`.trim();
+                      member.membership?.membershipId && onDelete(member.membership.membershipId, name);
+                    }}
+                    disabled={!member.membership?.membershipId}
+                    className={styles.deleteBtn}
+                    style={{ marginLeft: '0.5rem' }}
+                  >
+                    Delete
                   </button>
                 </td>
               </tr>

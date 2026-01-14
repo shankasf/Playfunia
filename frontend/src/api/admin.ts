@@ -228,6 +228,10 @@ export async function updateAdminMembership(membershipId: string, payload: Admin
   return response.membership;
 }
 
+export async function deleteAdminMembership(membershipId: string) {
+  return apiDelete<{ success: boolean }>(`/admin/memberships/${membershipId}`);
+}
+
 export async function recordAdminMembershipVisit(membershipId: string) {
   const response = await apiPost<
     { 
