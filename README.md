@@ -124,32 +124,102 @@ FastAPI Chatbot (Python) runs alongside frontend/backend, enriches answers with 
 ---
 
 ## Environments & Secrets
-| Service   | File                    | Variables                                                                                             |
-|-----------|------------------------|--------------------------------------------------------------------------------------------------------|
-| Backend   | `backend/.env`         | `NODE_ENV`, `PORT`, `SUPABASE_URL`, `SUPABASE_KEY`, `JWT_SECRET`, `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_ENVIRONMENT`, `EMAIL_SERVICE_API_KEY`, `FRONTEND_URL`, `CORS_ORIGIN`, `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD` |
-| Frontend  | `frontend/.env` (opt.) | `REACT_APP_API_URL` (defaults to `http://localhost:5000/api`), `REACT_APP_SQUARE_APP_ID`, `REACT_APP_SQUARE_LOCATION_ID` |
-| Chatbot   | `chatbot_service/.env` | `OPENAI_API_KEY`, `BACKEND_BASE_URL`, etc.                                                            |
+
+All services use a **single `.env` file in the project root**. This centralized approach ensures consistency across all services.
+
+```
+Playfunia/
+├── .env                 ← Single source of truth for all services
+├── .env.example         ← Template with all required variables
+├── backend/            (loads from ../.env)
+├── frontend/           (uses REACT_APP_* variables)
+└── chatbot_service/    (loads from ../.env)
+```
+
+### Required Environment Variables
+
+| Category | Variable | Description |
+|----------|----------|-------------|
+| **Supabase** | `SUPABASE_URL` | Supabase project URL |
+| | `SUPABASE_ANON_KEY` | Supabase anonymous key (frontend) |
+| | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (backend) |
+| **Backend** | `JWT_SECRET` | Secret for JWT signing |
+| | `PORT` | Backend server port (default: 5000) |
+| | `FRONTEND_URL` | Frontend URL for CORS |
+| **Frontend** | `REACT_APP_API_URL` | Backend API URL |
+| | `REACT_APP_SUPABASE_URL` | Supabase URL for auth |
+| | `REACT_APP_SUPABASE_ANON_KEY` | Supabase anon key for auth |
+| | `REACT_APP_CHATBOT_URL` | Chatbot service base URL |
+| **Payments** | `SQUARE_ACCESS_TOKEN` | Square API access token |
+| | `SQUARE_APPLICATION_ID` | Square application ID |
+| | `SQUARE_LOCATION_ID` | Square location ID |
+| | `SQUARE_ENVIRONMENT` | `sandbox` or `production` |
+| **Chatbot** | `OPENAI_API_KEY` | OpenAI API key |
+| | `OPENAI_MODEL` | Model to use (default: gpt-4o-mini) |
+
+### Setup
+
+1. Copy the template: `cp .env.example .env`
+2. Fill in your values (get Supabase keys from your project dashboard)
+3. For Google OAuth, configure it in Supabase Dashboard → Authentication → Providers → Google
 
 The repo includes `.env.example` templates. Never commit production credentials. Use secret managers (e.g., Azure Key Vault, AWS Secrets Manager) for deployments.
 
 ---
 
 ## Getting Started
-1. **Prerequisites**: Node.js ≥ 20, npm ≥ 10, Python 3.12+, Supabase account, PowerShell 5+ (Windows), Git.
-2. **Clone & install**:
+
+### Prerequisites
+- Node.js ≥ 20, npm ≥ 10
+- Python 3.12+ (for chatbot service)
+- Supabase account
+- Git
+
+### Installation
+
+1. **Clone & install dependencies**:
    ```bash
    git clone <repo-url>
-   cd Kidz4Fun
+   cd Playfunia
    npm install --prefix backend
    npm install --prefix frontend
-   python -m venv chatbot/.venv && chatbot/.venv/Scripts/activate && pip install -r chatbot/requirements.txt  # optional
    ```
-3. **Configure environment**: Copy `.env.example` to `.env` in each service; populate Supabase URL, Supabase key, JWT secret, etc.
-4. **Populate sample data**: `npm run seed --prefix backend` (imports memberships, packages, events, testimonials, etc.). Optionally define `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` in `backend/.env`; the backend will upsert this account with admin + staff roles on startup so you have credentials ready for the dashboard.
+
+2. **Configure environment** (single .env file in project root):
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Supabase credentials, JWT secret, etc.
+   ```
+
+3. **Set up chatbot** (optional):
+   ```bash
+   cd chatbot_service
+   python -m venv venv
+   source venv/bin/activate  # or venv\Scripts\activate on Windows
+   pip install -r requirements.txt
+   ```
+
+4. **Populate sample data**:
+   ```bash
+   npm run seed --prefix backend
+   ```
+   This imports memberships, packages, events, testimonials, etc. Set `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` in `.env` for admin access.
+
 5. **Run locally**:
-   - Quick start: `./start-dev.bat` (opens backend and frontend servers in separate terminals).
-   - Manual: `npm run dev --prefix backend` and `npm start --prefix frontend`.
-6. **Access**: Visit `http://localhost:3000` (frontend). Backend health check at `http://localhost:5000/api/health`.
+   ```bash
+   # Option 1: Using Docker Compose (recommended)
+   cd docker && docker-compose up
+
+   # Option 2: Manual
+   npm run dev --prefix backend    # Terminal 1
+   npm start --prefix frontend     # Terminal 2
+   cd chatbot_service && uvicorn main:app --reload  # Terminal 3 (optional)
+   ```
+
+6. **Access**:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:5001/api/health
+   - Chatbot: http://localhost:8000
 
 ---
 
@@ -190,9 +260,34 @@ The repo includes `.env.example` templates. Never commit production credentials.
 ---
 
 ## Authentication & Sessions
-- **JWT Secret**: Configured via `backend/.env` (`JWT_SECRET`).
-- **Storage**: Frontend stores token in `localStorage` under `kidz4fun_token`, attaches to API calls via `api/client.ts` helper.
-- **Protected Routes**: `authGuard` ensures `/api/bookings`, `/api/waivers`, `/api/users/me` require valid tokens. `requireRoles('admin','staff')` protects admin operations (e.g., `/api/bookings/admin`).
+
+Authentication is handled by **Supabase Auth** with the following features:
+
+- **Email/Password**: Traditional signup and login
+- **Magic Link**: Passwordless email login
+- **Google OAuth**: Social login (requires configuration in Supabase Dashboard)
+- **Password Reset**: Email-based password recovery
+
+### Configuration
+
+1. Set Supabase credentials in `.env`:
+   ```
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_ANON_KEY=your-anon-key
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   REACT_APP_SUPABASE_URL=https://your-project.supabase.co
+   REACT_APP_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+2. For Google OAuth:
+   - Go to Supabase Dashboard → Authentication → Providers → Google
+   - Add your Google Client ID and Secret
+   - Add redirect URI to Google Cloud Console: `https://your-project.supabase.co/auth/v1/callback`
+
+### How It Works
+- **Frontend**: Uses `@supabase/supabase-js` for auth, stores session in localStorage
+- **Backend**: Validates Supabase JWT tokens, syncs user profiles to local database
+- **Protected Routes**: `authGuard` middleware validates tokens, `requireRoles` checks user roles
 
 ---
 
