@@ -1,7 +1,9 @@
 import { config as loadEnv } from 'dotenv';
 import { z } from 'zod';
+import path from 'path';
 
-loadEnv();
+// Load .env from project root (one level up from backend/)
+loadEnv({ path: path.resolve(__dirname, '../../../.env') });
 
 const envSchema = z
   .object({
@@ -41,10 +43,6 @@ const envSchema = z
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().optional(),
     SMTP_FROM_NAME: z.string().default('Playfunia'),
-    // Resend Email Configuration
-    RESEND_API_KEY: z.string().optional(),
-    EMAIL_FROM: z.string().default('noreply@playfunia.com'),
-    EMAIL_FROM_NAME: z.string().default('Playfunia'),
   })
   .strip();
 
@@ -94,8 +92,4 @@ export const appConfig = {
   smtpPass: env.SMTP_PASS,
   smtpFrom: env.SMTP_FROM,
   smtpFromName: env.SMTP_FROM_NAME,
-  // Resend Email Configuration
-  resendApiKey: env.RESEND_API_KEY,
-  emailFrom: env.EMAIL_FROM,
-  emailFromName: env.EMAIL_FROM_NAME,
 };

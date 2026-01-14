@@ -5,6 +5,12 @@ import os
 from pathlib import Path
 from typing import List
 
+from dotenv import load_dotenv
+
+# Load .env from project root (one level up from chatbot_service/)
+ROOT_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(ROOT_ENV_PATH)
+
 import chromadb
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
