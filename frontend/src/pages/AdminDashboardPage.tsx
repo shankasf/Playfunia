@@ -336,7 +336,7 @@ export function AdminDashboardPage() {
     }
   };
 
-  const handleCancelBooking = async () => {
+  const handleCancelSelectedBooking = async () => {
     if (!selectedBookingId) return;
     const reason = window.prompt('Add an optional note for cancellation', bookingForm.notes ?? '');
     setBookingActionBusy(true);
@@ -676,7 +676,7 @@ export function AdminDashboardPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCancelBooking}
+                  onClick={handleCancelSelectedBooking}
                   className={styles.danger}
                   disabled={bookingActionBusy}
                 >
