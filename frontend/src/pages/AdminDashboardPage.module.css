@@ -685,6 +685,46 @@
   color: #ef4444;
 }
 
+.cancelBtn {
+  padding: 0.5rem 0.85rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cancelBtn:hover {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #d97706;
+}
+
+.statusActive {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.statusCancelled {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: #fee2e2;
+  color: #dc2626;
+}
+
 .waiverList li > div {
   display: grid;
   gap: 0.25rem;

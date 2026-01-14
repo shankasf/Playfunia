@@ -80,6 +80,7 @@ export type AdminMembership = {
   membership: {
     membershipId: string | null;
     tierName: string;
+    status: 'active' | 'cancelled' | 'expired';
     autoRenew: boolean;
     visitsPerMonth: number | null;
     visitsUsed: number;
@@ -168,6 +169,10 @@ export async function cancelAdminBooking(bookingId: string, reason?: string) {
     { reason }
   );
   return response.booking;
+}
+
+export async function deleteAdminBooking(bookingId: string) {
+  return apiDelete<{ success: boolean }>(`/admin/bookings/${bookingId}`);
 }
 
 export async function fetchAdminWaivers(limit?: number) {

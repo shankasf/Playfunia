@@ -61,7 +61,8 @@ import {
   getBookingHandler,
   updateBookingHandler,
   cancelBookingHandler,
-  
+  deleteBookingHandler,
+
   // Waiver Users
   listWaiverUsersHandler,
   getWaiverUserHandler,
@@ -205,6 +206,7 @@ adminRouter.get('/bookings', listBookingsHandler);
 adminRouter.get('/bookings/:id', getBookingHandler);
 adminRouter.patch('/bookings/:id', updateBookingHandler);
 adminRouter.post('/bookings/:id/cancel', cancelBookingHandler);
+adminRouter.delete('/bookings/:id', deleteBookingHandler);
 adminRouter.post('/bookings/:id/recalculate-pricing', recalculateBookingPricingHandler);
 
 // Waiver Users CRUD

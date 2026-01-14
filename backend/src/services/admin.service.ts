@@ -500,6 +500,11 @@ export async function cancelBooking(bookingId: number) {
   return PartyBookingRepository.update(bookingId, { status: 'Cancelled' });
 }
 
+export async function deleteBooking(bookingId: number) {
+  const { error } = await supabaseAny.from('party_bookings').delete().eq('booking_id', bookingId);
+  if (error) throw error;
+}
+
 // ============= Waiver Users Management =============
 export async function listWaiverUsers(options?: { limit?: number | undefined; search?: string | undefined }) {
   let query = supabaseAny.from('waiver_users').select('*, waiver_user_children(*)');

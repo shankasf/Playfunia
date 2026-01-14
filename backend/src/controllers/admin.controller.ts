@@ -255,6 +255,7 @@ function transformMembership(m: Record<string, unknown>): Record<string, unknown
     membership: {
       membershipId: String(m.membership_id),
       tierName: tierInfo!.name,
+      status: (m.status as string) ?? 'active',
       autoRenew: m.auto_renew ?? true,
       visitsPerMonth,
       visitsUsed,
@@ -481,6 +482,13 @@ export const cancelBookingHandler = asyncHandler(async (req, res) => {
   const booking = await AdminService.cancelBooking(bookingId);
   publishAdminEvent('booking.cancelled', { bookingId });
   return res.status(200).json({ booking });
+});
+
+export const deleteBookingHandler = asyncHandler(async (req, res) => {
+  const bookingId = parseIntParam(req.params.id);
+  await AdminService.deleteBooking(bookingId);
+  publishAdminEvent('booking.deleted', { bookingId });
+  return res.status(200).json({ success: true });
 });
 
 // ============= Waiver Users CRUD =============

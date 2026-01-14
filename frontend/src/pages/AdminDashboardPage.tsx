@@ -15,6 +15,7 @@ import {
   MembershipValidationResult,
   cancelAdminBooking,
   createAdminEventSource,
+  deleteAdminBooking,
   deleteAdminMembership,
   deleteAdminTicketPurchase,
   deleteAdminWaiverSubmission,
@@ -279,14 +280,29 @@ export function AdminDashboardPage() {
     }
   };
 
-  const handleDeleteBooking = async (booking: AdminBooking) => {
+  const handleCancelBooking = async (booking: AdminBooking) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete booking "${booking.reference}"? This action cannot be undone.`
+      `Are you sure you want to cancel booking "${booking.reference}"?`
     );
     if (!confirmed) return;
 
     try {
-      await cancelAdminBooking(booking.id, 'Deleted by admin');
+      await cancelAdminBooking(booking.id, 'Cancelled by admin');
+      await refreshAll({ silent: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to cancel booking.';
+      alert(message);
+    }
+  };
+
+  const handleDeleteBooking = async (booking: AdminBooking) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to permanently delete booking "${booking.reference}"? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteAdminBooking(booking.id);
       if (selectedBookingId === booking.id) {
         setSelectedBookingId(null);
         setBookingForm({});
@@ -454,9 +470,25 @@ export function AdminDashboardPage() {
     }
   };
 
+  const handleCancelMembership = async (membershipId: string, memberName: string) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to cancel the membership for "${memberName}"?`
+    );
+    if (!confirmed) return;
+
+    try {
+      await updateAdminMembership(membershipId, { status: 'cancelled' });
+      setMembershipMessage('Membership cancelled successfully.');
+      await refreshAll({ silent: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to cancel membership.';
+      setMembershipMessage(message);
+    }
+  };
+
   const handleDeleteMembership = async (membershipId: string, memberName: string) => {
     const confirmed = window.confirm(
-      `Are you sure you want to delete the membership for "${memberName}"? This action cannot be undone.`
+      `Are you sure you want to permanently delete the membership for "${memberName}"? This action cannot be undone.`
     );
     if (!confirmed) return;
 
@@ -571,7 +603,7 @@ export function AdminDashboardPage() {
               <h2>Upcoming bookings</h2>
               <span>{bookingState.data.length} active</span>
             </header>
-            {renderBookingTable(bookingState, handleSelectBooking, handleDeleteBooking, selectedBookingId)}
+            {renderBookingTable(bookingState, handleSelectBooking, handleCancelBooking, handleDeleteBooking, selectedBookingId)}
           </section>
 
           {selectedBooking && (
@@ -688,7 +720,7 @@ export function AdminDashboardPage() {
               <h2>Membership roster</h2>
             </header>
             {membershipMessage && <p className={styles.feedback}>{membershipMessage}</p>}
-            {renderMembershipList(membershipState, visitLoading, handleRecordVisit, handleSelectMembership, handleDeleteMembership, selectedMembershipId)}
+            {renderMembershipList(membershipState, visitLoading, handleRecordVisit, handleSelectMembership, handleCancelMembership, handleDeleteMembership, selectedMembershipId)}
           </section>
 
           {selectedMembershipId && (
@@ -1085,6 +1117,7 @@ function renderSummaryCard(title: string, value: string | number, subtitle: stri
 function renderBookingTable(
   state: { status: LoadState; data: AdminBooking[]; error?: string },
   onSelect: (booking: AdminBooking) => void,
+  onCancel: (booking: AdminBooking) => void,
   onDelete: (booking: AdminBooking) => void,
   selectedId: string | null
 ) {
@@ -1116,6 +1149,7 @@ function renderBookingTable(
             const paidAmount = isPaid ? (booking.depositAmount ?? 0) : 0;
             const dueAmount = booking.balanceRemaining ?? 0;
             const hasSplitPayment = dueAmount > 0 && paidAmount > 0;
+            const isCancelled = booking.status === 'Cancelled';
             return (
               <tr
                 key={booking.id}
@@ -1134,7 +1168,11 @@ function renderBookingTable(
                     )}
                   </div>
                 </td>
-                <td>{booking.status}</td>
+                <td>
+                  <span className={isCancelled ? styles.statusCancelled : styles.statusActive}>
+                    {booking.status}
+                  </span>
+                </td>
                 <td>
                   <div className={styles.paymentCell}>
                     {isPaid ? (
@@ -1174,16 +1212,29 @@ function renderBookingTable(
                     >
                       Edit
                     </button>
-                    <button
-                      type="button"
-                      className={styles.deleteBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(booking);
-                      }}
-                    >
-                      Delete
-                    </button>
+                    {isCancelled ? (
+                      <button
+                        type="button"
+                        className={styles.deleteBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(booking);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className={styles.cancelBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCancel(booking);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -1344,6 +1395,7 @@ function renderMembershipList(
   visitLoading: string | null,
   onRecordVisit: (membershipId: string) => void,
   onEdit: (member: AdminMembership) => void,
+  onCancel: (membershipId: string, memberName: string) => void,
   onDelete: (membershipId: string, memberName: string) => void,
   selectedMembershipId: string | null
 ) {
@@ -1357,6 +1409,7 @@ function renderMembershipList(
           <tr>
             <th>Family</th>
             <th>Tier</th>
+            <th>Status</th>
             <th>Visits</th>
             <th>Last visit</th>
             <th />
@@ -1366,6 +1419,9 @@ function renderMembershipList(
           {state.data.map((member) => {
             const membershipId = member.membership?.membershipId ?? member.userId;
             const isSelected = membershipId === selectedMembershipId;
+            const status = member.membership?.status ?? 'active';
+            const isCancelled = status === 'cancelled';
+            const name = `${member.firstName} ${member.lastName ?? ''}`.trim();
             return (
               <tr key={membershipId} className={isSelected ? styles.selectedRow : undefined}>
                 <td>
@@ -1376,6 +1432,11 @@ function renderMembershipList(
                   })}
                 </td>
                 <td>{member.membership?.tierName ?? '--'}</td>
+                <td>
+                  <span className={isCancelled ? styles.statusCancelled : styles.statusActive}>
+                    {status}
+                  </span>
+                </td>
                 <td>{formatVisitSummary(member.membership)}</td>
                 <td>
                   {member.membership?.lastVisitAt ? formatDate(member.membership.lastVisitAt) : '--'}
@@ -1384,7 +1445,7 @@ function renderMembershipList(
                   <button
                     type="button"
                     onClick={() => member.membership?.membershipId && onRecordVisit(member.membership.membershipId)}
-                    disabled={!member.membership?.membershipId || visitLoading === membershipId}
+                    disabled={!member.membership?.membershipId || visitLoading === membershipId || isCancelled}
                   >
                     {visitLoading === membershipId ? 'Recording...' : 'Check in'}
                   </button>
@@ -1397,18 +1458,27 @@ function renderMembershipList(
                   >
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const name = `${member.firstName} ${member.lastName ?? ''}`.trim();
-                      member.membership?.membershipId && onDelete(member.membership.membershipId, name);
-                    }}
-                    disabled={!member.membership?.membershipId}
-                    className={styles.deleteBtn}
-                    style={{ marginLeft: '0.5rem' }}
-                  >
-                    Delete
-                  </button>
+                  {isCancelled ? (
+                    <button
+                      type="button"
+                      onClick={() => member.membership?.membershipId && onDelete(member.membership.membershipId, name)}
+                      disabled={!member.membership?.membershipId}
+                      className={styles.deleteBtn}
+                      style={{ marginLeft: '0.5rem' }}
+                    >
+                      Delete
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => member.membership?.membershipId && onCancel(member.membership.membershipId, name)}
+                      disabled={!member.membership?.membershipId}
+                      className={styles.cancelBtn}
+                      style={{ marginLeft: '0.5rem' }}
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </td>
               </tr>
             );
