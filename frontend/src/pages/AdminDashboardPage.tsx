@@ -1404,7 +1404,7 @@ function renderMembershipList(
   if (state.data.length === 0) return <p>No active memberships.</p>;
   return (
     <div className={styles.tableWrapper}>
-      <table className={styles.table}>
+      <table className={styles.membershipTable}>
         <thead>
           <tr>
             <th>Family</th>
@@ -1412,7 +1412,7 @@ function renderMembershipList(
             <th>Status</th>
             <th>Visits</th>
             <th>Last visit</th>
-            <th />
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -1442,43 +1442,43 @@ function renderMembershipList(
                   {member.membership?.lastVisitAt ? formatDate(member.membership.lastVisitAt) : '--'}
                 </td>
                 <td>
-                  <button
-                    type="button"
-                    onClick={() => member.membership?.membershipId && onRecordVisit(member.membership.membershipId)}
-                    disabled={!member.membership?.membershipId || visitLoading === membershipId || isCancelled}
-                  >
-                    {visitLoading === membershipId ? 'Recording...' : 'Check in'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onEdit(member)}
-                    disabled={!member.membership?.membershipId}
-                    className={styles.secondaryButton}
-                    style={{ marginLeft: '0.5rem' }}
-                  >
-                    Edit
-                  </button>
-                  {isCancelled ? (
+                  <div className={styles.membershipActions}>
                     <button
                       type="button"
-                      onClick={() => member.membership?.membershipId && onDelete(member.membership.membershipId, name)}
-                      disabled={!member.membership?.membershipId}
-                      className={styles.deleteBtn}
-                      style={{ marginLeft: '0.5rem' }}
+                      className={styles.checkInBtn}
+                      onClick={() => member.membership?.membershipId && onRecordVisit(member.membership.membershipId)}
+                      disabled={!member.membership?.membershipId || visitLoading === membershipId || isCancelled}
                     >
-                      Delete
+                      {visitLoading === membershipId ? 'Recording...' : 'Check in'}
                     </button>
-                  ) : (
                     <button
                       type="button"
-                      onClick={() => member.membership?.membershipId && onCancel(member.membership.membershipId, name)}
+                      className={styles.editBtn}
+                      onClick={() => onEdit(member)}
                       disabled={!member.membership?.membershipId}
-                      className={styles.cancelBtn}
-                      style={{ marginLeft: '0.5rem' }}
                     >
-                      Cancel
+                      Edit
                     </button>
-                  )}
+                    {isCancelled ? (
+                      <button
+                        type="button"
+                        className={styles.deleteBtn}
+                        onClick={() => member.membership?.membershipId && onDelete(member.membership.membershipId, name)}
+                        disabled={!member.membership?.membershipId}
+                      >
+                        Delete
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className={styles.cancelBtn}
+                        onClick={() => member.membership?.membershipId && onCancel(member.membership.membershipId, name)}
+                        disabled={!member.membership?.membershipId}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );

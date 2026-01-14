@@ -438,6 +438,113 @@
   color: #d97706;
 }
 
+/* Membership Actions */
+.membershipActions {
+  display: inline-flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.checkInBtn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+}
+
+.checkInBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.checkInBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Membership Table */
+.membershipTable {
+  width: 100%;
+  min-width: 700px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.membershipTable th {
+  text-align: left;
+  padding: 0.875rem 1rem;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.membershipTable th:first-child {
+  border-radius: 12px 0 0 0;
+}
+
+.membershipTable th:last-child {
+  border-radius: 0 12px 0 0;
+  text-align: right;
+}
+
+.membershipTable td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+  vertical-align: middle;
+  background: #ffffff;
+}
+
+.membershipTable td:first-child {
+  font-weight: 500;
+  color: #1e293b;
+}
+
+.membershipTable td:last-child {
+  text-align: right;
+}
+
+.membershipTable tbody tr {
+  transition: all 0.15s ease;
+}
+
+.membershipTable tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.membershipTable tbody tr:last-child td:first-child {
+  border-radius: 0 0 0 12px;
+}
+
+.membershipTable tbody tr:last-child td:last-child {
+  border-radius: 0 0 12px 0;
+}
+
+.membershipTable .selectedRow td {
+  background: rgba(99, 102, 241, 0.06) !important;
+}
+
+.membershipTable .selectedRow td:first-child {
+  border-left: 3px solid #6366f1;
+}
+
 /* Status Badges */
 .statusActive {
   display: inline-block;
@@ -1286,10 +1393,17 @@
 
   .editBtn,
   .deleteBtn,
-  .cancelBtn {
+  .cancelBtn,
+  .checkInBtn {
     width: 100%;
     padding: 0.5rem;
     font-size: 0.7rem;
+  }
+
+  .membershipActions {
+    flex-direction: column;
+    gap: 0.4rem;
+    width: 100%;
   }
 
   .formGrid {
@@ -1437,6 +1551,7 @@
   .editBtn,
   .deleteBtn,
   .cancelBtn,
+  .checkInBtn,
   .table button,
   .visitButton {
     min-height: 44px;
