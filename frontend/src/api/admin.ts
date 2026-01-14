@@ -185,18 +185,7 @@ export async function updateAdminWaiverSubmission(waiverId: string, payload: Adm
 }
 
 export async function deleteAdminWaiverSubmission(waiverId: string) {
-  const response = await fetch(`${API_BASE_URL}/admin/waivers/${waiverId}`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${localStorage.getItem('token') ?? ''}`,
-    },
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.message ?? 'Failed to delete waiver');
-  }
-  return { success: true };
+  return apiDelete<{ success: boolean }>(`/admin/waivers/${waiverId}`);
 }
 
 export async function fetchAdminTicketLog() {
