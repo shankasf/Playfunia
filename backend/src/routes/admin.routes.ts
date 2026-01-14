@@ -222,6 +222,7 @@ adminRouter.delete('/waiver-submissions/:id', deleteWaiverSubmissionHandler);
 // Waivers (alias for frontend compatibility)
 adminRouter.get('/waivers', listWaiverSubmissionsHandler);
 adminRouter.patch('/waivers/:id', updateWaiverSubmissionHandler);
+adminRouter.delete('/waivers/:id', deleteWaiverSubmissionHandler);
 
 // Ticket Purchases
 adminRouter.get('/ticket-purchases', listTicketPurchasesHandler);
