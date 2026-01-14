@@ -26,5 +26,8 @@ Thumbs.db
 dist/
 build/
 
+# Chroma vector database
+chatbot_service/chroma/
+
 # Local config
 .vscode-upload.json
