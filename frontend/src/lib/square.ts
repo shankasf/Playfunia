@@ -49,7 +49,7 @@ export async function fetchSquareConfig(): Promise<SquareConfig> {
     return squareConfig;
   }
 
-  const apiUrl = process.env.REACT_APP_API_URL || 'http://72.62.162.219:5001/api';
+  const apiUrl = process.env.REACT_APP_API_URL || '';
   const response = await fetch(`${apiUrl}/square/config`);
 
   if (!response.ok) {

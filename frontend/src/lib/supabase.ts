@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || 'https://wzmcmbkouodsfbfxaozd.supabase.co';
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY || '';
 
-if (!supabaseAnonKey) {
-  console.warn('REACT_APP_SUPABASE_ANON_KEY is not set. Supabase Auth will not work.');
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.warn('REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY must be set for authentication to work.');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

@@ -1,5 +1,9 @@
-// Use environment variable or default to production server
-export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://72.62.162.219:5001/api';
+// API URL must be set via environment variable
+export const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+
+if (!API_BASE_URL) {
+  console.warn('REACT_APP_API_URL is not set. API calls will fail.');
+}
 
 let authToken: string | null = null;
 let waiverAuthToken: string | null = null;
