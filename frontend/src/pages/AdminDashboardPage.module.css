@@ -1,196 +1,203 @@
+/* ============================================
+   Admin Dashboard - Professional & Responsive
+   ============================================ */
+
+/* Base Layout */
 .page {
-  padding: 3rem 1.5rem 4rem;
-  background: linear-gradient(180deg, #f5faff 0%, #ffffff 50%);
+  padding: 2rem 1.5rem 4rem;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 50%);
   min-height: calc(100vh - 80px);
 }
 
+/* Header Section */
 .header {
-  max-width: 1100px;
-  margin: 0 auto 2.5rem;
+  max-width: 1200px;
+  margin: 0 auto 2rem;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 2rem;
-  color: #1d2a5b;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .header h1 {
-  margin: 0.35rem 0 0;
-  font-size: clamp(2rem, 3vw, 2.6rem);
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  color: #1e293b;
 }
 
 .tag {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  border-radius: 999px;
-  background: rgba(31, 102, 255, 0.12);
-  color: #1f66ff;
-  font-weight: 700;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+  color: #6366f1;
+  font-weight: 600;
 }
 
 .actions {
   display: flex;
-  gap: 0.8rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
-.secondary {
-  background: rgba(31, 102, 255, 0.12);
-  color: #1f2b66;
-}
-
+/* Buttons */
 .signOutButton {
-  border: 1px solid rgba(220, 53, 69, 0.4);
-  border-radius: 12px;
-  padding: 0.7rem 1.2rem;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  padding: 0.6rem 1.1rem;
   font-weight: 600;
+  font-size: 0.875rem;
   background: transparent;
-  color: #dc3545;
+  color: #ef4444;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .signOutButton:hover {
-  background: rgba(220, 53, 69, 0.1);
-  border-color: #dc3545;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #ef4444;
 }
 
 .exportButton {
-  border: 1px dashed rgba(31, 102, 255, 0.4);
-  border-radius: 12px;
-  padding: 0.7rem 1rem;
+  border: 1px dashed rgba(99, 102, 241, 0.4);
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
   font-weight: 600;
+  font-size: 0.875rem;
   background: transparent;
-  color: #1f2b66;
+  color: #6366f1;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
+.exportButton:hover {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: #6366f1;
+}
+
+.secondary {
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
+}
+
+/* Status Bar */
 .statusBar {
-  min-width: 600px;
-  border-collapse: collapse;
-  font-size: 0.95rem;
-  table-layout: fixed;
+  display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
 .statusConnected,
 .statusDisconnected {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  .tableWrapper {
-    width: 100%;
-    overflow-x: auto;
-  }
-
-  .table th {
-    text-align: left;
-    padding: 0.75rem 0.65rem;
-    background: rgba(31, 60, 136, 0.08);
-    color: #1d2a5b;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-  }
-
-  .table td {
-    padding: 0.75rem 0.65rem;
-    border-bottom: 1px solid rgba(31, 60, 136, 0.08);
-    color: #42507c;
-    vertical-align: middle;
-    word-break: break-word;
-  }
+  gap: 0.4rem;
   font-weight: 600;
+  font-size: 0.8rem;
 }
 
 .statusConnected::before,
 .statusDisconnected::before {
   content: '';
-  width: 0.65rem;
-  height: 0.65rem;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  .table td:last-child,
-  .table th:last-child {
-    text-align: right;
-  }
 }
 
 .statusConnected {
-  color: #1f8f5f;
+  color: #059669;
 }
 
 .statusConnected::before {
-  background: #1f8f5f;
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
 }
 
 .statusDisconnected {
-  color: #b55000;
+  color: #d97706;
 }
 
 .statusDisconnected::before {
-  background: #b55000;
+  background: #f59e0b;
 }
 
 .statusBarBottom {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 2rem auto 0;
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 1.25rem;
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 1rem;
-  background: rgba(31, 60, 136, 0.04);
-  border-radius: 8px;
-  font-size: 0.85rem;
+  background: rgba(99, 102, 241, 0.04);
+  border-radius: 10px;
+  font-size: 0.8rem;
 }
 
+/* Summary Cards Grid */
 .summaryGrid {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto 2rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1.1rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
 }
 
 .summaryCard {
   background: #ffffff;
-  border-radius: 18px;
+  border-radius: 16px;
   padding: 1.5rem;
-  box-shadow: 0 12px 30px rgba(31, 60, 136, 0.12);
-  color: #1d2a5b;
-  display: grid;
-  gap: 0.35rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.summaryCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
 }
 
 .summaryCard span {
-  font-size: 0.85rem;
-  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #5d6ca0;
+  color: #64748b;
 }
 
 .summaryCard strong {
   font-size: 2rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.1;
 }
 
 .summaryCard p {
   margin: 0;
-  color: #5d6ca0;
+  font-size: 0.85rem;
+  color: #64748b;
 }
 
+/* Main Layout */
 .layout {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 2rem;
-  align-items: start;
+  gap: 1.5rem;
 }
 
 .columnPrimary,
@@ -201,19 +208,16 @@
   align-content: start;
 }
 
-.columnAside {
-  grid-template-columns: 1fr;
-}
-
+/* Panels */
 .panel {
   background: #ffffff;
-  border-radius: 18px;
-  padding: 1.8rem;
-  box-shadow: 0 18px 40px rgba(31, 60, 136, 0.12);
-  display: grid;
-  gap: 1.2rem;
-  align-content: start;
-  min-height: 0;
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .panelHeader {
@@ -226,12 +230,14 @@
 
 .panelHeader h2 {
   margin: 0;
-  color: #1d2a5b;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
 }
 
 .panelActions {
   display: flex;
-  gap: 0.6rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
   align-items: center;
 }
@@ -239,59 +245,95 @@
 .panelActions a {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #1f66ff;
+  color: #6366f1;
   text-decoration: none;
+  transition: color 0.2s ease;
 }
 
+.panelActions a:hover {
+  color: #4f46e5;
+}
+
+/* Table Styles */
 .tableWrapper {
   width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
 }
 
 .table {
   width: 100%;
-  min-width: 620px;
+  min-width: 600px;
   border-collapse: collapse;
-  font-size: 0.95rem;
-  table-layout: fixed;
-}
-
-/* Booking table with auto column widths */
-.bookingTable {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
   font-size: 0.875rem;
-  table-layout: auto;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.bookingTable th {
+.table th {
   text-align: left;
-  padding: 1rem 1rem;
+  padding: 0.875rem 1rem;
   background: #f8fafc;
   color: #475569;
   font-weight: 600;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   border-bottom: 2px solid #e2e8f0;
 }
 
+.table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+  vertical-align: middle;
+}
+
+.table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.table td:last-child,
+.table th:last-child {
+  text-align: right;
+}
+
+/* Booking Table */
+.bookingTable {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.bookingTable th {
+  text-align: left;
+  padding: 1rem;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 2px solid #e2e8f0;
+  white-space: nowrap;
+}
+
 .bookingTable th:first-child {
   border-radius: 12px 0 0 0;
-  padding-left: 1.25rem;
 }
 
 .bookingTable th:last-child {
   border-radius: 0 12px 0 0;
   text-align: center;
-  padding-right: 1.25rem;
 }
 
 .bookingTable td {
-  padding: 1rem 1rem;
+  padding: 1rem;
   border-bottom: 1px solid #f1f5f9;
   color: #334155;
   vertical-align: middle;
@@ -299,14 +341,12 @@
 }
 
 .bookingTable td:first-child {
-  padding-left: 1.25rem;
-  font-weight: 500;
+  font-weight: 600;
   color: #1e293b;
 }
 
 .bookingTable td:last-child {
   text-align: center;
-  padding-right: 1.25rem;
 }
 
 .bookingTable tbody tr {
@@ -317,366 +357,60 @@
   background: #f8fafc;
 }
 
-.bookingTable tbody tr:last-child td {
-  border-bottom: none;
-}
-
 .bookingTable tbody tr:last-child td:first-child {
   border-radius: 0 0 0 12px;
 }
 
 .bookingTable tbody tr:last-child td:last-child {
-  border-radius: 0 0 8px 0;
+  border-radius: 0 0 12px 0;
 }
 
+.rowSelected td {
+  background: rgba(99, 102, 241, 0.06) !important;
+}
+
+.rowSelected td:first-child {
+  border-left: 3px solid #6366f1;
+}
+
+/* Action Buttons in Tables */
 .bookingActions {
   display: inline-flex;
   gap: 0.5rem;
   justify-content: center;
   align-items: center;
-}
-
-.bookingActions .editBtn,
-.bookingActions .deleteBtn {
-  white-space: nowrap;
-  min-width: 56px;
-  text-align: center;
-  padding: 0.4rem 0.7rem;
-}
-
-.customerCell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.guestEmail {
-  font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.paymentCell {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.paymentCell small {
-  font-size: 0.7rem;
-  color: #6b7280;
-}
-
-.paymentFull {
-  display: inline-block;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #166534;
-  background: #dcfce7;
-  border-radius: 4px;
-}
-
-.paymentSplit {
-  display: inline-block;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #92400e;
-  background: #fef3c7;
-  border-radius: 4px;
-}
-
-.paymentPaid {
-  display: inline-block;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #166534;
-  background: #dcfce7;
-  border-radius: 4px;
-}
-
-.paymentPending {
-  display: inline-block;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #92400e;
-  background: #fef3c7;
-  border-radius: 4px;
-}
-
-.paymentDue {
-  display: block;
-  margin-top: 0.25rem;
-  font-size: 0.7rem;
-  font-weight: 500;
-  color: #dc2626;
-}
-
-.paymentComplete {
-  display: block;
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: #16a34a;
-  margin-top: 0.15rem;
-}
-
-.redemptionComplete {
-  display: inline-block;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #166534;
-  background: #dcfce7;
-  border-radius: 4px;
-}
-
-.redemptionPending {
-  display: inline-block;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #92400e;
-  background: #fef3c7;
-  border-radius: 4px;
-}
-
-.table th {
-  text-align: left;
-  padding: 0.75rem 0.65rem;
-  background: rgba(31, 60, 136, 0.08);
-  color: #1d2a5b;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.table td {
-  padding: 0.75rem 0.65rem;
-  border-bottom: 1px solid rgba(31, 60, 136, 0.08);
-  color: #42507c;
-  vertical-align: middle;
-  word-break: break-word;
-}
-
-.table tbody tr {
-  transition: background 0.15s ease;
-}
-
-.table tbody tr:hover {
-  background: rgba(31, 60, 136, 0.05);
-}
-
-.rowSelected td {
-  background: rgba(59, 130, 246, 0.08) !important;
-  border-left: 3px solid #3b82f6;
-}
-
-.rowSelected td:first-child {
-  border-left: 3px solid #3b82f6;
-}
-
-.table td:last-child,
-.table th:last-child {
-  text-align: right;
-}
-
-.formGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
-}
-
-.formGrid label,
-.notesField {
-  display: grid;
-  gap: 0.35rem;
-  font-size: 0.9rem;
-  color: #1d2a5b;
-}
-
-.formGrid input,
-.formGrid select,
-.notesField textarea,
-.ticketActions input {
-  border-radius: 10px;
-  border: 1px solid rgba(31, 60, 136, 0.18);
-  padding: 0.65rem 0.8rem;
-  font-size: 0.95rem;
-}
-
-.notesField textarea {
-  min-height: 90px;
-  resize: vertical;
-}
-
-.formActions {
-  display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-}
-
-.formActions button,
-.ticketActions button,
-.panel button {
-  border: none;
-  border-radius: 12px;
-  padding: 0.65rem 1.2rem;
-  background: linear-gradient(120deg, #ff8a5c 0%, #7d63ff 100%);
-  color: #ffffff;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 12px 26px rgba(31, 60, 136, 0.18);
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
-}
-
-.formActions button:disabled,
-.ticketActions button:disabled,
-.panel button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.formActions button:not(:disabled),
-.ticketActions button:not(:disabled),
-.panel button:not(:disabled) {
-  transform: translateY(0);
-}
-
-.formActions button:not(:disabled):hover,
-.ticketActions button:not(:disabled):hover,
-.panel button:not(:disabled):hover {
-  transform: translateY(-1px);
-  box-shadow: 0 16px 36px rgba(31, 60, 136, 0.22);
-}
-
-.secondaryButton {
-  background: rgba(31, 60, 136, 0.1);
-  color: #1d2a5b;
-  box-shadow: none;
-}
-
-.danger {
-  background: #d7263d;
-  box-shadow: none;
-}
-
-.secondaryButton:not(:disabled):hover,
-.danger:not(:disabled):hover {
-  box-shadow: none;
-  transform: translateY(-1px);
-}
-
-.ticketActions {
-  display: flex;
-  gap: 0.8rem;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.ticketActions input {
-  flex: 1;
-  min-width: 220px;
-}
-
-.feedback {
-  font-size: 0.9rem;
-  color: #1d2a5b;
-}
-
-.error {
-  color: #d7263d;
-  font-weight: 600;
-}
-
-.validationResult {
-  border-radius: 14px;
-  padding: 1rem;
-  background: rgba(31, 102, 255, 0.08);
-  display: grid;
-  gap: 0.35rem;
-}
-
-.validationResult[data-status='denied'] {
-  background: rgba(215, 38, 61, 0.12);
-}
-
-.waiverList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 0.8rem;
-}
-
-.waiverList li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 0.75rem;
-  padding: 0.85rem;
-  border-radius: 14px;
-  border: 1px solid rgba(31, 60, 136, 0.08);
-  cursor: pointer;
-}
-
-.waiverList li:hover {
-  background: rgba(31, 60, 136, 0.05);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(31, 60, 136, 0.1);
-}
-
-.waiverList li {
-  transition: all 0.2s ease;
-}
-
-.waiverSelected {
-  background: linear-gradient(135deg, rgba(31, 102, 255, 0.1) 0%, rgba(125, 99, 255, 0.12) 100%);
-  border-color: rgba(31, 102, 255, 0.3);
-  box-shadow: 0 8px 20px rgba(31, 102, 255, 0.15);
-}
-
-.waiverMeta {
-  display: grid;
-  gap: 0.5rem;
-  justify-items: end;
-  align-content: start;
-}
-
-.waiverActions {
-  display: flex;
-  gap: 0.5rem;
 }
 
 .editBtn {
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: 8px;
   border: none;
-  background: #3b82f6;
+  background: #6366f1;
   color: #ffffff;
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .editBtn:hover {
-  background: #2563eb;
+  background: #4f46e5;
+  transform: translateY(-1px);
 }
 
 .deleteBtn {
-  padding: 0.5rem 0.85rem;
-  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
   background: #ffffff;
   color: #64748b;
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .deleteBtn:hover {
@@ -686,15 +420,16 @@
 }
 
 .cancelBtn {
-  padding: 0.5rem 0.85rem;
-  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
   border: 1px solid #e2e8f0;
   background: #ffffff;
   color: #64748b;
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .cancelBtn:hover {
@@ -703,86 +438,331 @@
   color: #d97706;
 }
 
+/* Status Badges */
 .statusActive {
   display: inline-block;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
   font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 0.02em;
   background: #dcfce7;
   color: #16a34a;
 }
 
 .statusCancelled {
   display: inline-block;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 6px;
   font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
+  letter-spacing: 0.02em;
   background: #fee2e2;
   color: #dc2626;
 }
 
-.waiverList li > div {
+/* Customer & Payment Cells */
+.customerCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.guestEmail {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.paymentCell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.paymentPaid {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #166534;
+  background: #dcfce7;
+  border-radius: 6px;
+}
+
+.paymentPending {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 6px;
+}
+
+.paymentDue {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #dc2626;
+}
+
+.paymentComplete {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #16a34a;
+}
+
+/* Form Styles */
+.formGrid {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
+}
+
+.formGrid label,
+.notesField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.formGrid input,
+.formGrid select,
+.notesField textarea,
+.ticketActions input {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: #1e293b;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.formGrid input:focus,
+.formGrid select:focus,
+.notesField textarea:focus,
+.ticketActions input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.notesField textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.formActions button,
+.ticketActions button {
+  border: none;
+  border-radius: 10px;
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+}
+
+.formActions button:hover:not(:disabled),
+.ticketActions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+}
+
+.formActions button:disabled,
+.ticketActions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.secondaryButton {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+  box-shadow: none !important;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+
+.danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25) !important;
+}
+
+.danger:hover:not(:disabled) {
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.35) !important;
+}
+
+/* Ticket Actions */
+.ticketActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.ticketActions input {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Feedback Messages */
+.feedback {
+  font-size: 0.875rem;
+  color: #059669;
+  font-weight: 500;
+  padding: 0.75rem 1rem;
+  background: rgba(16, 185, 129, 0.08);
+  border-radius: 8px;
+}
+
+.error {
+  color: #dc2626;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  background: rgba(220, 38, 38, 0.08);
+  border-radius: 8px;
+}
+
+/* Validation Result */
+.validationResult {
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.validationResult[data-status='denied'] {
+  background: rgba(239, 68, 68, 0.06);
+  border-color: rgba(239, 68, 68, 0.1);
+}
+
+/* Waiver List */
+.waiverList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.waiverList li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.waiverList li:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.waiverSelected {
+  background: rgba(99, 102, 241, 0.04) !important;
+  border-color: #6366f1 !important;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.15) !important;
+}
+
+.waiverMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.waiverActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.waiverList li > div {
+  display: flex;
+  flex-direction: column;
   gap: 0.25rem;
 }
 
 .waiverList li > div strong {
-  display: block;
-  font-weight: 700;
-  color: #1d2a5b;
+  font-weight: 600;
+  color: #1e293b;
 }
 
 .waiverList li > div span {
-  color: #5d6ca0;
-  font-size: 0.9rem;
+  color: #64748b;
+  font-size: 0.875rem;
 }
 
 .waiverList small {
   display: inline-block;
-  font-size: 0.75rem;
-  color: #1f8f5f;
+  font-size: 0.7rem;
+  color: #059669;
   font-weight: 600;
-}
-
-.waiverList li > span {
-  font-weight: 600;
-  color: #1d2a5b;
-  white-space: nowrap;
+  padding: 0.2rem 0.5rem;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
 }
 
 .loadMoreBtn {
   display: block;
   width: 100%;
-  padding: 0.75rem 1rem;
+  padding: 0.875rem 1rem;
   margin-top: 0.75rem;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  color: #3b82f6;
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #6366f1;
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.2);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .loadMoreBtn:hover {
-  background: rgba(59, 130, 246, 0.15);
-  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
+/* Waiver Edit Form */
 .waiverEdit {
-  display: grid;
-  gap: 1rem;
-  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 1.5rem;
   padding: 1.5rem;
   background: #ffffff;
-  border-radius: 20px;
-  border: 1px solid rgba(31, 60, 136, 0.1);
-  box-shadow: 0 16px 48px rgba(31, 60, 136, 0.12);
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
 }
 
 .waiverEditHeader {
@@ -790,25 +770,24 @@
   justify-content: space-between;
   align-items: center;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(31, 60, 136, 0.1);
-  margin-bottom: 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .waiverEditHeader h3 {
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  color: #1d2a5b;
+  color: #1e293b;
 }
 
 .closeBtn {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
-  border: 1px solid rgba(31, 60, 136, 0.15);
+  border: 1px solid #e2e8f0;
   background: #ffffff;
-  color: #5d6ca0;
-  font-size: 0.9rem;
+  color: #64748b;
+  font-size: 1rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -818,18 +797,19 @@
 }
 
 .closeBtn:hover {
-  background: #f8f9fc;
-  border-color: rgba(31, 60, 136, 0.25);
-  color: #1d2a5b;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
   transform: none !important;
 }
 
 .waiverCard {
-  background: #fafbfd;
-  border: 1px solid rgba(31, 60, 136, 0.08);
-  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   padding: 1.25rem;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 
@@ -838,8 +818,8 @@
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #5d6ca0;
+  letter-spacing: 0.06em;
+  color: #64748b;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -849,36 +829,37 @@
   content: '';
   width: 3px;
   height: 14px;
-  background: linear-gradient(180deg, #ff8a5c 0%, #7d63ff 100%);
+  background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 100%);
   border-radius: 2px;
 }
 
 .waiverFormGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
 }
 
 .waiverField {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.4rem;
 }
 
 .waiverField span {
   font-size: 0.7rem;
   font-weight: 600;
-  color: #7a8bb5;
+  color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
 .waiverField input,
 .waiverField textarea {
-  border: 1px solid rgba(31, 60, 136, 0.12);
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 0.65rem 0.85rem;
-  font-size: 0.9rem;
-  color: #1d2a5b;
+  padding: 0.65rem 0.875rem;
+  font-size: 0.875rem;
+  color: #1e293b;
   background: #ffffff;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -886,8 +867,8 @@
 .waiverField input:focus,
 .waiverField textarea:focus {
   outline: none;
-  border-color: rgba(125, 99, 255, 0.5);
-  box-shadow: 0 0 0 3px rgba(125, 99, 255, 0.08);
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .waiverField textarea {
@@ -895,24 +876,25 @@
   min-height: 60px;
 }
 
+/* Toggle Switch */
 .waiverToggle {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   cursor: pointer;
-  margin-top: 0.75rem;
-  font-size: 0.85rem;
-  color: #42507c;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #475569;
   font-weight: 500;
   width: fit-content;
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
-  background: rgba(31, 60, 136, 0.04);
+  background: rgba(0, 0, 0, 0.02);
   transition: background 0.2s ease;
 }
 
 .waiverToggle:hover {
-  background: rgba(31, 60, 136, 0.08);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .waiverToggle input {
@@ -920,60 +902,61 @@
 }
 
 .toggleTrack {
-  width: 36px;
-  height: 20px;
-  background: rgba(31, 60, 136, 0.18);
-  border-radius: 10px;
+  width: 40px;
+  height: 22px;
+  background: #cbd5e1;
+  border-radius: 11px;
   position: relative;
   transition: background 0.2s ease;
   flex-shrink: 0;
 }
 
 .waiverToggle input:checked + .toggleTrack {
-  background: #1f8f5f;
+  background: #10b981;
 }
 
 .toggleThumb {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   background: #ffffff;
   border-radius: 50%;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   transition: transform 0.2s ease;
 }
 
 .waiverToggle input:checked + .toggleTrack .toggleThumb {
-  transform: translateX(16px);
+  transform: translateX(18px);
 }
 
+/* Children Cards */
 .waiverChildren {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
 }
 
 .childCard {
   display: grid;
-  grid-template-columns: 1fr 1fr 36px;
+  grid-template-columns: 1fr 1fr auto;
   gap: 1rem;
   align-items: end;
   background: #ffffff;
-  padding: 0.85rem 1rem;
+  padding: 1rem;
   border-radius: 10px;
-  border: 1px solid rgba(31, 60, 136, 0.1);
-  box-shadow: 0 2px 8px rgba(31, 60, 136, 0.04);
+  border: 1px solid #e2e8f0;
 }
 
 .removeBtn {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 8px;
-  border: 1px solid rgba(215, 38, 61, 0.2);
-  background: rgba(215, 38, 61, 0.06);
-  color: #d7263d;
-  font-size: 0.9rem;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.04);
+  color: #ef4444;
+  font-size: 1rem;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -984,72 +967,69 @@
 }
 
 .removeBtn:hover {
-  background: rgba(215, 38, 61, 0.12);
-  border-color: rgba(215, 38, 61, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.4);
   transform: none !important;
 }
 
 .addChildBtn {
-  justify-self: center;
-  padding: 0.5rem 1.25rem;
-  border: 1px dashed rgba(31, 60, 136, 0.25);
+  align-self: center;
+  padding: 0.6rem 1.5rem;
+  border: 1px dashed #cbd5e1;
   border-radius: 8px;
   background: transparent;
-  color: #5d6ca0;
+  color: #64748b;
   font-weight: 600;
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: none !important;
-  margin-top: 0.75rem;
+  margin-top: 0.5rem;
 }
 
 .addChildBtn:hover {
-  border-color: rgba(31, 60, 136, 0.4);
-  background: rgba(31, 60, 136, 0.04);
-  color: #1d2a5b;
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.04);
+  color: #6366f1;
   transform: none !important;
 }
 
 .emptyHint {
-  color: #5d6ca0;
-  font-size: 0.9rem;
+  color: #64748b;
+  font-size: 0.875rem;
   margin: 0;
+  text-align: center;
+  padding: 1rem;
 }
 
 .waiverFeedback {
-  font-size: 0.9rem;
-  color: #1f8f5f;
+  font-size: 0.875rem;
+  color: #059669;
   font-weight: 600;
   text-align: center;
-  padding: 0.75rem;
-  background: rgba(31, 143, 95, 0.1);
+  padding: 0.875rem;
+  background: rgba(16, 185, 129, 0.08);
   border-radius: 10px;
   margin: 0;
 }
 
-.waiverActions {
-  display: flex;
-  justify-content: center;
-  padding-top: 0.5rem;
-}
-
 .saveBtn {
-  padding: 0.75rem 2rem;
+  padding: 0.875rem 2.5rem;
   border: none;
   border-radius: 10px;
-  background: linear-gradient(120deg, #ff8a5c 0%, #7d63ff 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   color: #ffffff;
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(125, 99, 255, 0.25);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
   transition: all 0.2s ease;
+  align-self: center;
 }
 
 .saveBtn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 12px 32px rgba(125, 99, 255, 0.35);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
 }
 
 .saveBtn:disabled {
@@ -1057,19 +1037,19 @@
   cursor: not-allowed;
 }
 
+/* Table Buttons */
 .table button,
 .visitButton {
-  padding: 0.45rem 0.95rem;
-  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
   border: none;
-  background: linear-gradient(120deg, #ff8a5c 0%, #7d63ff 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   color: #ffffff;
   font-weight: 600;
+  font-size: 0.75rem;
   cursor: pointer;
-  box-shadow: 0 12px 26px rgba(31, 60, 136, 0.18);
-  transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
 }
 
 .table button:disabled,
@@ -1079,32 +1059,35 @@
   box-shadow: none;
 }
 
-.table button:not(:disabled):hover,
-.visitButton:not(:disabled):hover {
+.table button:hover:not(:disabled),
+.visitButton:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 16px 36px rgba(31, 60, 136, 0.22);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
 }
 
+/* Empty & Loading States */
 .emptyState {
-  max-width: 520px;
+  max-width: 500px;
   margin: 0 auto;
   background: #ffffff;
-  border-radius: 18px;
-  padding: 2.5rem;
-  box-shadow: 0 18px 40px rgba(31, 60, 136, 0.18);
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e2e8f0;
   text-align: center;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  color: #1d2a5b;
+  color: #1e293b;
 }
 
 .loadingCard {
-  max-width: 400px;
+  max-width: 380px;
   margin: 4rem auto;
   background: #ffffff;
-  border-radius: 24px;
+  border-radius: 20px;
   padding: 3rem 2.5rem;
-  box-shadow: 0 25px 50px rgba(31, 60, 136, 0.15);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -1115,18 +1098,17 @@
 .loadingLogo {
   font-size: 1.75rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #ff8a5c 0%, #7d63ff 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: -0.02em;
 }
 
 .loadingSpinner {
   width: 48px;
   height: 48px;
-  border: 3px solid #f1f5f9;
-  border-top-color: #7d63ff;
+  border: 3px solid #e2e8f0;
+  border-top-color: #6366f1;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -1143,96 +1125,149 @@
   font-weight: 500;
 }
 
-@media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: 1fr;
-  }
+.selectedRow td {
+  background: rgba(99, 102, 241, 0.06) !important;
+}
 
-  .columnAside {
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+/* ============================================
+   Responsive Breakpoints
+   ============================================ */
+
+/* Large Tablets & Small Laptops */
+@media (max-width: 1100px) {
+  .summaryGrid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
+/* Tablets */
 @media (max-width: 900px) {
+  .page {
+    padding: 1.5rem 1rem 3rem;
+  }
+
   .header {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+    gap: 1rem;
   }
 
   .actions {
     justify-content: flex-start;
   }
+
+  .summaryGrid {
+    gap: 0.875rem;
+  }
+
+  .summaryCard {
+    padding: 1.25rem;
+  }
+
+  .summaryCard strong {
+    font-size: 1.75rem;
+  }
+
+  .panel {
+    padding: 1.25rem;
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .waiverFormGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .childCard {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .childCard .removeBtn {
+    grid-column: span 2;
+    justify-self: start;
+    width: auto;
+    padding: 0.5rem 1rem;
+  }
 }
 
+/* Mobile Phones */
 @media (max-width: 640px) {
   .page {
-    padding: 2rem 1rem 3rem;
+    padding: 1rem 0.75rem 2.5rem;
   }
 
   .header {
-    margin-bottom: 2rem;
-    gap: 1.5rem;
+    margin-bottom: 1.5rem;
   }
 
   .header h1 {
-    font-size: clamp(1.5rem, 5vw, 2rem);
+    font-size: 1.5rem;
   }
 
   .tag {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     padding: 0.25rem 0.6rem;
   }
 
   .actions {
     gap: 0.5rem;
+    width: 100%;
   }
 
   .signOutButton,
   .exportButton {
-    padding: 0.55rem 0.9rem;
-    font-size: 0.85rem;
+    flex: 1;
+    min-width: 0;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.8rem;
+    text-align: center;
+    justify-content: center;
   }
 
   .summaryGrid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.85rem;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
   }
 
   .summaryCard {
-    padding: 1.25rem;
-    border-radius: 14px;
+    padding: 1rem;
+    border-radius: 12px;
   }
 
   .summaryCard span {
-    font-size: 0.75rem;
+    font-size: 0.65rem;
   }
 
   .summaryCard strong {
     font-size: 1.5rem;
   }
 
+  .summaryCard p {
+    font-size: 0.75rem;
+  }
+
   .panel {
-    padding: 1.25rem;
-    border-radius: 14px;
+    padding: 1rem;
+    border-radius: 12px;
+    gap: 1rem;
   }
 
   .panelHeader {
     flex-direction: column;
     align-items: flex-start;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
   .panelHeader h2 {
-    font-size: 1.15rem;
+    font-size: 1.1rem;
   }
 
   .tableWrapper {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .table {
-    min-width: 500px;
+    margin: 0 -1rem;
+    padding: 0 1rem;
+    border-radius: 0;
   }
 
   .bookingTable {
@@ -1241,24 +1276,86 @@
 
   .bookingTable th,
   .bookingTable td {
-    padding: 0.65rem 0.5rem;
+    padding: 0.75rem 0.5rem;
+  }
+
+  .bookingActions {
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .editBtn,
+  .deleteBtn,
+  .cancelBtn {
+    width: 100%;
+    padding: 0.5rem;
+    font-size: 0.7rem;
   }
 
   .formGrid {
     grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .formGrid input,
+  .formGrid select,
+  .notesField textarea {
+    padding: 0.875rem 1rem;
+    font-size: 1rem;
+  }
+
+  .formActions {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .formActions button {
+    width: 100%;
+    padding: 0.875rem 1rem;
   }
 
   .ticketActions {
     flex-direction: column;
-    align-items: stretch;
+    gap: 0.6rem;
   }
 
   .ticketActions input {
     min-width: 0;
+    width: 100%;
+  }
+
+  .ticketActions button {
+    width: 100%;
+  }
+
+  .waiverList li {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+
+  .waiverMeta {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+
+  .waiverEdit {
+    padding: 1rem;
+    margin-top: 1rem;
+  }
+
+  .waiverEditHeader h3 {
+    font-size: 1.1rem;
   }
 
   .waiverFormGrid {
     grid-template-columns: 1fr;
+  }
+
+  .waiverCard {
+    padding: 1rem;
   }
 
   .childCard {
@@ -1268,12 +1365,20 @@
 
   .removeBtn {
     justify-self: start;
+    width: auto;
+    padding: 0.5rem 1rem;
+  }
+
+  .saveBtn {
+    width: 100%;
+    padding: 1rem;
   }
 }
 
-@media (max-width: 480px) {
+/* Very Small Phones */
+@media (max-width: 400px) {
   .page {
-    padding: 1.5rem 0.75rem 2.5rem;
+    padding: 0.75rem 0.5rem 2rem;
   }
 
   .summaryGrid {
@@ -1281,59 +1386,66 @@
   }
 
   .summaryCard {
-    padding: 1rem;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
   }
 
   .summaryCard strong {
-    font-size: 1.3rem;
+    font-size: 1.75rem;
   }
 
   .panel {
-    padding: 1rem;
+    padding: 0.875rem;
   }
 
-  .panelActions {
-    width: 100%;
-    justify-content: flex-start;
+  .panelHeader h2 {
+    font-size: 1rem;
   }
 
-  .formActions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .formActions button {
+  .waiverActions {
     width: 100%;
   }
 
-  .waiverList li {
-    grid-template-columns: 1fr;
-    gap: 0.5rem;
-  }
-
-  .waiverMeta {
-    justify-items: start;
-  }
-
-  .waiverEdit {
-    padding: 1.25rem;
-  }
-
-  .waiverEditHeader h3 {
-    font-size: 1.15rem;
-  }
-
-  .waiverCard {
-    padding: 1rem;
+  .waiverActions button {
+    flex: 1;
   }
 
   .loadingCard {
     padding: 2rem 1.5rem;
-    border-radius: 18px;
+    margin: 2rem auto;
   }
 
   .emptyState {
-    padding: 2rem 1.25rem;
-    border-radius: 14px;
+    padding: 2rem 1rem;
+  }
+}
+
+/* Touch-friendly improvements */
+@media (hover: none) and (pointer: coarse) {
+  .formGrid input,
+  .formGrid select,
+  .notesField textarea,
+  .ticketActions input,
+  .waiverField input,
+  .waiverField textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    padding: 0.875rem 1rem;
+  }
+
+  .editBtn,
+  .deleteBtn,
+  .cancelBtn,
+  .table button,
+  .visitButton {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .closeBtn,
+  .removeBtn {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
