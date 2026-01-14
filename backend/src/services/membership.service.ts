@@ -159,7 +159,8 @@ export async function recordMembershipVisit(
   }
 
   const plan = await getPlanByTier(membership.tier);
-  const visitsPerMonth = plan?.visits_per_month ?? null;
+  // Use membership's stored visits_per_month first, then fall back to plan
+  const visitsPerMonth = membership.visits_per_month ?? plan?.visits_per_month ?? null;
 
   // Calculate visits remaining based on visits_per_month and visits_used_this_period
   const visitsUsed = membership.visits_used_this_period ?? 0;
@@ -170,7 +171,7 @@ export async function recordMembershipVisit(
     if (visitsRemaining <= 0) {
       throw new AppError('Visit limit reached for this membership period', 400);
     }
-    
+
     await MembershipRepository.update(membership.membership_id, {
       visits_used_this_period: visitsUsed + 1,
       last_visit_at: new Date().toISOString(),
@@ -223,7 +224,8 @@ export async function recordMembershipVisitByMembershipId(membershipId: number):
   }
 
   const plan = await getPlanByTier(membership.tier);
-  const visitsPerMonth = plan?.visits_per_month ?? null;
+  // Use membership's stored visits_per_month first, then fall back to plan
+  const visitsPerMonth = membership.visits_per_month ?? plan?.visits_per_month ?? null;
   const visitsUsed = membership.visits_used_this_period ?? 0;
   const visitsRemaining = visitsPerMonth !== null ? visitsPerMonth - visitsUsed : null;
 
