@@ -33,8 +33,8 @@ async function seed() {
   await PartyPackageModel.deleteMany({});
   await UserModel.deleteMany({});
 
-  const adminEmail = process.env.ADMIN_SEED_EMAIL ?? 'admin@playfunia.com';
-  const adminPassword = process.env.ADMIN_SEED_PASSWORD ?? 'playfunia-admin';
+  const adminEmail = appConfig.defaultAdminEmail ?? 'admin@playfunia.com';
+  const adminPassword = appConfig.defaultAdminPassword ?? 'playfunia-admin';
   const adminHash = await hashPassword(adminPassword);
 
   const adminUser = await UserModel.create({

@@ -130,7 +130,9 @@ function formatMessageContent(content: string): React.ReactNode {
   });
 }
 
-const CHAT_ENDPOINT = process.env.REACT_APP_CHATBOT_API_URL ?? "/api/chat";
+const CHAT_ENDPOINT = process.env.REACT_APP_CHATBOT_URL
+  ? `${process.env.REACT_APP_CHATBOT_URL}/chat`
+  : "/api/chat";
 const SYSTEM_PROMPT =
   "You are an upbeat assistant for Playfunia indoor playgrounds. Provide concise, friendly answers and suggest next steps when helpful.";
 

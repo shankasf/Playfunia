@@ -4,7 +4,10 @@
  */
 
 import { config } from 'dotenv';
-config();
+import path from 'path';
+
+// Load .env from project root
+config({ path: path.resolve(__dirname, '../../.env') });
 
 import { createClient } from '@supabase/supabase-js';
 
