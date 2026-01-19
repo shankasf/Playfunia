@@ -267,7 +267,9 @@ export async function validateMembershipEntry(lookup: string) {
 }
 
 export function createAdminEventSource(token: string) {
-  const url = new URL(`${API_BASE_URL}/admin/stream`);
+  const baseUrl =
+    API_BASE_URL || (typeof window !== 'undefined' ? window.location.origin : '');
+  const url = new URL(`${baseUrl.replace(/\/$/, '')}/admin/stream`);
   if (token) {
     url.searchParams.set('token', token);
   }
