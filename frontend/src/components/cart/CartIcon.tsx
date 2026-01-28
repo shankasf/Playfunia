@@ -8,7 +8,7 @@ export function CartIcon() {
   const pendingCount = items.filter(item => {
     if (item.type === 'ticket') return item.status === 'pending';
     if (item.type === 'membership') return item.status === 'pending';
-    if (item.type === 'booking') return item.status === 'awaiting_deposit';
+    if (item.type === 'booking') return item.status === 'pending';
     return false;
   }).length;
 

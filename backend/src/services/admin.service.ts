@@ -209,8 +209,21 @@ export async function getUserById(userId: number) {
   return UserRepository.findById(userId);
 }
 
-export async function updateUser(userId: number, updates: Partial<User>) {
-  return UserRepository.update(userId, updates);
+export async function updateUser(userId: number, updates: Partial<User> & { role?: string; roles?: string[] }) {
+  // Handle role updates - convert single role to roles array if needed
+  const { role, roles, ...otherUpdates } = updates;
+
+  const finalUpdates: Partial<User> = { ...otherUpdates };
+
+  if (roles && roles.length > 0) {
+    // Use roles array directly
+    finalUpdates.roles = roles;
+  } else if (role) {
+    // Convert single role to array
+    finalUpdates.roles = [role];
+  }
+
+  return UserRepository.update(userId, finalUpdates);
 }
 
 export async function deleteUser(userId: number) {
@@ -672,14 +685,19 @@ export async function redeemTicketByCode(code: string, redeemedBy?: string) {
   // Redeem the code
   const updatedPurchase = await TicketPurchaseRepository.redeemCode(purchase.purchase_id, normalizedCode);
 
+  // Return in the format expected by frontend (AdminTicketLogEntry)
   return {
-    success: true,
-    purchaseId: purchase.purchase_id,
-    code: normalizedCode,
-    redeemedAt: new Date().toISOString(),
-    redeemedBy,
-    ticketType: purchase.ticket_type,
-    customer: purchase.customers,
+    id: String(updatedPurchase.purchase_id),
+    guardian: updatedPurchase.customers ? {
+      firstName: updatedPurchase.customers.first_name,
+      lastName: updatedPurchase.customers.last_name,
+      email: updatedPurchase.customers.email,
+    } : null,
+    type: updatedPurchase.ticket_type,
+    quantity: updatedPurchase.quantity,
+    total: updatedPurchase.total_amount,
+    createdAt: updatedPurchase.created_at,
+    codes: updatedPurchase.codes as Array<{ code: string; status: string; redeemedAt?: string }>,
   };
 }
 
@@ -920,7 +938,7 @@ export async function deleteResource(resourceId: number) {
 }
 
 // ============= Export Functions =============
-export async function exportWaiversToCsv(): Promise<{
+export async function exportWaiversToCsv(dateFrom?: string, dateTo?: string): Promise<{
   children: { name: string; birthDate: string; gender?: string }[];
   guardian_first_name: string;
   guardian_last_name: string;
@@ -936,34 +954,56 @@ export async function exportWaiversToCsv(): Promise<{
   marketing_sms_opt_in: boolean | null;
   marketing_email_opt_in: boolean | null;
 }[]> {
-  const { data: waivers, error } = await supabase
+  let query = supabase
     .from('waiver_submissions')
     .select('*')
-    .order('date_signed', { ascending: false })
-    .limit(1000);
+    .order('date_signed', { ascending: false });
+
+  if (dateFrom) {
+    query = query.gte('date_signed', `${dateFrom}T00:00:00`);
+  }
+  if (dateTo) {
+    query = query.lte('date_signed', `${dateTo}T23:59:59`);
+  }
+
+  const { data: waivers, error } = await query.limit(5000);
 
   if (error) throw error;
   return (waivers ?? []) as any;
 }
 
-export async function exportContactsToCsv(): Promise<{ name: string; email: string; phone?: string; marketingOptIn: boolean }[]> {
+export async function exportContactsToCsv(dateFrom?: string, dateTo?: string): Promise<{ name: string; email: string; phone?: string; marketingOptIn: boolean }[]> {
+  let waiverQuery = supabaseAny
+    .from('waiver_submissions')
+    .select('guardian_first_name, guardian_last_name, guardian_email, guardian_phone, marketing_sms_opt_in, marketing_email_opt_in, date_signed');
+
+  if (dateFrom) {
+    waiverQuery = waiverQuery.gte('date_signed', `${dateFrom}T00:00:00`);
+  }
+  if (dateTo) {
+    waiverQuery = waiverQuery.lte('date_signed', `${dateTo}T23:59:59`);
+  }
+
   const [usersResult, waiversResult] = await Promise.all([
     supabaseAny.from('users').select('first_name, last_name, email, phone'),
-    supabaseAny.from('waiver_submissions').select('guardian_first_name, guardian_last_name, guardian_email, guardian_phone, marketing_sms_opt_in, marketing_email_opt_in'),
+    waiverQuery,
   ]);
 
   const contacts = new Map<string, { name: string; email: string; phone?: string; marketingOptIn: boolean }>();
 
-  ((usersResult.data ?? []) as Array<{ first_name: string | null; last_name: string | null; email: string; phone: string | null }>).forEach(user => {
-    if (!user.email) return;
-    const key = user.email.toLowerCase();
-    contacts.set(key, {
-      name: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim(),
-      email: user.email,
-      phone: user.phone ?? undefined,
-      marketingOptIn: false,
+  // Only add users if no date filter is applied (contacts export with date filter focuses on waivers)
+  if (!dateFrom && !dateTo) {
+    ((usersResult.data ?? []) as Array<{ first_name: string | null; last_name: string | null; email: string; phone: string | null }>).forEach(user => {
+      if (!user.email) return;
+      const key = user.email.toLowerCase();
+      contacts.set(key, {
+        name: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim(),
+        email: user.email,
+        phone: user.phone ?? undefined,
+        marketingOptIn: false,
+      });
     });
-  });
+  }
 
   ((waiversResult.data ?? []) as Array<{ guardian_first_name: string; guardian_last_name: string; guardian_email: string | null; guardian_phone: string | null; marketing_sms_opt_in: boolean | null; marketing_email_opt_in: boolean | null }>).forEach(waiver => {
     if (!waiver.guardian_email) return;

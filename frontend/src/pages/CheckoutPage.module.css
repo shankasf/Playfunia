@@ -314,36 +314,6 @@
   flex-shrink: 0;
 }
 
-.promoRow {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.promoInput {
-  flex: 1;
-  min-width: 120px;
-  padding: 0.75rem 1rem;
-  border: 2px solid #e5e7eb;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  transition: border-color 0.2s;
-}
-
-.promoInput:focus {
-  outline: none;
-  border-color: #ff6b9d;
-}
-
-.promoInput::placeholder {
-  color: #9ca3af;
-}
-
-.promoButton {
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
 .helper {
   margin: 0;
   color: #6b7280;
@@ -554,14 +524,6 @@
 
   .inlineButton {
     margin-left: 0;
-  }
-
-  .promoRow {
-    flex-direction: column;
-  }
-
-  .promoInput {
-    width: 100%;
   }
 }
 

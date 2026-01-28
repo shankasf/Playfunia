@@ -15,6 +15,7 @@ import {
   listBookingsForGuardian,
   updateBookingStatus,
   recalculateBookingPricing,
+  rescheduleBooking,
 } from "../services/booking.service";
 import { createSquarePayment } from "../services/square-payment.service";
 import {
@@ -26,6 +27,7 @@ import {
   createGuestBookingSchema,
   bookingDepositConfirmSchema,
   updateBookingStatusSchema,
+  rescheduleBookingSchema,
 } from "../schemas/booking.schema";
 import { AppError } from "../utils/app-error";
 import { asyncHandler } from "../utils/async-handler";
@@ -60,6 +62,17 @@ export const cancelBookingHandler = asyncHandler(async (req: AuthenticatedReques
 
   const { bookingId } = parseWithSchema(bookingIdParamSchema, req.params);
   const result = await cancelBooking(req.user.id, bookingId);
+  return res.status(200).json(result);
+});
+
+export const rescheduleBookingHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+  if (!req.user) {
+    throw new AppError("Unauthorized", 401);
+  }
+
+  const { bookingId } = parseWithSchema(bookingIdParamSchema, req.params);
+  const { eventDate, startTime } = parseWithSchema(rescheduleBookingSchema, req.body);
+  const result = await rescheduleBooking(req.user.id, bookingId, eventDate, startTime);
   return res.status(200).json(result);
 });
 

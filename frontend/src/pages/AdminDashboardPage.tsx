@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
-import { formatDate } from '../lib/dateUtils';
+import { formatDate, formatDateTime } from '../lib/dateUtils';
 import {
   AdminBooking,
   AdminBookingUpdatePayload,
@@ -25,11 +25,14 @@ import {
   fetchAdminTicketLog,
   fetchAdminWaivers,
   recordAdminMembershipVisit,
+  redeemTicketByCode,
   redeemTicketCode,
   updateAdminMembership,
   updateAdminWaiverSubmission,
   updateAdminBooking,
   validateMembershipEntry,
+  validateTicketCode,
+  type TicketValidationResult,
 } from '../api/admin';
 import { API_BASE_URL } from '../api/client';
 import styles from './AdminDashboardPage.module.css';
@@ -105,7 +108,7 @@ export function AdminDashboardPage() {
   const [waiverForm, setWaiverForm] = useState<WaiverFormState>(emptyWaiverForm());
   const [waiverActionMessage, setWaiverActionMessage] = useState<string | null>(null);
   const [waiverActionBusy, setWaiverActionBusy] = useState(false);
-  const [waiverDisplayCount, setWaiverDisplayCount] = useState(10);
+  const [waiverDisplayCount, setWaiverDisplayCount] = useState(5);
   const [ticketCode, setTicketCode] = useState('');
   const [ticketMessage, setTicketMessage] = useState<string | null>(null);
   const [visitLoading, setVisitLoading] = useState<string | null>(null);
@@ -120,11 +123,42 @@ export function AdminDashboardPage() {
   const [membershipActionBusy, setMembershipActionBusy] = useState(false);
   const [validateInput, setValidateInput] = useState('');
   const [validationResult, setValidationResult] = useState<MembershipValidationResult | null>(null);
+  const [ticketValidationResult, setTicketValidationResult] = useState<TicketValidationResult | null>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [streamConnected, setStreamConnected] = useState(false);
   const refreshTimerRef = useRef<number | null>(null);
   const selectedBookingRef = useRef<string | null>(null);
   const selectedWaiverRef = useRef<string | null>(null);
+
+  // Filter states
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<string>('all');
+  const [bookingPaymentFilter, setBookingPaymentFilter] = useState<string>('all');
+  const [bookingNameFilter, setBookingNameFilter] = useState<string>('');
+  const [bookingDateFilter, setBookingDateFilter] = useState<string>('');
+  const [membershipTierFilter, setMembershipTierFilter] = useState<string>('all');
+  const [membershipStatusFilter, setMembershipStatusFilter] = useState<string>('all');
+  const [membershipNameFilter, setMembershipNameFilter] = useState<string>('');
+  const [waiverMarketingFilter, setWaiverMarketingFilter] = useState<string>('all');
+  const [waiverNameFilter, setWaiverNameFilter] = useState<string>('');
+  const [waiverDateFilter, setWaiverDateFilter] = useState<string>('');
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('all');
+  const [ticketNameFilter, setTicketNameFilter] = useState<string>('');
+  const [ticketDateFilter, setTicketDateFilter] = useState<string>('');
+
+  // Export modal state
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportType, setExportType] = useState<'waivers' | 'contacts'>('waivers');
+  const [exportDateOption, setExportDateOption] = useState<'today' | 'yesterday' | 'range' | 'all'>('today');
+  const [exportDateFrom, setExportDateFrom] = useState('');
+  const [exportDateTo, setExportDateTo] = useState('');
+
+  // Calendar modal state
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [selectedCalendarBooking, setSelectedCalendarBooking] = useState<AdminBooking | null>(null);
 
   const isAuthorized = isTeamMember;
 
@@ -230,6 +264,76 @@ export function AdminDashboardPage() {
     },
     []
   );
+
+  // Filtered data
+  const filteredBookings = useMemo(() => {
+    const nameLower = bookingNameFilter.toLowerCase().trim();
+    return bookingState.data.filter((booking) => {
+      if (bookingStatusFilter !== 'all' && booking.status !== bookingStatusFilter) return false;
+      if (bookingPaymentFilter !== 'all' && booking.paymentStatus !== bookingPaymentFilter) return false;
+      if (nameLower) {
+        const guardianName = `${booking.guardian?.firstName || ''} ${booking.guardian?.lastName || ''}`.toLowerCase();
+        const guestName = (booking.guestName || '').toLowerCase();
+        if (!guardianName.includes(nameLower) && !guestName.includes(nameLower)) return false;
+      }
+      if (bookingDateFilter && booking.eventDate !== bookingDateFilter) return false;
+      return true;
+    });
+  }, [bookingState.data, bookingStatusFilter, bookingPaymentFilter, bookingNameFilter, bookingDateFilter]);
+
+  const filteredMemberships = useMemo(() => {
+    const nameLower = membershipNameFilter.toLowerCase().trim();
+    return membershipState.data.filter((member) => {
+      if (membershipTierFilter !== 'all' && member.membership?.tierName !== membershipTierFilter) return false;
+      if (membershipStatusFilter !== 'all' && member.membership?.status !== membershipStatusFilter) return false;
+      if (nameLower) {
+        const fullName = `${member.firstName || ''} ${member.lastName || ''}`.toLowerCase();
+        const email = (member.email || '').toLowerCase();
+        if (!fullName.includes(nameLower) && !email.includes(nameLower)) return false;
+      }
+      return true;
+    });
+  }, [membershipState.data, membershipTierFilter, membershipStatusFilter, membershipNameFilter]);
+
+  const filteredWaivers = useMemo(() => {
+    const nameLower = waiverNameFilter.toLowerCase().trim();
+    return waiverState.data.filter((waiver) => {
+      if (waiverMarketingFilter === 'yes' && !waiver.marketingOptIn) return false;
+      if (waiverMarketingFilter === 'no' && waiver.marketingOptIn) return false;
+      if (nameLower) {
+        const guardianName = waiver.guardianName?.toLowerCase() || '';
+        const email = waiver.guardianEmail?.toLowerCase() || '';
+        if (!guardianName.includes(nameLower) && !email.includes(nameLower)) return false;
+      }
+      if (waiverDateFilter && waiver.signedAt) {
+        const signedDate = waiver.signedAt.split('T')[0];
+        if (signedDate !== waiverDateFilter) return false;
+      }
+      return true;
+    });
+  }, [waiverState.data, waiverMarketingFilter, waiverNameFilter, waiverDateFilter]);
+
+  const filteredTickets = useMemo(() => {
+    const nameLower = ticketNameFilter.toLowerCase().trim();
+    return ticketState.data.filter((ticket) => {
+      if (ticketStatusFilter !== 'all') {
+        const hasUnused = ticket.codes.some((c) => c.status === 'unused');
+        const hasRedeemed = ticket.codes.some((c) => c.status === 'redeemed');
+        if (ticketStatusFilter === 'unused' && !hasUnused) return false;
+        if (ticketStatusFilter === 'redeemed' && !hasRedeemed) return false;
+      }
+      if (nameLower) {
+        const guardianName = `${ticket.guardian?.firstName || ''} ${ticket.guardian?.lastName || ''}`.toLowerCase();
+        const email = (ticket.guardian?.email || '').toLowerCase();
+        if (!guardianName.includes(nameLower) && !email.includes(nameLower)) return false;
+      }
+      if (ticketDateFilter && ticket.createdAt) {
+        const createdDate = ticket.createdAt.split('T')[0];
+        if (createdDate !== ticketDateFilter) return false;
+      }
+      return true;
+    });
+  }, [ticketState.data, ticketStatusFilter, ticketNameFilter, ticketDateFilter]);
 
   const handleSelectBooking = (booking: AdminBooking) => {
     setSelectedBookingId(booking.id);
@@ -506,21 +610,90 @@ export function AdminDashboardPage() {
   };
 
   const handleValidationLookup = async () => {
-    if (!validateInput.trim()) return;
+    const input = validateInput.trim().toUpperCase();
+    if (!input) return;
     setValidationMessage(null);
     setValidationResult(null);
+    setTicketValidationResult(null);
+
+    // Check if input looks like a ticket code (PF-XXXXXXXX format)
+    const isTicketCode = input.startsWith('PF-') || /^[A-Z0-9]{8,}$/.test(input);
+
     try {
-      const result = await validateMembershipEntry(validateInput.trim());
-      setValidationResult(result);
-      setValidationMessage('Visit recorded.');
+      if (isTicketCode) {
+        // Handle ticket validation and redemption
+        const ticketResult = await validateTicketCode(input);
+        setTicketValidationResult(ticketResult);
+
+        if (ticketResult.valid && ticketResult.ticket) {
+          // Auto-redeem the ticket
+          try {
+            await redeemTicketByCode(input, user?.firstName || 'Admin');
+            setValidationMessage('Ticket redeemed successfully!');
+            // Update ticket status in result
+            setTicketValidationResult({
+              ...ticketResult,
+              ticket: ticketResult.ticket ? {
+                ...ticketResult.ticket,
+                status: 'redeemed',
+                redeemedAt: new Date().toISOString(),
+              } : null,
+            });
+          } catch (redeemError) {
+            const msg = redeemError instanceof Error ? redeemError.message : 'Failed to redeem ticket';
+            setValidationMessage(msg);
+          }
+        } else {
+          setValidationMessage(ticketResult.message);
+        }
+      } else {
+        // Handle membership validation
+        const result = await validateMembershipEntry(input);
+        setValidationResult(result);
+        setValidationMessage('Visit recorded.');
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to validate entry.';
       setValidationMessage(message);
     }
   };
 
-  const waiverExportUrl = exportUrl(token, 'waivers/export');
-  const contactExportUrl = exportUrl(token, 'contacts/export');
+  const openExportModal = (type: 'waivers' | 'contacts') => {
+    setExportType(type);
+    setExportDateOption('today');
+    setExportDateFrom('');
+    setExportDateTo('');
+    setExportModalOpen(true);
+  };
+
+  const getExportDates = (): { dateFrom?: string; dateTo?: string } => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
+    switch (exportDateOption) {
+      case 'today':
+        return { dateFrom: formatDate(today), dateTo: formatDate(today) };
+      case 'yesterday':
+        return { dateFrom: formatDate(yesterday), dateTo: formatDate(yesterday) };
+      case 'range':
+        return { dateFrom: exportDateFrom || undefined, dateTo: exportDateTo || undefined };
+      case 'all':
+      default:
+        return {};
+    }
+  };
+
+  const handleExportDownload = () => {
+    const { dateFrom, dateTo } = getExportDates();
+    const path = exportType === 'waivers' ? 'waivers/export' : 'contacts/export';
+    const url = exportUrl(token, path, dateFrom, dateTo);
+    if (url) {
+      window.open(url, '_blank');
+      setExportModalOpen(false);
+    }
+  };
   const selectedBooking = useMemo(
     () => bookingState.data.find((entry) => entry.id === selectedBookingId) ?? null,
     [bookingState.data, selectedBookingId]
@@ -600,18 +773,327 @@ export function AdminDashboardPage() {
         <div className={styles.columnPrimary}>
           <section className={styles.panel}>
             <header className={styles.panelHeader}>
-              <h2>Upcoming bookings</h2>
-              <span>{bookingState.data.length} active</span>
+              <div className={styles.panelTitleRow}>
+                <h2>Upcoming bookings</h2>
+                <button
+                  type="button"
+                  className={styles.calendarBtn}
+                  onClick={() => setCalendarOpen(true)}
+                  title="View calendar"
+                >
+                  📅 Calendar
+                </button>
+              </div>
+              <span>{filteredBookings.length} of {bookingState.data.length}</span>
             </header>
-            {renderBookingTable(bookingState, handleSelectBooking, handleCancelBooking, handleDeleteBooking, selectedBookingId)}
+            <div className={styles.filterBar}>
+              <label className={styles.filterItem}>
+                <span>Name</span>
+                <input
+                  type="text"
+                  placeholder="Search name..."
+                  value={bookingNameFilter}
+                  onChange={(e) => setBookingNameFilter(e.target.value)}
+                />
+              </label>
+              <label className={styles.filterItem}>
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={bookingDateFilter}
+                  onChange={(e) => setBookingDateFilter(e.target.value)}
+                />
+              </label>
+              <label className={styles.filterItem}>
+                <span>Status</span>
+                <select value={bookingStatusFilter} onChange={(e) => setBookingStatusFilter(e.target.value)}>
+                  <option value="all">All Status</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Confirmed">Confirmed</option>
+                  <option value="Cancelled">Cancelled</option>
+                </select>
+              </label>
+              <label className={styles.filterItem}>
+                <span>Payment</span>
+                <select value={bookingPaymentFilter} onChange={(e) => setBookingPaymentFilter(e.target.value)}>
+                  <option value="all">All Payment</option>
+                  <option value="awaiting_deposit">Awaiting Deposit</option>
+                  <option value="deposit_paid">Deposit Paid</option>
+                  <option value="awaiting_full_payment">Awaiting Full</option>
+                  <option value="paid">Paid</option>
+                </select>
+              </label>
+            </div>
+            {renderBookingTable({ ...bookingState, data: filteredBookings }, handleSelectBooking, handleCancelBooking, handleDeleteBooking, selectedBookingId)}
           </section>
 
-          {selectedBooking && (
-            <section className={styles.panel}>
-              <header className={styles.panelHeader}>
-                <h2>Edit booking</h2>
+
+          <section className={styles.panel}>
+            <header className={styles.panelHeader}>
+              <h2>Ticket redemption</h2>
+              <span>{filteredTickets.length} of {ticketState.data.length}</span>
+            </header>
+            <div className={styles.filterBar}>
+              <label className={styles.filterItem}>
+                <span>Name</span>
+                <input
+                  type="text"
+                  placeholder="Search name..."
+                  value={ticketNameFilter}
+                  onChange={(e) => setTicketNameFilter(e.target.value)}
+                />
+              </label>
+              <label className={styles.filterItem}>
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={ticketDateFilter}
+                  onChange={(e) => setTicketDateFilter(e.target.value)}
+                />
+              </label>
+              <label className={styles.filterItem}>
+                <span>Status</span>
+                <select value={ticketStatusFilter} onChange={(e) => setTicketStatusFilter(e.target.value)}>
+                  <option value="all">All Status</option>
+                  <option value="unused">Has Unused</option>
+                  <option value="redeemed">Has Redeemed</option>
+                </select>
+              </label>
+            </div>
+            <div className={styles.ticketActions}>
+              <input
+                type="text"
+                placeholder="Enter ticket code"
+                value={ticketCode}
+                onChange={(event) => setTicketCode(event.target.value)}
+              />
+              <button type="button" onClick={handleRedeemTicket} disabled={!ticketCode.trim()}>
+                Redeem code
+              </button>
+            </div>
+            {ticketMessage && <p className={styles.feedback}>{ticketMessage}</p>}
+            {renderTicketLog({ ...ticketState, data: filteredTickets }, handleDeleteTicket)}
+          </section>
+        </div>
+
+        <aside className={styles.columnAside}>
+          <section className={styles.panel}>
+            <header className={styles.panelHeader}>
+              <h2>Membership roster</h2>
+              <span>{filteredMemberships.length} of {membershipState.data.length}</span>
+            </header>
+            <div className={styles.filterBar}>
+              <label className={styles.filterItem}>
+                <span>Name</span>
+                <input
+                  type="text"
+                  placeholder="Search name/email..."
+                  value={membershipNameFilter}
+                  onChange={(e) => setMembershipNameFilter(e.target.value)}
+                />
+              </label>
+              <label className={styles.filterItem}>
+                <span>Tier</span>
+                <select value={membershipTierFilter} onChange={(e) => setMembershipTierFilter(e.target.value)}>
+                  <option value="all">All Tiers</option>
+                  <option value="explorer">Silver</option>
+                  <option value="adventurer">Gold</option>
+                  <option value="champion">Platinum</option>
+                </select>
+              </label>
+              <label className={styles.filterItem}>
+                <span>Status</span>
+                <select value={membershipStatusFilter} onChange={(e) => setMembershipStatusFilter(e.target.value)}>
+                  <option value="all">All Status</option>
+                  <option value="active">Active</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="expired">Expired</option>
+                </select>
+              </label>
+            </div>
+            {membershipMessage && <p className={styles.feedback}>{membershipMessage}</p>}
+            {renderMembershipList({ ...membershipState, data: filteredMemberships }, visitLoading, handleRecordVisit, handleSelectMembership, handleCancelMembership, handleDeleteMembership, selectedMembershipId)}
+          </section>
+
+
+          <section className={styles.panel}>
+            <header className={styles.panelHeader}>
+              <h2>Entry validation</h2>
+            </header>
+            <div className={styles.ticketActions}>
+              <input
+                type="text"
+                placeholder="Scan code or search email"
+                value={validateInput}
+                onChange={(event) => setValidateInput(event.target.value)}
+              />
+              <button type="button" onClick={handleValidationLookup}>
+                Validate
+              </button>
+            </div>
+            {validationMessage && <p className={styles.feedback}>{validationMessage}</p>}
+            {validationResult && (
+              <div
+                className={styles.validationResult}
+                data-status={validationResult.membership ? 'allowed' : 'denied'}
+              >
+                <h3>
+                  {validationProfile
+                    ? formatGuardian({
+                      firstName: validationProfile.firstName,
+                      lastName: validationProfile.lastName,
+                      email: validationProfile.email,
+                    })
+                    : validationResult.userId}
+                </h3>
+                <p>
+                  Tier: <strong>{validationResult.membership?.tierName ?? 'None'}</strong>
+                </p>
+                <p>
+                  Visits used this period: {validationResult.membership?.visitsUsed ?? 0}
+                  {typeof validationResult.membership?.visitsPerMonth === 'number'
+                    ? ` / ${validationResult.membership.visitsPerMonth}`
+                    : ''}
+                </p>
+                <p>
+                  Last visit:{' '}
+                  {validationResult.membership?.lastVisitAt
+                    ? formatDate(validationResult.membership.lastVisitAt)
+                    : '--'}
+                </p>
+              </div>
+            )}
+            {ticketValidationResult && (
+              <div
+                className={styles.validationResult}
+                data-status={ticketValidationResult.valid || ticketValidationResult.ticket?.status === 'redeemed' ? 'allowed' : 'denied'}
+              >
+                <h3>Ticket: {ticketValidationResult.ticket?.code ?? 'Unknown'}</h3>
+                <p>
+                  Type: <strong>{ticketValidationResult.ticket?.ticketType ?? 'N/A'}</strong>
+                </p>
+                <p>
+                  Status: <strong style={{ color: ticketValidationResult.ticket?.status === 'redeemed' ? '#22c55e' : ticketValidationResult.ticket?.status === 'unused' ? '#3b82f6' : '#ef4444' }}>
+                    {ticketValidationResult.ticket?.status?.toUpperCase() ?? 'UNKNOWN'}
+                  </strong>
+                </p>
+                <p>
+                  Quantity: {ticketValidationResult.ticket?.quantity ?? 1} admission(s)
+                </p>
+                {ticketValidationResult.ticket?.redeemedAt && (
+                  <p>
+                    Redeemed: {formatDate(ticketValidationResult.ticket.redeemedAt)}
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+
+          <section className={styles.panel}>
+            <header className={styles.panelHeader}>
+              <h2>Waiver intake</h2>
+              <div className={styles.panelActions}>
+                <span className={styles.filterCount}>{filteredWaivers.length} of {waiverState.data.length}</span>
+                <button
+                  type="button"
+                  className={styles.exportLink}
+                  onClick={() => openExportModal('waivers')}
+                >
+                  Export CSV
+                </button>
+                <button
+                  type="button"
+                  className={styles.exportLink}
+                  onClick={() => openExportModal('contacts')}
+                >
+                  Download emails
+                </button>
+              </div>
+            </header>
+            <div className={styles.filterBar}>
+              <label className={styles.filterItem}>
+                <span>Name</span>
+                <input
+                  type="text"
+                  placeholder="Search name/email..."
+                  value={waiverNameFilter}
+                  onChange={(e) => setWaiverNameFilter(e.target.value)}
+                />
+              </label>
+              <label className={styles.filterItem}>
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={waiverDateFilter}
+                  onChange={(e) => setWaiverDateFilter(e.target.value)}
+                />
+              </label>
+              <label className={styles.filterItem}>
+                <span>Marketing</span>
+                <select value={waiverMarketingFilter} onChange={(e) => setWaiverMarketingFilter(e.target.value)}>
+                  <option value="all">All</option>
+                  <option value="yes">Opted In</option>
+                  <option value="no">Not Opted In</option>
+                </select>
+              </label>
+            </div>
+            {renderWaiverList(
+              { ...waiverState, data: filteredWaivers },
+              handleSelectWaiver,
+              handleDeleteWaiver,
+              selectedWaiverId,
+              waiverDisplayCount,
+              () => setWaiverDisplayCount((prev) => prev + 5),
+              () => setWaiverDisplayCount((prev) => Math.max(5, prev - 5))
+            )}
+
+          </section>
+        </aside>
+      </div>
+
+      {/* Booking Edit Modal */}
+      {selectedBooking && (() => {
+        const isGuest = !selectedBooking.guardian && selectedBooking.guestName;
+        const customerName = isGuest
+          ? `${selectedBooking.guestName} (Guest)`
+          : formatGuardian(selectedBooking.guardian);
+        const customerEmail = isGuest ? selectedBooking.guestEmail : selectedBooking.guardian?.email;
+        const customerPhone = isGuest ? selectedBooking.guestPhone : selectedBooking.guardian?.phone;
+        return (
+        <div className={styles.modalOverlay} onClick={() => setSelectedBookingId(null)}>
+          <div className={`${styles.modalCard} ${styles.bookingModalLarge}`} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <div>
+                <h2>Edit Booking</h2>
                 <span>{selectedBooking.reference}</span>
-              </header>
+              </div>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setSelectedBookingId(null)}
+              >
+                ✕
+              </button>
+            </header>
+            <div className={styles.modalBody}>
+              {/* Booking Info (Read-only) */}
+              <div className={styles.bookingInfoList}>
+                <div className={styles.bookingInfoRow}>
+                  <span className={styles.bookingInfoLabel}>Customer</span>
+                  <span className={styles.bookingInfoValue}><b>Name:</b> {customerName || '—'} · <b>Email:</b> {customerEmail || '—'} · <b>Phone:</b> {customerPhone || '—'}</span>
+                </div>
+                <div className={styles.bookingInfoRow}>
+                  <span className={styles.bookingInfoLabel}>Booking</span>
+                  <span className={styles.bookingInfoValue}><b>Package:</b> {selectedBooking.partyPackage?.name || '—'} · <b>Guests:</b> {selectedBooking.guests || 0} · <b>Total:</b> {formatCurrency(selectedBooking.total)}</span>
+                </div>
+                <div className={styles.bookingInfoRow}>
+                  <span className={styles.bookingInfoLabel}>Payment</span>
+                  <span className={styles.bookingInfoValue}><b>Paid:</b> {formatCurrency(selectedBooking.depositAmount)} · <b>Due:</b> {formatCurrency(selectedBooking.balanceRemaining)}</span>
+                </div>
+              </div>
+
+              {/* Editable Fields */}
+              <h4 className={styles.editSectionHeader}>Edit Booking Details</h4>
               <div className={styles.formGrid}>
                 <label>
                   Status
@@ -661,73 +1143,69 @@ export function AdminDashboardPage() {
                 </label>
               </div>
               <label className={styles.notesField}>
-                Notes
+                Customer Notes
+                <span className={styles.notesHint}>(visible to customer)</span>
                 <textarea
                   value={bookingForm.notes ?? ''}
                   onChange={(event) =>
                     setBookingForm((prev) => ({ ...prev, notes: event.target.value }))
                   }
+                  placeholder="Notes visible to the customer..."
                 />
               </label>
-              {bookingActionMessage && <p className={styles.feedback}>{bookingActionMessage}</p>}
-              <div className={styles.formActions}>
-                <button type="button" onClick={handleBookingUpdate} disabled={bookingActionBusy}>
-                  Save changes
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelSelectedBooking}
-                  className={styles.danger}
-                  disabled={bookingActionBusy}
-                >
-                  Cancel booking
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedBookingId(null)}
-                  className={styles.secondaryButton}
-                >
-                  Close
-                </button>
-              </div>
-            </section>
-          )}
-
-          <section className={styles.panel}>
-            <header className={styles.panelHeader}>
-              <h2>Ticket redemption</h2>
-              <span>{ticketState.data.length} recent redeems</span>
-            </header>
-            <div className={styles.ticketActions}>
-              <input
-                type="text"
-                placeholder="Enter ticket code"
-                value={ticketCode}
-                onChange={(event) => setTicketCode(event.target.value)}
-              />
-              <button type="button" onClick={handleRedeemTicket} disabled={!ticketCode.trim()}>
-                Redeem code
+              <label className={styles.notesField}>
+                Private Notes
+                <span className={styles.notesHint}>(staff only)</span>
+                <textarea
+                  value={bookingForm.privateNotes ?? ''}
+                  onChange={(event) =>
+                    setBookingForm((prev) => ({ ...prev, privateNotes: event.target.value }))
+                  }
+                  placeholder="Internal notes for staff only..."
+                />
+              </label>
+              {bookingActionMessage && <p className={styles.modalFeedback}>{bookingActionMessage}</p>}
+            </div>
+            <div className={styles.modalFooter}>
+              <button type="button" onClick={handleBookingUpdate} disabled={bookingActionBusy}>
+                {bookingActionBusy ? 'Saving...' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelSelectedBooking}
+                className={styles.danger}
+                disabled={bookingActionBusy}
+              >
+                Cancel booking
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedBookingId(null)}
+                className={styles.secondaryButton}
+              >
+                Close
               </button>
             </div>
-            {ticketMessage && <p className={styles.feedback}>{ticketMessage}</p>}
-            {renderTicketLog(ticketState, handleDeleteTicket)}
-          </section>
+          </div>
         </div>
+        );
+      })()}
 
-        <aside className={styles.columnAside}>
-          <section className={styles.panel}>
-            <header className={styles.panelHeader}>
-              <h2>Membership roster</h2>
+      {/* Membership Edit Modal */}
+      {selectedMembershipId && (
+        <div className={styles.modalOverlay} onClick={() => setSelectedMembershipId(null)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>Edit Membership</h2>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setSelectedMembershipId(null)}
+              >
+                ✕
+              </button>
             </header>
-            {membershipMessage && <p className={styles.feedback}>{membershipMessage}</p>}
-            {renderMembershipList(membershipState, visitLoading, handleRecordVisit, handleSelectMembership, handleCancelMembership, handleDeleteMembership, selectedMembershipId)}
-          </section>
-
-          {selectedMembershipId && (
-            <section className={styles.panel}>
-              <header className={styles.panelHeader}>
-                <h2>Edit membership</h2>
-              </header>
+            <div className={styles.modalBody}>
               <div className={styles.formGrid}>
                 <label>
                   Tier
@@ -783,314 +1261,534 @@ export function AdminDashboardPage() {
                   Auto-renew
                 </label>
               </div>
-              <div className={styles.formActions}>
-                <button type="button" onClick={handleMembershipUpdate} disabled={membershipActionBusy}>
-                  {membershipActionBusy ? 'Saving...' : 'Save changes'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedMembershipId(null)}
-                  className={styles.secondaryButton}
-                >
-                  Close
-                </button>
-              </div>
-            </section>
-          )}
-
-          <section className={styles.panel}>
-            <header className={styles.panelHeader}>
-              <h2>Entry validation</h2>
-            </header>
-            <div className={styles.ticketActions}>
-              <input
-                type="text"
-                placeholder="Scan code or search email"
-                value={validateInput}
-                onChange={(event) => setValidateInput(event.target.value)}
-              />
-              <button type="button" onClick={handleValidationLookup}>
-                Validate
+              {membershipMessage && <p className={styles.modalFeedback}>{membershipMessage}</p>}
+            </div>
+            <div className={styles.modalFooter}>
+              <button type="button" onClick={handleMembershipUpdate} disabled={membershipActionBusy}>
+                {membershipActionBusy ? 'Saving...' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedMembershipId(null)}
+                className={styles.secondaryButton}
+              >
+                Close
               </button>
             </div>
-            {validationMessage && <p className={styles.feedback}>{validationMessage}</p>}
-            {validationResult && (
-              <div
-                className={styles.validationResult}
-                data-status={validationResult.membership ? 'allowed' : 'denied'}
+          </div>
+        </div>
+      )}
+
+      {/* Waiver Edit Modal */}
+      {selectedWaiverId && (
+        <div className={styles.modalOverlay} onClick={() => { setSelectedWaiverId(null); setWaiverActionMessage(null); setWaiverForm(emptyWaiverForm()); }}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+            <header className={styles.modalHeader}>
+              <h2>Edit Waiver</h2>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => {
+                  setSelectedWaiverId(null);
+                  setWaiverActionMessage(null);
+                  setWaiverForm(emptyWaiverForm());
+                }}
               >
-                <h3>
-                  {validationProfile
-                    ? formatGuardian({
-                      firstName: validationProfile.firstName,
-                      lastName: validationProfile.lastName,
-                      email: validationProfile.email,
-                    })
-                    : validationResult.userId}
-                </h3>
-                <p>
-                  Tier: <strong>{validationResult.membership?.tierName ?? 'None'}</strong>
-                </p>
-                <p>
-                  Visits used this period: {validationResult.membership?.visitsUsed ?? 0}
-                  {typeof validationResult.membership?.visitsPerMonth === 'number'
-                    ? ` / ${validationResult.membership.visitsPerMonth}`
-                    : ''}
-                </p>
-                <p>
-                  Last visit:{' '}
-                  {validationResult.membership?.lastVisitAt
-                    ? formatDate(validationResult.membership.lastVisitAt)
-                    : '--'}
-                </p>
-              </div>
-            )}
-          </section>
-
-          <section className={styles.panel}>
-            <header className={styles.panelHeader}>
-              <h2>Waiver intake</h2>
-              <div className={styles.panelActions}>
-                {waiverExportUrl && (
-                  <a href={waiverExportUrl} target="_blank" rel="noreferrer">
-                    Export CSV
-                  </a>
-                )}
-                {contactExportUrl && (
-                  <a href={contactExportUrl} target="_blank" rel="noreferrer">
-                    Download emails
-                  </a>
-                )}
-              </div>
+                ✕
+              </button>
             </header>
-            {renderWaiverList(
-              waiverState,
-              handleSelectWaiver,
-              handleDeleteWaiver,
-              selectedWaiverId,
-              waiverDisplayCount,
-              () => setWaiverDisplayCount((prev) => prev + 10)
-            )}
-
-            {selectedWaiverId && (
-              <section className={styles.waiverEdit} aria-label="Edit waiver">
-                <header className={styles.waiverEditHeader}>
-                  <h3>Edit waiver</h3>
-                  <button
-                    type="button"
-                    className={styles.closeBtn}
-                    onClick={() => {
-                      setSelectedWaiverId(null);
-                      setWaiverActionMessage(null);
-                      setWaiverForm(emptyWaiverForm());
-                    }}
-                    aria-label="Close"
-                  >
-                    ✕
-                  </button>
-                </header>
-
-                <div className={styles.waiverCard}>
-                  <h4 className={styles.waiverCardTitle}>Guardian Information</h4>
-                  <div className={styles.waiverFormGrid}>
-                    <label className={styles.waiverField}>
-                      <span>First name</span>
-                      <input
-                        type="text"
-                        value={waiverForm.guardianFirstName}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({ ...prev, guardianFirstName: e.target.value }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.waiverField}>
-                      <span>Last name</span>
-                      <input
-                        type="text"
-                        value={waiverForm.guardianLastName}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({ ...prev, guardianLastName: e.target.value }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.waiverField}>
-                      <span>Email</span>
-                      <input
-                        type="email"
-                        value={waiverForm.guardianEmail}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({ ...prev, guardianEmail: e.target.value }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.waiverField}>
-                      <span>Phone</span>
-                      <input
-                        type="text"
-                        value={waiverForm.guardianPhone}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({ ...prev, guardianPhone: e.target.value }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.waiverField}>
-                      <span>Date of birth</span>
-                      <input
-                        type="date"
-                        value={waiverForm.guardianDateOfBirth}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({
-                            ...prev,
-                            guardianDateOfBirth: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.waiverField}>
-                      <span>Relationship to minor</span>
-                      <input
-                        type="text"
-                        value={waiverForm.relationshipToMinor}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({
-                            ...prev,
-                            relationshipToMinor: e.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.waiverField}>
-                      <span>Waiver expires</span>
-                      <input
-                        type="date"
-                        value={waiverForm.expiresAt}
-                        onChange={(e) =>
-                          setWaiverForm((prev) => ({ ...prev, expiresAt: e.target.value }))
-                        }
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className={styles.waiverCard}>
-                  <h4 className={styles.waiverCardTitle}>Marketing Preferences</h4>
-                  <label className={styles.waiverToggle}>
+            <div className={styles.modalBody}>
+              <div className={styles.waiverCard}>
+                <h4 className={styles.waiverCardTitle}>Guardian Information</h4>
+                <div className={styles.waiverFormGrid}>
+                  <label className={styles.waiverField}>
+                    <span>First name</span>
                     <input
-                      type="checkbox"
-                      checked={waiverForm.marketingSmsOptIn}
+                      type="text"
+                      value={waiverForm.guardianFirstName}
+                      onChange={(e) =>
+                        setWaiverForm((prev) => ({ ...prev, guardianFirstName: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.waiverField}>
+                    <span>Last name</span>
+                    <input
+                      type="text"
+                      value={waiverForm.guardianLastName}
+                      onChange={(e) =>
+                        setWaiverForm((prev) => ({ ...prev, guardianLastName: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.waiverField}>
+                    <span>Email</span>
+                    <input
+                      type="email"
+                      value={waiverForm.guardianEmail}
+                      onChange={(e) =>
+                        setWaiverForm((prev) => ({ ...prev, guardianEmail: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.waiverField}>
+                    <span>Phone</span>
+                    <input
+                      type="text"
+                      value={waiverForm.guardianPhone}
+                      onChange={(e) =>
+                        setWaiverForm((prev) => ({ ...prev, guardianPhone: e.target.value }))
+                      }
+                    />
+                  </label>
+                  <label className={styles.waiverField}>
+                    <span>Date of birth</span>
+                    <input
+                      type="date"
+                      value={waiverForm.guardianDateOfBirth}
                       onChange={(e) =>
                         setWaiverForm((prev) => ({
                           ...prev,
-                          marketingSmsOptIn: e.target.checked,
+                          guardianDateOfBirth: e.target.value,
                         }))
                       }
                     />
-                    <span className={styles.toggleTrack}>
-                      <span className={styles.toggleThumb} />
-                    </span>
-                    <span>Receive SMS marketing</span>
                   </label>
-                  <label className={styles.waiverToggle}>
+                  <label className={styles.waiverField}>
+                    <span>Relationship to minor</span>
                     <input
-                      type="checkbox"
-                      checked={waiverForm.marketingEmailOptIn}
+                      type="text"
+                      value={waiverForm.relationshipToMinor}
                       onChange={(e) =>
                         setWaiverForm((prev) => ({
                           ...prev,
-                          marketingEmailOptIn: e.target.checked,
+                          relationshipToMinor: e.target.value,
                         }))
                       }
                     />
-                    <span className={styles.toggleTrack}>
-                      <span className={styles.toggleThumb} />
-                    </span>
-                    <span>Receive email marketing</span>
+                  </label>
+                  <label className={styles.waiverField}>
+                    <span>Waiver expires</span>
+                    <input
+                      type="date"
+                      value={waiverForm.expiresAt}
+                      onChange={(e) =>
+                        setWaiverForm((prev) => ({ ...prev, expiresAt: e.target.value }))
+                      }
+                    />
                   </label>
                 </div>
+              </div>
 
-                <div className={styles.waiverCard}>
-                  <h4 className={styles.waiverCardTitle}>Children</h4>
-                  {waiverForm.children.length === 0 && (
-                    <p className={styles.emptyHint}>No children added yet.</p>
-                  )}
-                  <div className={styles.waiverChildren}>
-                    {waiverForm.children.map((child, index) => (
-                      <div className={styles.childCard} key={`${child.name}-${index}`}>
-                        <label className={styles.waiverField}>
-                          <span>Name</span>
-                          <input
-                            type="text"
-                            value={child.name}
-                            onChange={(e) =>
-                              setWaiverForm((prev) => {
-                                const next = [...prev.children];
-                                next[index] = { ...next[index], name: e.target.value };
-                                return { ...prev, children: next };
-                              })
-                            }
-                          />
-                        </label>
-                        <label className={styles.waiverField}>
-                          <span>Birth date</span>
-                          <input
-                            type="date"
-                            value={child.birthDate ? child.birthDate.slice(0, 10) : ''}
-                            onChange={(e) =>
-                              setWaiverForm((prev) => {
-                                const next = [...prev.children];
-                                next[index] = { ...next[index], birthDate: e.target.value };
-                                return { ...prev, children: next };
-                              })
-                            }
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className={styles.removeBtn}
-                          onClick={() =>
-                            setWaiverForm((prev) => ({
-                              ...prev,
-                              children: prev.children.filter((_, idx) => idx !== index),
-                            }))
-                          }
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.addChildBtn}
-                    onClick={() =>
+              <div className={styles.waiverCard}>
+                <h4 className={styles.waiverCardTitle}>Marketing Preferences</h4>
+                <label className={styles.waiverToggle}>
+                  <input
+                    type="checkbox"
+                    checked={waiverForm.marketingSmsOptIn}
+                    onChange={(e) =>
                       setWaiverForm((prev) => ({
                         ...prev,
-                        children: [...prev.children, { name: '', birthDate: '' }],
+                        marketingSmsOptIn: e.target.checked,
                       }))
                     }
-                  >
-                    + Add child
-                  </button>
-                </div>
+                  />
+                  <span className={styles.toggleTrack}>
+                    <span className={styles.toggleThumb} />
+                  </span>
+                  <span>Receive SMS marketing</span>
+                </label>
+                <label className={styles.waiverToggle}>
+                  <input
+                    type="checkbox"
+                    checked={waiverForm.marketingEmailOptIn}
+                    onChange={(e) =>
+                      setWaiverForm((prev) => ({
+                        ...prev,
+                        marketingEmailOptIn: e.target.checked,
+                      }))
+                    }
+                  />
+                  <span className={styles.toggleTrack}>
+                    <span className={styles.toggleThumb} />
+                  </span>
+                  <span>Receive email marketing</span>
+                </label>
+              </div>
 
-                {waiverActionMessage && (
-                  <p className={styles.waiverFeedback}>{waiverActionMessage}</p>
+              <div className={styles.waiverCard}>
+                <h4 className={styles.waiverCardTitle}>Children</h4>
+                {waiverForm.children.length === 0 && (
+                  <p className={styles.emptyHint}>No children added yet.</p>
                 )}
-                <div className={styles.waiverActions}>
-                  <button
-                    type="button"
-                    className={styles.saveBtn}
-                    onClick={handleWaiverUpdate}
-                    disabled={waiverActionBusy}
-                  >
-                    {waiverActionBusy ? 'Saving...' : 'Save changes'}
-                  </button>
+                <div className={styles.waiverChildren}>
+                  {waiverForm.children.map((child, index) => (
+                    <div className={styles.childCard} key={`${child.name}-${index}`}>
+                      <label className={styles.waiverField}>
+                        <span>Name</span>
+                        <input
+                          type="text"
+                          value={child.name}
+                          onChange={(e) =>
+                            setWaiverForm((prev) => {
+                              const next = [...prev.children];
+                              next[index] = { ...next[index], name: e.target.value };
+                              return { ...prev, children: next };
+                            })
+                          }
+                        />
+                      </label>
+                      <label className={styles.waiverField}>
+                        <span>Birth date</span>
+                        <input
+                          type="date"
+                          value={child.birthDate ? child.birthDate.slice(0, 10) : ''}
+                          onChange={(e) =>
+                            setWaiverForm((prev) => {
+                              const next = [...prev.children];
+                              next[index] = { ...next[index], birthDate: e.target.value };
+                              return { ...prev, children: next };
+                            })
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className={styles.removeBtn}
+                        onClick={() =>
+                          setWaiverForm((prev) => ({
+                            ...prev,
+                            children: prev.children.filter((_, idx) => idx !== index),
+                          }))
+                        }
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              </section>
-            )}
-          </section>
-        </aside>
-      </div>
+                <button
+                  type="button"
+                  className={styles.addChildBtn}
+                  onClick={() =>
+                    setWaiverForm((prev) => ({
+                      ...prev,
+                      children: [...prev.children, { name: '', birthDate: '' }],
+                    }))
+                  }
+                >
+                  + Add child
+                </button>
+              </div>
+
+              {waiverActionMessage && <p className={styles.modalFeedback}>{waiverActionMessage}</p>}
+            </div>
+            <div className={styles.modalFooter}>
+              <button
+                type="button"
+                onClick={handleWaiverUpdate}
+                disabled={waiverActionBusy}
+              >
+                {waiverActionBusy ? 'Saving...' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedWaiverId(null);
+                  setWaiverActionMessage(null);
+                  setWaiverForm(emptyWaiverForm());
+                }}
+                className={styles.secondaryButton}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {exportModalOpen && (
+        <div className={styles.modalOverlay} onClick={() => setExportModalOpen(false)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <header className={styles.modalHeader}>
+              <h2>{exportType === 'waivers' ? 'Export Waivers' : 'Download Emails'}</h2>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => setExportModalOpen(false)}
+              >
+                ✕
+              </button>
+            </header>
+            <div className={styles.modalBody}>
+              <div className={styles.exportOptions}>
+                <label className={styles.exportOption}>
+                  <input
+                    type="radio"
+                    name="exportDate"
+                    value="today"
+                    checked={exportDateOption === 'today'}
+                    onChange={() => setExportDateOption('today')}
+                  />
+                  <span>Today</span>
+                </label>
+                <label className={styles.exportOption}>
+                  <input
+                    type="radio"
+                    name="exportDate"
+                    value="yesterday"
+                    checked={exportDateOption === 'yesterday'}
+                    onChange={() => setExportDateOption('yesterday')}
+                  />
+                  <span>Yesterday</span>
+                </label>
+                <label className={styles.exportOption}>
+                  <input
+                    type="radio"
+                    name="exportDate"
+                    value="range"
+                    checked={exportDateOption === 'range'}
+                    onChange={() => setExportDateOption('range')}
+                  />
+                  <span>Date Range</span>
+                </label>
+                <label className={styles.exportOption}>
+                  <input
+                    type="radio"
+                    name="exportDate"
+                    value="all"
+                    checked={exportDateOption === 'all'}
+                    onChange={() => setExportDateOption('all')}
+                  />
+                  <span>All Time</span>
+                </label>
+              </div>
+              {exportDateOption === 'range' && (
+                <div className={styles.dateRangeInputs}>
+                  <label>
+                    <span>From</span>
+                    <input
+                      type="date"
+                      value={exportDateFrom}
+                      onChange={(e) => setExportDateFrom(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>To</span>
+                    <input
+                      type="date"
+                      value={exportDateTo}
+                      onChange={(e) => setExportDateTo(e.target.value)}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+            <div className={styles.modalFooter}>
+              <button type="button" onClick={handleExportDownload}>
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportModalOpen(false)}
+                className={styles.secondaryButton}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Modal */}
+      {calendarOpen && (
+        <div className={styles.modalOverlay} onClick={() => { setCalendarOpen(false); setSelectedCalendarBooking(null); }}>
+          <div className={`${styles.modalCard} ${styles.calendarModal}`} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>Booking Calendar</h2>
+              <button
+                type="button"
+                className={styles.modalCloseBtn}
+                onClick={() => { setCalendarOpen(false); setSelectedCalendarBooking(null); }}
+              >
+                ✕
+              </button>
+            </header>
+            <div className={styles.modalBody}>
+              {/* Month navigation */}
+              <div className={styles.calendarNav}>
+                <button
+                  type="button"
+                  className={styles.calendarNavBtn}
+                  onClick={() => setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                >
+                  ‹
+                </button>
+                <span className={styles.calendarMonthTitle}>
+                  {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </span>
+                <button
+                  type="button"
+                  className={styles.calendarNavBtn}
+                  onClick={() => setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                >
+                  ›
+                </button>
+              </div>
+
+              {/* Calendar grid */}
+              <div className={styles.calendarGrid}>
+                {/* Day headers */}
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                  <div key={day} className={styles.calendarDayHeader}>{day}</div>
+                ))}
+                {/* Calendar days */}
+                {(() => {
+                  const year = calendarMonth.getFullYear();
+                  const month = calendarMonth.getMonth();
+                  const firstDay = new Date(year, month, 1).getDay();
+                  const daysInMonth = new Date(year, month + 1, 0).getDate();
+                  const today = new Date();
+                  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+                  // Get bookings for this month
+                  const bookingsByDate: Record<string, AdminBooking[]> = {};
+                  bookingState.data.forEach((booking) => {
+                    const dateKey = booking.eventDate.split('T')[0];
+                    if (!bookingsByDate[dateKey]) bookingsByDate[dateKey] = [];
+                    bookingsByDate[dateKey].push(booking);
+                  });
+
+                  const days = [];
+                  // Empty cells before first day
+                  for (let i = 0; i < firstDay; i++) {
+                    days.push(<div key={`empty-${i}`} className={`${styles.calendarDay} ${styles.calendarDayEmpty}`} />);
+                  }
+                  // Actual days
+                  for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const dayBookings = bookingsByDate[dateStr] || [];
+                    // Sort bookings by time
+                    const sortedBookings = [...dayBookings].sort((a, b) => a.startTime.localeCompare(b.startTime));
+                    const isToday = dateStr === todayStr;
+                    const hasBookings = sortedBookings.length > 0;
+                    const isSelected = selectedCalendarBooking && selectedCalendarBooking.eventDate.startsWith(dateStr);
+
+                    let dayClasses = styles.calendarDay;
+                    if (isToday) dayClasses += ` ${styles.calendarDayToday}`;
+                    if (hasBookings) dayClasses += ` ${styles.calendarDayHasBookings}`;
+                    if (isSelected) dayClasses += ` ${styles.calendarDaySelected}`;
+
+                    // Show up to 3 bookings inline, then show "+X more"
+                    const maxVisible = 3;
+                    const visibleBookings = sortedBookings.slice(0, maxVisible);
+                    const moreCount = sortedBookings.length - maxVisible;
+
+                    days.push(
+                      <div
+                        key={d}
+                        className={dayClasses}
+                        onClick={() => {
+                          if (hasBookings) {
+                            setSelectedCalendarBooking(sortedBookings[0]);
+                          }
+                        }}
+                        title={hasBookings ? `${sortedBookings.length} booking(s)` : undefined}
+                      >
+                        <span className={styles.calendarDayNumber}>{d}</span>
+                        {hasBookings && (
+                          <div className={styles.calendarDayBookings}>
+                            {visibleBookings.map((booking) => {
+                              const isGuest = !booking.guardian && booking.guestName;
+                              const customerName = isGuest
+                                ? booking.guestName
+                                : booking.guardian?.firstName || 'Unknown';
+                              let itemClass = styles.calendarDayBookingItem;
+                              if (booking.status === 'Pending') itemClass += ` ${styles.calendarDayBookingPending}`;
+                              if (booking.status === 'Cancelled') itemClass += ` ${styles.calendarDayBookingCancelled}`;
+                              return (
+                                <div
+                                  key={booking.id}
+                                  className={itemClass}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCalendarOpen(false);
+                                    setSelectedCalendarBooking(null);
+                                    handleSelectBooking(booking);
+                                  }}
+                                >
+                                  <span className={styles.calendarDayBookingTime}>{booking.startTime}</span>
+                                  <span className={styles.calendarDayBookingName}>{customerName}</span>
+                                </div>
+                              );
+                            })}
+                            {moreCount > 0 && (
+                              <div className={styles.calendarDayMoreCount}>+{moreCount} more</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return days;
+                })()}
+              </div>
+
+              {/* Booking preview */}
+              {selectedCalendarBooking && (() => {
+                const dateStr = selectedCalendarBooking.eventDate.split('T')[0];
+                const dayBookings = bookingState.data.filter((b) => b.eventDate.startsWith(dateStr));
+                return (
+                  <div className={styles.calendarBookingPreview}>
+                    <div className={styles.calendarPreviewHeader}>
+                      <h4>Bookings on {formatDate(dateStr)}</h4>
+                      <button
+                        type="button"
+                        className={styles.calendarPreviewClose}
+                        onClick={() => setSelectedCalendarBooking(null)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className={styles.calendarBookingsList}>
+                      {dayBookings.map((booking) => {
+                        const isGuest = !booking.guardian && booking.guestName;
+                        const customerName = isGuest
+                          ? `${booking.guestName} (Guest)`
+                          : formatGuardian(booking.guardian);
+                        let statusClass = styles.calendarStatusPending;
+                        if (booking.status === 'Confirmed') statusClass = styles.calendarStatusConfirmed;
+                        if (booking.status === 'Cancelled') statusClass = styles.calendarStatusCancelled;
+                        return (
+                          <div
+                            key={booking.id}
+                            className={styles.calendarBookingItem}
+                            onClick={() => {
+                              setCalendarOpen(false);
+                              setSelectedCalendarBooking(null);
+                              handleSelectBooking(booking);
+                            }}
+                          >
+                            <div className={styles.calendarBookingInfo}>
+                              <strong>{booking.reference}</strong>
+                              <span>{booking.startTime} - {customerName}</span>
+                              <span>{booking.location}</span>
+                            </div>
+                            <span className={`${styles.calendarBookingStatus} ${statusClass}`}>
+                              {booking.status}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={styles.statusBarBottom}>
         <span className={streamConnected ? styles.statusConnected : styles.statusDisconnected}>
@@ -1129,13 +1827,10 @@ function renderBookingTable(
       <table className={styles.bookingTable}>
         <thead>
           <tr>
-            <th>Reference</th>
-            <th>Location</th>
-            <th>Date</th>
-            <th>Customer</th>
-            <th>Status</th>
-            <th>Payment</th>
-            <th>Actions</th>
+            <th style={{width: '50%'}}>Booking Details</th>
+            <th style={{width: '15%'}}>Status</th>
+            <th style={{width: '20%'}}>Payment</th>
+            <th style={{width: '15%'}}></th>
           </tr>
         </thead>
         <tbody>
@@ -1144,6 +1839,8 @@ function renderBookingTable(
             const customerDisplay = isGuest
               ? `${booking.guestName} (Guest)`
               : formatGuardian(booking.guardian);
+            const customerEmail = isGuest ? booking.guestEmail : booking.guardian?.email;
+            const customerPhone = isGuest ? booking.guestPhone : booking.guardian?.phone;
             // Calculate paid and due amounts based on payment status
             const isPaid = booking.paymentStatus === 'deposit_paid' || booking.paymentStatus === 'paid';
             const paidAmount = isPaid ? (booking.depositAmount ?? 0) : 0;
@@ -1155,17 +1852,12 @@ function renderBookingTable(
                 key={booking.id}
                 className={booking.id === selectedId ? styles.rowSelected : undefined}
               >
-                <td>{booking.reference}</td>
-                <td>{booking.location}</td>
                 <td>
-                  {formatDate(booking.eventDate)} &middot; {booking.startTime}
-                </td>
-                <td>
-                  <div className={styles.customerCell}>
-                    <span>{customerDisplay}</span>
-                    {isGuest && booking.guestEmail && (
-                      <small className={styles.guestEmail}>{booking.guestEmail}</small>
-                    )}
+                  <div className={styles.customerDetailsCell}>
+                    <strong>{customerDisplay}</strong>
+                    <small><b>Email:</b> {customerEmail || '—'} · <b>Phone:</b> {customerPhone || '—'}</small>
+                    <small><b>Ref:</b> {booking.reference} · <b>Location:</b> {booking.location} · <b>Date:</b> {formatDate(booking.eventDate)} {booking.startTime}</small>
+                    <small><b>Package:</b> {booking.partyPackage?.name || '—'} · <b>Guests:</b> {booking.guests || 0}</small>
                   </div>
                 </td>
                 <td>
@@ -1253,6 +1945,7 @@ function renderWaiverList(
   selectedId: string | null,
   displayCount: number,
   onLoadMore: () => void,
+  onShowLess: () => void,
 ) {
   if (state.status === 'loading') return <p>Loading waivers...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
@@ -1282,7 +1975,7 @@ function renderWaiverList(
               {waiver.marketingOptIn && <small>Marketing opt-in</small>}
             </div>
             <div className={styles.waiverMeta}>
-              <span>{formatDate(waiver.signedAt)}</span>
+              <span>{formatDateTime(waiver.signedAt)}</span>
               <div className={styles.waiverActions}>
                 <button
                   type="button"
@@ -1309,14 +2002,27 @@ function renderWaiverList(
           </li>
         ))}
       </ul>
-      {hasMore && (
-        <button
-          type="button"
-          className={styles.loadMoreBtn}
-          onClick={onLoadMore}
-        >
-          Show more ({remaining} remaining)
-        </button>
+      {(hasMore || displayCount > 5) && (
+        <div className={styles.waiverPaginationButtons}>
+          {displayCount > 5 && (
+            <button
+              type="button"
+              className={styles.loadMoreBtn}
+              onClick={onShowLess}
+            >
+              Show less
+            </button>
+          )}
+          {hasMore && (
+            <button
+              type="button"
+              className={styles.loadMoreBtn}
+              onClick={onLoadMore}
+            >
+              Show more ({remaining} remaining)
+            </button>
+          )}
+        </div>
       )}
     </>
   );
@@ -1339,6 +2045,7 @@ function renderTicketLog(
         <thead>
           <tr>
             <th>Type</th>
+            <th>Codes</th>
             <th>Qty</th>
             <th>Guardian</th>
             <th>Payment</th>
@@ -1354,6 +2061,19 @@ function renderTicketLog(
             return (
               <tr key={entry.id}>
                 <td>{entry.type}</td>
+                <td>
+                  <div className={styles.ticketCodes}>
+                    {entry.codes.map((c) => (
+                      <span
+                        key={c.code}
+                        className={c.status === 'redeemed' ? styles.codeRedeemed : styles.codeUnused}
+                        title={c.status === 'redeemed' ? `Redeemed: ${c.redeemedAt ? formatDate(c.redeemedAt) : 'Yes'}` : 'Unused'}
+                      >
+                        {c.code}
+                      </span>
+                    ))}
+                  </div>
+                </td>
                 <td>{entry.quantity}</td>
                 <td>{formatGuardian(entry.guardian)}</td>
                 <td>
@@ -1496,6 +2216,7 @@ function toBookingForm(booking: AdminBooking): BookingFormState {
     startTime: booking.startTime ?? '',
     location: booking.location ?? '',
     notes: booking.notes ?? '',
+    privateNotes: booking.privateNotes ?? '',
   };
 }
 
@@ -1506,6 +2227,7 @@ function cleanBookingForm(form: BookingFormState): AdminBookingUpdatePayload {
   if (form.startTime) payload.startTime = form.startTime;
   if (form.location) payload.location = form.location;
   if (form.notes !== undefined) payload.notes = form.notes;
+  if (form.privateNotes !== undefined) payload.privateNotes = form.privateNotes;
   return payload;
 }
 
@@ -1587,10 +2309,12 @@ function shouldRefreshForEvent(type?: string) {
   ].includes(type);
 }
 
-function exportUrl(token: string | null | undefined, path: string) {
+function exportUrl(token: string | null | undefined, path: string, dateFrom?: string, dateTo?: string) {
   if (!token) return null;
   const url = new URL(`${API_BASE_URL}/admin/${path}`);
   url.searchParams.set('token', token);
+  if (dateFrom) url.searchParams.set('dateFrom', dateFrom);
+  if (dateTo) url.searchParams.set('dateTo', dateTo);
   return url.toString();
 }
 

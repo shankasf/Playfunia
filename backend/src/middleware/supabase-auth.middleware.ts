@@ -4,6 +4,18 @@ import { appConfig } from '../config/env';
 import { AppError } from '../utils/app-error';
 import { UserRepository } from '../repositories';
 
+// Role definitions for the application
+export const ROLES = {
+  CUSTOMER: 'customer',  // Regular users who book parties, buy tickets
+  EMPLOYEE: 'employee',  // Staff who check in members, redeem tickets, view dashboard
+  ADMIN: 'admin',        // Full system access, manage users, content, pricing
+} as const;
+
+export type UserRole = typeof ROLES[keyof typeof ROLES];
+
+// Default role for new users
+export const DEFAULT_ROLE = ROLES.CUSTOMER;
+
 export interface SupabaseAuthenticatedRequest extends Request {
   user?: {
     id: string;           // public.users.user_id (integer as string)
@@ -28,14 +40,23 @@ interface SupabaseJWTPayload {
     providers?: string[];
   };
   user_metadata?: {
+    // Standard fields
     first_name?: string;
     last_name?: string;
+    // Google OAuth fields
+    full_name?: string;
+    name?: string;
+    given_name?: string;
+    family_name?: string;
+    avatar_url?: string;
+    picture?: string;
   };
 }
 
 /**
  * Supabase Auth Guard - Verifies Supabase JWT tokens and attaches user to request.
  * Looks up user in public.users by auth_user_id (UUID from Supabase).
+ * Does NOT create new users - use supabaseAuthGuardAllowCreate for sign-up flows.
  */
 export async function supabaseAuthGuard(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -78,7 +99,83 @@ export async function supabaseAuthGuard(req: Request, _res: Response, next: Next
           });
           user = userByEmail;
         } else {
-          // Create new user record from Supabase auth
+          // No user found - reject sign-in for new users
+          // They must use sign-up flow first
+          return next(new AppError('No account found. Please sign up first.', 404));
+        }
+      } else {
+        return next(new AppError('User not found', 401));
+      }
+    }
+
+    (req as SupabaseAuthenticatedRequest).user = {
+      id: String(user.user_id),
+      authUserId: payload.sub,
+      email: user.email,
+      roles: user.roles ?? [DEFAULT_ROLE],
+      type: 'user',
+      phone: user.phone ?? undefined,
+    };
+
+    return next();
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      return next(new AppError('Token expired', 401));
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      return next(new AppError('Invalid token', 401));
+    }
+    console.error('Supabase auth error:', error);
+    return next(new AppError('Authentication failed', 401, { cause: error }));
+  }
+}
+
+/**
+ * Supabase Auth Guard that ALLOWS creating new users.
+ * Use this for sign-up flows where new users should be created.
+ */
+export async function supabaseAuthGuardAllowCreate(req: Request, _res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return next(new AppError('Unauthorized', 401));
+  }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+
+  try {
+    // Verify the Supabase JWT
+    const jwtSecret = appConfig.supabaseJwtSecret;
+    if (!jwtSecret) {
+      console.error('SUPABASE_JWT_SECRET not configured');
+      return next(new AppError('Authentication not configured', 500));
+    }
+
+    const payload = jwt.verify(token, jwtSecret, {
+      algorithms: ['HS256'],
+    }) as SupabaseJWTPayload;
+
+    // Check if it's a valid authenticated session
+    if (payload.role !== 'authenticated') {
+      return next(new AppError('Invalid authentication', 401));
+    }
+
+    // Look up the user in public.users by auth_user_id
+    let user = await UserRepository.findByAuthUserId(payload.sub);
+
+    if (!user) {
+      // User authenticated with Supabase but not yet in public.users
+      // Try to find by email as fallback (for migrated users)
+      if (payload.email) {
+        const userByEmail = await UserRepository.findByEmail(payload.email);
+
+        if (userByEmail) {
+          // Link the existing user to Supabase auth
+          await UserRepository.update(userByEmail.user_id, {
+            auth_user_id: payload.sub
+          });
+          user = userByEmail;
+        } else {
+          // Create new user record from Supabase auth (sign-up flow)
           user = await UserRepository.createFromSupabaseAuth({
             id: payload.sub,
             email: payload.email,
@@ -94,7 +191,7 @@ export async function supabaseAuthGuard(req: Request, _res: Response, next: Next
       id: String(user.user_id),
       authUserId: payload.sub,
       email: user.email,
-      roles: user.roles ?? ['user'],
+      roles: user.roles ?? [DEFAULT_ROLE],
       type: 'user',
       phone: user.phone ?? undefined,
     };
@@ -155,7 +252,7 @@ export async function optionalSupabaseAuthGuard(req: Request, _res: Response, ne
         id: String(user.user_id),
         authUserId: payload.sub,
         email: user.email,
-        roles: user.roles ?? ['user'],
+        roles: user.roles ?? [DEFAULT_ROLE],
         type: 'user',
         phone: user.phone ?? undefined,
       };
@@ -197,7 +294,7 @@ export async function supabaseWaiverAuthGuard(req: Request, res: Response, next:
             id: String(user.user_id),
             authUserId: payload.sub,
             email: user.email,
-            roles: user.roles ?? ['user'],
+            roles: user.roles ?? [DEFAULT_ROLE],
             type: 'user',
             phone: user.phone ?? undefined,
           };

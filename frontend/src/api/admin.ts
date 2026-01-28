@@ -37,11 +37,14 @@ export type AdminBooking = {
   eventDate: string;
   startTime: string;
   endTime: string;
+  guests: number;
+  total: number;
   status: 'Pending' | 'Confirmed' | 'Cancelled';
   paymentStatus: 'awaiting_deposit' | 'awaiting_full_payment' | 'deposit_paid' | 'paid' | string;
   depositAmount: number;
   balanceRemaining: number;
   notes: string | null;
+  privateNotes: string | null;
   guardian?: { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
   partyPackage?: { id?: string; name?: string } | null;
   // Partial payment tracking
@@ -60,6 +63,7 @@ export type AdminBookingUpdatePayload = Partial<{
   startTime: string;
   location: string;
   notes: string;
+  privateNotes: string;
 }>;
 
 export type AdminTicketLogEntry = {
@@ -200,7 +204,7 @@ export async function fetchAdminTicketLog() {
 
 export async function redeemTicketCode(code: string) {
   const response = await apiPost<{ ticket: AdminTicketLogEntry }, { code: string }>(
-    `/admin/tickets/redeem`,
+    `/admin/tickets/redeem-code`,
     { code }
   );
   return response.ticket;
@@ -263,6 +267,44 @@ export type MembershipValidationResult = {
 export async function validateMembershipEntry(lookup: string) {
   return apiPost<MembershipValidationResult, { lookup: string }>(`/admin/memberships/validate`, {
     lookup,
+  });
+}
+
+export type TicketValidationResult = {
+  valid: boolean;
+  status: string;
+  message: string;
+  ticket: {
+    purchaseId: number;
+    code: string;
+    status: string;
+    redeemedAt: string | null;
+    ticketType: string;
+    quantity: number;
+    eventId: number | null;
+    customerId: number | null;
+    createdAt: string;
+  } | null;
+};
+
+export type TicketRedemptionResult = {
+  success: boolean;
+  purchaseId: number;
+  code: string;
+  redeemedAt: string;
+  redeemedBy?: string;
+  ticketType: string;
+  quantity: number;
+};
+
+export async function validateTicketCode(code: string) {
+  return apiPost<TicketValidationResult, { code: string }>(`/admin/tickets/validate`, { code });
+}
+
+export async function redeemTicketByCode(code: string, redeemedBy?: string) {
+  return apiPost<TicketRedemptionResult, { code: string; redeemedBy?: string }>(`/admin/tickets/redeem-code`, {
+    code,
+    redeemedBy,
   });
 }
 

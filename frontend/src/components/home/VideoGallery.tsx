@@ -1,4 +1,4 @@
-import { useState, useRef, memo } from "react";
+import { useState, useRef, memo, useCallback } from "react";
 import styles from "./VideoGallery.module.css";
 
 const videos = [
@@ -50,26 +50,28 @@ export const VideoGallery = memo(function VideoGallery() {
   const [playingId, setPlayingId] = useState<number | null>(null);
   const videoRefs = useRef<{ [key: number]: HTMLVideoElement | null }>({});
 
-  const handlePlay = (id: number) => {
+  const handlePlay = useCallback((id: number) => {
     // Pause any currently playing video
-    if (playingId && playingId !== id && videoRefs.current[playingId]) {
-      videoRefs.current[playingId]?.pause();
-    }
+    Object.entries(videoRefs.current).forEach(([key, video]) => {
+      if (Number(key) !== id && video) {
+        video.pause();
+      }
+    });
 
     const video = videoRefs.current[id];
     if (video) {
       video.play();
       setPlayingId(id);
     }
-  };
+  }, []);
 
-  const handleVideoEnd = () => {
-    setPlayingId(null);
-  };
+  const handleVideoEnd = useCallback((id: number) => {
+    setPlayingId((current) => (current === id ? null : current));
+  }, []);
 
-  const handleVideoPause = () => {
-    setPlayingId(null);
-  };
+  const handleVideoPause = useCallback((id: number) => {
+    setPlayingId((current) => (current === id ? null : current));
+  }, []);
 
   return (
     <section className={styles.section}>
@@ -79,28 +81,31 @@ export const VideoGallery = memo(function VideoGallery() {
         <p>Real moments of joy and laughter from our indoor playground</p>
       </div>
       <div className={styles.grid}>
-        {videos.map((video) => (
-          <div key={video.id} className={styles.card}>
-            <div className={styles.videoWrapper}>
-              <video
-                ref={(el) => { videoRefs.current[video.id] = el; }}
-                className={styles.video}
-                playsInline
-                preload="none"
-                poster={video.thumbnail}
-                onEnded={handleVideoEnd}
-                onPause={handleVideoPause}
-                controls={playingId === video.id}
-              >
-                <source src={video.src} type="video/quicktime" />
-                <source src={video.src} type="video/mp4" />
-                Your browser does not support the video tag.
-              </video>
-              {playingId !== video.id && (
+        {videos.map((video) => {
+          const isPlaying = playingId === video.id;
+          return (
+            <div key={video.id} className={styles.card}>
+              <div className={styles.videoWrapper}>
+                <video
+                  ref={(el) => { videoRefs.current[video.id] = el; }}
+                  className={`${styles.video} ${isPlaying ? styles.videoPlaying : ''}`}
+                  playsInline
+                  preload="none"
+                  poster={video.thumbnail}
+                  onEnded={() => handleVideoEnd(video.id)}
+                  onPause={() => handleVideoPause(video.id)}
+                  controls={isPlaying}
+                >
+                  <source src={video.src} type="video/quicktime" />
+                  <source src={video.src} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
                 <button
-                  className={styles.playOverlay}
+                  className={`${styles.playOverlay} ${isPlaying ? styles.playOverlayHidden : ''}`}
                   onClick={() => handlePlay(video.id)}
                   aria-label={`Play ${video.title}`}
+                  aria-hidden={isPlaying}
+                  tabIndex={isPlaying ? -1 : 0}
                 >
                   <span className={styles.playButton}>
                     <svg viewBox="0 0 68 48" className={styles.playIcon}>
@@ -112,14 +117,14 @@ export const VideoGallery = memo(function VideoGallery() {
                     </svg>
                   </span>
                 </button>
-              )}
+              </div>
+              <div className={styles.cardContent}>
+                <h3>{video.title}</h3>
+                <p>{video.description}</p>
+              </div>
             </div>
-            <div className={styles.cardContent}>
-              <h3>{video.title}</h3>
-              <p>{video.description}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

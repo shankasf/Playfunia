@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './client';
+import { apiGet, apiPost, apiPatch } from './client';
 
 export type PartyPackageDto = {
   id: string;
@@ -151,4 +151,76 @@ export async function processSquareDeposit(
     `/bookings/${bookingId}/deposit/square`,
     { sourceId, verificationToken }
   );
+}
+
+// Customer booking management
+export type CustomerBooking = {
+  id: string;
+  reference: string;
+  status: string;
+  eventDate: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  guests: number;
+  totalAmount: number;
+  depositAmount: number;
+  balanceRemaining: number;
+  partyPackage: {
+    id: string;
+    name: string;
+  };
+  children: Array<{
+    id: string;
+    firstName: string;
+  }>;
+  createdAt: string;
+};
+
+export async function fetchMyBookings() {
+  const response = await apiGet<{ bookings: CustomerBooking[] }>('/bookings');
+  return response.bookings;
+}
+
+export async function cancelMyBooking(bookingId: string) {
+  return apiPatch<{ success: boolean; message: string }, Record<string, never>>(
+    `/bookings/${bookingId}/cancel`,
+    {} as Record<string, never>
+  );
+}
+
+export async function rescheduleMyBooking(
+  bookingId: string,
+  eventDate: string,
+  startTime: string
+) {
+  return apiPatch<{
+    success: boolean;
+    message: string;
+    booking: {
+      id: string;
+      eventDate: string;
+      startTime: string;
+      endTime: string;
+    };
+  }, { eventDate: string; startTime: string }>(
+    `/bookings/${bookingId}/reschedule`,
+    { eventDate, startTime }
+  );
+}
+
+// Customer ticket purchases
+export type CustomerTicket = {
+  id: string;
+  type: string;
+  quantity: number;
+  total: number;
+  status: string;
+  createdAt: string;
+  codes: Array<{ code: string; status: string; redeemedAt?: string }>;
+};
+
+export async function fetchMyTickets() {
+  const response = await apiGet<{ tickets: CustomerTicket[] }>('/tickets');
+  return response.tickets;
 }

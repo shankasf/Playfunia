@@ -38,7 +38,70 @@ const CLEANING_BUFFER_MINUTES = 30;
 
 const PARTY_LOCATIONS = ['Albany'] as const;
 
-const DAILY_SLOTS = ['10:00', '12:30', '15:00', '17:30'];
+// Store operating hours by day of week (24-hour format)
+// Slots are every 30 minutes, last slot is 2 hours before closing
+const STORE_HOURS: Record<number, { open: string; close: string }> = {
+  0: { open: '11:00', close: '18:00' }, // Sunday: 11am - 6pm
+  1: { open: '10:00', close: '19:00' }, // Monday: 10am - 7pm
+  2: { open: '10:00', close: '19:00' }, // Tuesday: 10am - 7pm
+  3: { open: '10:00', close: '19:00' }, // Wednesday: 10am - 7pm
+  4: { open: '10:00', close: '19:00' }, // Thursday: 10am - 7pm
+  5: { open: '10:00', close: '20:00' }, // Friday: 10am - 8pm
+  6: { open: '10:00', close: '20:00' }, // Saturday: 10am - 8pm
+};
+
+// Generate 30-minute interval slots from open time to 2 hours before close
+function generateSlots(open: string, close: string): string[] {
+  const slots: string[] = [];
+  const openParts = open.split(':').map(Number);
+  const closeParts = close.split(':').map(Number);
+
+  const openHour = openParts[0] ?? 10;
+  const openMin = openParts[1] ?? 0;
+  const closeHour = closeParts[0] ?? 19;
+  const closeMin = closeParts[1] ?? 0;
+
+  // Last slot is 2 hours before closing
+  const lastSlotHour = closeHour - 2;
+  const lastSlotMin = closeMin;
+
+  let currentHour = openHour;
+  let currentMin = openMin;
+
+  while (
+    currentHour < lastSlotHour ||
+    (currentHour === lastSlotHour && currentMin <= lastSlotMin)
+  ) {
+    slots.push(`${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`);
+    currentMin += 30;
+    if (currentMin >= 60) {
+      currentMin -= 60;
+      currentHour += 1;
+    }
+  }
+
+  return slots;
+}
+
+// Pre-generate slots for each day
+const DAILY_SLOTS_BY_DAY: Record<number, string[]> = {
+  0: generateSlots(STORE_HOURS[0]!.open, STORE_HOURS[0]!.close), // Sunday
+  1: generateSlots(STORE_HOURS[1]!.open, STORE_HOURS[1]!.close), // Monday
+  2: generateSlots(STORE_HOURS[2]!.open, STORE_HOURS[2]!.close), // Tuesday
+  3: generateSlots(STORE_HOURS[3]!.open, STORE_HOURS[3]!.close), // Wednesday
+  4: generateSlots(STORE_HOURS[4]!.open, STORE_HOURS[4]!.close), // Thursday
+  5: generateSlots(STORE_HOURS[5]!.open, STORE_HOURS[5]!.close), // Friday
+  6: generateSlots(STORE_HOURS[6]!.open, STORE_HOURS[6]!.close), // Saturday
+};
+
+// Helper to get slots for a specific day
+function getSlotsForDay(date: DateTime): string[] {
+  const dayOfWeek = date.weekday % 7; // luxon: 1=Mon, 7=Sun -> convert to 0=Sun, 1=Mon, etc.
+  const slots = DAILY_SLOTS_BY_DAY[dayOfWeek];
+  if (slots) return slots;
+  // Fallback to Monday slots
+  return ['10:00', '12:30', '15:00', '17:30'];
+}
 
 // Helper to get cleaning fee from database (with fallback)
 async function getCleaningFee(): Promise<number> {
@@ -114,12 +177,14 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
   const addOnDetails = await buildAddOnDetails(input.addOns);
   const durationMinutes =
     PARTY_DURATION_MINUTES + (addOnDetails.hasExtraHour ? EXTRA_HOUR_MINUTES : 0);
-  const endDateTime = startDateTime.plus({ minutes: durationMinutes });
+  const partyEndDateTime = startDateTime.plus({ minutes: durationMinutes });
+  // Include cleaning time in the scheduled slot (for blocking purposes)
+  const scheduledEndDateTime = partyEndDateTime.plus({ minutes: CLEANING_BUFFER_MINUTES });
 
   await ensureAvailability({
     location: input.location,
     start: startDateTime,
-    end: endDateTime,
+    end: scheduledEndDateTime,
   });
 
   const pricing = await calculateBookingPricing({
@@ -137,12 +202,12 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     package_id: partyPackage.package_id,
     customer_id: guardian.customer_id,
     scheduled_start: startDateTime.toISO(),
-    scheduled_end: endDateTime.toISO(),
+    scheduled_end: scheduledEndDateTime.toISO(),
     reference,
     location_name: input.location,
     event_date: startDateTime.startOf('day').toISODate() ?? undefined,
     start_time: startDateTime.toFormat('HH:mm'),
-    end_time: endDateTime.toFormat('HH:mm'),
+    end_time: partyEndDateTime.toFormat('HH:mm'),
     guests: input.guests,
     notes: input.notes,
     add_ons: addOnDetails.selected,
@@ -220,7 +285,7 @@ export async function cancelBooking(guardianId: string, bookingId: string) {
   }
 
   const booking = await PartyBookingRepository.findById(bookingIdNum);
-  
+
   if (!booking || booking.customer_id !== user.customer_id) {
     throw new AppError('Booking not found', 404);
   }
@@ -229,13 +294,112 @@ export async function cancelBooking(guardianId: string, bookingId: string) {
     throw new AppError('Booking already cancelled', 400);
   }
 
-  await PartyBookingRepository.update(bookingIdNum, { status: 'Cancelled' });
+  // Use atomic update with status condition to prevent race conditions
+  const updated = await PartyBookingRepository.updateWithCondition(
+    bookingIdNum,
+    { status: 'Cancelled' },
+    { status: { neq: 'Cancelled' } }
+  );
+
+  if (!updated) {
+    throw new AppError('Booking was already cancelled or modified', 409);
+  }
 
   publishAdminEvent('booking.cancelled', { bookingId: booking.booking_id });
 
   return {
     bookingId: String(booking.booking_id),
     status: 'Cancelled',
+  };
+}
+
+export async function rescheduleBooking(
+  guardianId: string,
+  bookingId: string,
+  newEventDate: string,
+  newStartTime: string,
+) {
+  const userId = parseInt(guardianId, 10);
+  const bookingIdNum = parseInt(bookingId, 10);
+
+  if (isNaN(userId) || isNaN(bookingIdNum)) {
+    throw new AppError('Invalid IDs', 400);
+  }
+
+  const user = await UserRepository.findById(userId);
+  if (!user?.customer_id) {
+    throw new AppError('User not found', 404);
+  }
+
+  const booking = await PartyBookingRepository.findById(bookingIdNum);
+
+  if (!booking || booking.customer_id !== user.customer_id) {
+    throw new AppError('Booking not found', 404);
+  }
+
+  if (booking.status === 'Cancelled') {
+    throw new AppError('Cannot reschedule a cancelled booking', 400);
+  }
+
+  // Validate new date/time
+  const newStart = combineDateAndTime(new Date(newEventDate), newStartTime);
+  if (!newStart.isValid) {
+    throw new AppError('Invalid date or time', 400);
+  }
+
+  // Check if new slot is in the future
+  if (newStart <= DateTime.now()) {
+    throw new AppError('New date must be in the future', 400);
+  }
+
+  // Calculate duration based on booking's package
+  const pkg = booking.party_packages;
+  const baseDuration = pkg?.duration_minutes ?? PARTY_DURATION_MINUTES;
+  // Check if booking has extra hour add-on
+  const addOns = (booking.add_ons ?? []) as Array<{ productName?: string }>;
+  const hasExtraHour = addOns.some((a) => a.productName?.toLowerCase().includes('extra hour'));
+  const totalDuration = baseDuration + (hasExtraHour ? EXTRA_HOUR_MINUTES : 0) + CLEANING_BUFFER_MINUTES;
+
+  const newEnd = newStart.plus({ minutes: totalDuration });
+
+  // Check availability (ignore current booking)
+  const available = await isSlotAvailable({
+    location: booking.location ?? 'Main',
+    start: newStart,
+    end: newEnd,
+    ignoreBookingId: bookingIdNum,
+  });
+
+  if (!available) {
+    throw new AppError('The selected time slot is not available. Please choose a different time.', 400);
+  }
+
+  // Calculate new end times
+  const partyEnd = newStart.plus({ minutes: baseDuration + (hasExtraHour ? EXTRA_HOUR_MINUTES : 0) });
+  const scheduledEnd = partyEnd.plus({ minutes: CLEANING_BUFFER_MINUTES });
+
+  // Update booking
+  await PartyBookingRepository.update(bookingIdNum, {
+    event_date: newEventDate,
+    start_time: newStartTime,
+    end_time: partyEnd.toFormat('HH:mm'),
+    scheduled_start: newStart.toISO(),
+    scheduled_end: scheduledEnd.toISO(),
+  });
+
+  publishAdminEvent('booking.rescheduled', {
+    bookingId: booking.booking_id,
+    oldDate: booking.event_date,
+    newDate: newEventDate,
+    newTime: newStartTime,
+  });
+
+  return {
+    bookingId: String(booking.booking_id),
+    eventDate: newEventDate,
+    startTime: newStartTime,
+    endTime: partyEnd.toFormat('HH:mm'),
+    message: 'Booking rescheduled successfully',
   };
 }
 
@@ -248,7 +412,8 @@ export async function checkBookingAvailability(
     throw new AppError('Invalid start time', 400);
   }
 
-  const duration = PARTY_DURATION_MINUTES;
+  // Include cleaning time (30 min) in availability check
+  const duration = PARTY_DURATION_MINUTES + CLEANING_BUFFER_MINUTES;
   const end = start.plus({ minutes: duration });
 
   const ignoreBookingId = input.ignoreBookingId ? parseInt(input.ignoreBookingId, 10) : undefined;
@@ -256,7 +421,7 @@ export async function checkBookingAvailability(
     location: input.location,
     start,
     end,
-    ignoreBookingId: isNaN(ignoreBookingId ?? NaN) ? undefined : ignoreBookingId,
+    ignoreBookingId: (ignoreBookingId != null && !isNaN(ignoreBookingId)) ? ignoreBookingId : undefined,
   });
 
   return { available };
@@ -272,15 +437,18 @@ export async function listAvailableSlots(query: BookingSlotsQuery) {
     throw new AppError('Invalid event date', 400);
   }
 
-  const slots = await Promise.all(
-    DAILY_SLOTS.map(async startTime => {
-      const start = combineDateAndTime(date.toJSDate(), startTime);
-      const end = start.plus({ minutes: PARTY_DURATION_MINUTES });
-      const extendedEnd = end.plus({ minutes: EXTRA_HOUR_MINUTES });
+  const dailySlots = getSlotsForDay(date);
 
-      const available = await isSlotAvailable({ location: query.location, start, end });
+  const slots = await Promise.all(
+    dailySlots.map(async startTime => {
+      const start = combineDateAndTime(date.toJSDate(), startTime);
+      // Include cleaning time (30 min) in availability check
+      const endWithCleaning = start.plus({ minutes: PARTY_DURATION_MINUTES + CLEANING_BUFFER_MINUTES });
+      const extendedEndWithCleaning = start.plus({ minutes: PARTY_DURATION_MINUTES + EXTRA_HOUR_MINUTES + CLEANING_BUFFER_MINUTES });
+
+      const available = await isSlotAvailable({ location: query.location, start, end: endWithCleaning });
       const supportsExtraHour =
-        available && (await isSlotAvailable({ location: query.location, start, end: extendedEnd }));
+        available && (await isSlotAvailable({ location: query.location, start, end: extendedEndWithCleaning }));
 
       return {
         startTime,
@@ -333,7 +501,8 @@ export async function estimateBookingPrice(input: BookingEstimateInput) {
 }
 
 export async function listAllBookings() {
-  const bookings = await PartyBookingRepository.findAll();
+  // Only return bookings that have been paid (not still in cart)
+  const bookings = await PartyBookingRepository.findAll({ paidOnly: true });
 
   return bookings.map(b => ({
     id: String(b.booking_id),
@@ -482,9 +651,6 @@ async function isSlotAvailable(options: {
     return false;
   }
 
-  const bufferStart = options.start.minus({ minutes: CLEANING_BUFFER_MINUTES });
-  const bufferEnd = options.end.plus({ minutes: CLEANING_BUFFER_MINUTES });
-
   const eventDate = options.start.toISODate();
   if (!eventDate) return false;
 
@@ -494,22 +660,21 @@ async function isSlotAvailable(options: {
     options.ignoreBookingId
   );
 
+  // Note: scheduled_end already includes cleaning time (30 min buffer),
+  // so we compare directly without adding extra buffers
   return bookings.every(booking => {
-    if (!booking.event_date || !booking.start_time || !booking.end_time) {
+    if (!booking.scheduled_start || !booking.scheduled_end) {
       return true; // Skip incomplete bookings
     }
-    
-    const bookingStart = combineDateAndTime(new Date(booking.event_date), booking.start_time);
-    const bookingEnd = combineDateAndTime(new Date(booking.event_date), booking.end_time);
-    
+
+    const bookingStart = DateTime.fromISO(booking.scheduled_start);
+    const bookingEnd = DateTime.fromISO(booking.scheduled_end);
+
     if (!bookingStart.isValid || !bookingEnd.isValid) {
       return true;
     }
-    
-    const bookingBufferedStart = bookingStart.minus({ minutes: CLEANING_BUFFER_MINUTES });
-    const bookingBufferedEnd = bookingEnd.plus({ minutes: CLEANING_BUFFER_MINUTES });
-    
-    return !isOverlapping(bufferStart, bufferEnd, bookingBufferedStart, bookingBufferedEnd);
+
+    return !isOverlapping(options.start, options.end, bookingStart, bookingEnd);
   });
 }
 
@@ -565,10 +730,9 @@ async function calculateBookingPricing(params: {
 
   const subtotal = params.partyPackage.basePrice + extraGuestTotal + addOnTotal;
   const total = subtotal + cleaningFee;
-  // Calculate deposit based on configurable percentage from database
-  const depositCents = Math.round((total * 100 * depositPercentage) / 100);
-  const depositAmount = depositCents / 100;
-  const balanceRemaining = Math.max(total - depositAmount, 0);
+  // Full payment required - no deposits
+  const depositAmount = total;
+  const balanceRemaining = 0;
 
   return {
     subtotal,
@@ -676,12 +840,14 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
   const addOnDetails = await buildAddOnDetails(input.addOns);
   const durationMinutes =
     PARTY_DURATION_MINUTES + (addOnDetails.hasExtraHour ? EXTRA_HOUR_MINUTES : 0);
-  const endDateTime = startDateTime.plus({ minutes: durationMinutes });
+  const partyEndDateTime = startDateTime.plus({ minutes: durationMinutes });
+  // Include cleaning time in the scheduled slot (for blocking purposes)
+  const scheduledEndDateTime = partyEndDateTime.plus({ minutes: CLEANING_BUFFER_MINUTES });
 
   await ensureAvailability({
     location: input.location,
     start: startDateTime,
-    end: endDateTime,
+    end: scheduledEndDateTime,
   });
 
   const pricing = await calculateBookingPricing({
@@ -704,12 +870,12 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
     package_id: partyPackage.package_id,
     customer_id: null, // Guest booking - no customer account yet
     scheduled_start: startDateTime.toISO(),
-    scheduled_end: endDateTime.toISO(),
+    scheduled_end: scheduledEndDateTime.toISO(),
     reference,
     location_name: input.location,
     event_date: startDateTime.startOf('day').toISODate() ?? undefined,
     start_time: startDateTime.toFormat('HH:mm'),
-    end_time: endDateTime.toFormat('HH:mm'),
+    end_time: partyEndDateTime.toFormat('HH:mm'),
     guests: input.guests,
     notes: buildGuestBookingNotes(input),
     add_ons: addOnDetails.selected,

@@ -8,9 +8,11 @@ import {
   verifyOTPSchema,
   resetPasswordSchema,
 } from '../schemas/auth.schema';
-import { loginUser, registerUser, resetUserPassword } from '../services/auth.service';
+import { loginUser, prepareRegistration, createVerifiedUser, resetUserPassword } from '../services/auth.service';
+import { UserRepository } from '../repositories';
 import {
   sendEmailVerificationOTP,
+  sendRegistrationOTP,
   verifyEmailOTP,
   sendPasswordResetOTPEmail,
   verifyPasswordResetOTP,
@@ -20,14 +22,20 @@ import { asyncHandler } from '../utils/async-handler';
 
 export const registerHandler = asyncHandler(async (req: Request, res: Response) => {
   const parsed = parseWithSchema(registerSchema, req.body);
-  const result = await registerUser(parsed);
 
-  // Send verification OTP after registration
-  await sendEmailVerificationOTP(parsed.email, parsed.firstName);
+  // Prepare registration data (validates email doesn't exist, hashes password)
+  const registrationData = await prepareRegistration(parsed);
 
-  return res.status(201).json({
-    ...result,
-    message: 'Registration successful. Please verify your email with the code sent to your inbox.',
+  // Send OTP with pending registration data - account created only after verification
+  const result = await sendRegistrationOTP(parsed.email, registrationData);
+
+  if (!result.success) {
+    throw new AppError(result.message, 500);
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: 'Verification code sent to your email. Please verify to complete registration.',
     emailVerificationRequired: true,
   });
 });
@@ -44,9 +52,19 @@ export const sendOTPHandler = asyncHandler(async (req: Request, res: Response) =
 
   let result;
   if (type === 'password_reset') {
-    result = await sendPasswordResetOTPEmail(email);
+    // Check if user exists before sending password reset OTP
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await UserRepository.findByEmail(normalizedEmail);
+    if (!existingUser) {
+      throw new AppError('No account found with this email address. Please check your email or create a new account.', 404);
+    }
+    // Pass phone number for SMS notification alongside email
+    result = await sendPasswordResetOTPEmail(email, existingUser.first_name, existingUser.phone);
   } else {
-    result = await sendEmailVerificationOTP(email);
+    // For email verification, look up user to get their phone (if they exist)
+    const normalizedEmail = email.trim().toLowerCase();
+    const existingUser = await UserRepository.findByEmail(normalizedEmail);
+    result = await sendEmailVerificationOTP(email, existingUser?.first_name, existingUser?.phone);
   }
 
   if (!result.success) {
@@ -60,17 +78,32 @@ export const sendOTPHandler = asyncHandler(async (req: Request, res: Response) =
 export const verifyOTPHandler = asyncHandler(async (req: Request, res: Response) => {
   const { email, otp, type } = parseWithSchema(verifyOTPSchema, req.body);
 
-  let result;
   if (type === 'password_reset') {
-    result = await verifyPasswordResetOTP(email, otp);
-  } else {
-    result = await verifyEmailOTP(email, otp);
+    const result = await verifyPasswordResetOTP(email, otp);
+    if (!result.success) {
+      throw new AppError(result.message, 400);
+    }
+    return res.status(200).json(result);
   }
+
+  // Email verification
+  const result = await verifyEmailOTP(email, otp);
 
   if (!result.success) {
     throw new AppError(result.message, 400);
   }
 
+  // If this was a new registration, create the user now
+  if (result.registrationData) {
+    const userResult = await createVerifiedUser(result.registrationData);
+    return res.status(201).json({
+      success: true,
+      message: 'Email verified and account created successfully.',
+      ...userResult,
+    });
+  }
+
+  // Just email verification for existing user
   return res.status(200).json(result);
 });
 

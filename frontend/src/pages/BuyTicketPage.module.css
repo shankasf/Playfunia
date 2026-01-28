@@ -113,6 +113,101 @@
   color: #1a265a;
 }
 
+.savings {
+  color: #1aa45d;
+  font-weight: 600;
+  font-size: 0.9em;
+}
+
+.pricingNotes {
+  background: rgba(31, 102, 255, 0.06);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid #1f66ff;
+}
+
+.pricingNotes p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #4b5a7d;
+  line-height: 1.6;
+}
+
+.pricingNotes p:not(:last-child) {
+  margin-bottom: 0.5rem;
+}
+
+/* Extra Adults Section */
+.extraAdultsSection {
+  background: rgba(31, 102, 255, 0.04);
+  border: 1px solid rgba(31, 102, 255, 0.15);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+}
+
+.extraAdultsHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+  color: #1a265a;
+}
+
+.extraAdultsNote {
+  font-weight: 400;
+  font-size: 0.85rem;
+  color: #4b5a7d;
+}
+
+.extraAdultsControls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.adultBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1f66ff, #1a56db);
+  color: #ffffff;
+  font-size: 1.3rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  box-shadow: 0 3px 10px rgba(31, 102, 255, 0.2);
+}
+
+.adultBtn:hover:not(:disabled) {
+  transform: scale(1.08);
+  box-shadow: 0 4px 14px rgba(31, 102, 255, 0.3);
+}
+
+.adultBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.adultCount {
+  min-width: 40px;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a265a;
+}
+
+.adultPrice {
+  margin-left: auto;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1aa45d;
+}
+
 .summary {
   background: rgba(31, 102, 255, 0.08);
   border-radius: 16px;
@@ -435,4 +530,126 @@
 
 .cartLink:hover {
   text-decoration: underline;
+}
+
+/* Cart Summary */
+.cartSummary {
+  margin-top: 1rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, rgba(26, 164, 93, 0.08), rgba(26, 164, 93, 0.04));
+  border: 2px solid rgba(26, 164, 93, 0.2);
+  border-radius: 16px;
+}
+
+.cartSummary h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a265a;
+}
+
+.cartList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.cartItem {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #ffffff;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  color: #1a265a;
+}
+
+.cartItem span:first-child {
+  font-weight: 500;
+}
+
+.cartItem span:nth-child(2) {
+  font-weight: 600;
+  color: #1aa45d;
+}
+
+.removeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(215, 38, 61, 0.1);
+  color: #d7263d;
+  font-size: 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+
+.removeBtn:hover {
+  background: rgba(215, 38, 61, 0.2);
+  transform: scale(1.1);
+}
+
+.cartTotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(26, 164, 93, 0.2);
+  font-weight: 600;
+  color: #1a265a;
+}
+
+.cartTotal span:last-child {
+  font-size: 1.15rem;
+  color: #1aa45d;
+}
+
+.viewCartBtn {
+  display: block;
+  margin-top: 1rem;
+  padding: 0.85rem 1.5rem;
+  background: linear-gradient(135deg, #1aa45d, #158c4e);
+  color: #ffffff;
+  text-align: center;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 12px;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 12px rgba(26, 164, 93, 0.25);
+}
+
+.viewCartBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(26, 164, 93, 0.35);
+}
+
+@media (max-width: 480px) {
+  .cartItem {
+    grid-template-columns: 1fr auto auto;
+    gap: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .removeBtn {
+    width: 26px;
+    height: 26px;
+    font-size: 1rem;
+  }
+
+  .viewCartBtn {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+  }
 }

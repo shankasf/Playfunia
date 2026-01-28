@@ -4,6 +4,23 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { formatDate, formatBirthDate } from '../lib/dateUtils';
 import { fetchMyWaivers, type GuardianWaiver } from '../api/waivers';
+import {
+  formatNameInput,
+  formatPhoneInput,
+  isValidName,
+  isValidEmail,
+  isValidPhone,
+} from '../utils/validation';
+import {
+  fetchMyBookings,
+  fetchMyTickets,
+  cancelMyBooking,
+  rescheduleMyBooking,
+  fetchBookingSlots,
+  type CustomerBooking,
+  type CustomerTicket,
+  type BookingSlot,
+} from '../api/bookings';
 import styles from './AccountPage.module.css';
 import { useAuth } from '../context/AuthContext';
 
@@ -12,12 +29,17 @@ export function AccountPage() {
     user,
     signInWithEmail,
     signUpWithEmail,
+    verifyRegistrationOTP,
     signInWithGoogle,
+    signUpWithGoogle,
     signInWithMagicLink,
-    resetPassword,
+    sendPasswordResetOTP,
+    resetPasswordWithOTP,
     logout,
     isLoading,
     isTeamMember,
+    authError,
+    clearAuthError,
   } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -29,8 +51,14 @@ export function AccountPage() {
     password: '',
     phone: '',
   });
+  const [resetOtp, setResetOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [registerStep, setRegisterStep] = useState<'form' | 'otp'>('form');
+  const [registerOtp, setRegisterOtp] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [resetStep, setResetStep] = useState<'email' | 'otp' | 'password' | 'done'>('email');
   const [status, setStatus] = useState<{
     type: 'error' | 'success' | null;
     message: string | null;
@@ -41,6 +69,30 @@ export function AccountPage() {
   const [submitting, setSubmitting] = useState(false);
   const [latestWaiver, setLatestWaiver] = useState<GuardianWaiver | null>(null);
   const [waiverLoading, setWaiverLoading] = useState(false);
+  const [bookings, setBookings] = useState<CustomerBooking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [tickets, setTickets] = useState<CustomerTicket[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [rescheduleModal, setRescheduleModal] = useState<{
+    open: boolean;
+    booking: CustomerBooking | null;
+    selectedDate: string;
+    selectedTime: string;
+    slots: BookingSlot[];
+    slotsLoading: boolean;
+    submitting: boolean;
+    error: string | null;
+  }>({
+    open: false,
+    booking: null,
+    selectedDate: '',
+    selectedTime: '',
+    slots: [],
+    slotsLoading: false,
+    submitting: false,
+    error: null,
+  });
+  const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
   const redirectTarget = searchParams.get('redirect');
   const safeRedirect = redirectTarget?.startsWith('/') ? redirectTarget : null;
 
@@ -61,6 +113,129 @@ export function AccountPage() {
     }
   }, [user]);
 
+  const loadBookings = useCallback(async () => {
+    if (!user) {
+      setBookings([]);
+      return;
+    }
+    setBookingsLoading(true);
+    try {
+      const data = await fetchMyBookings();
+      setBookings(data);
+    } catch (error) {
+      console.warn('Unable to load bookings', error);
+      setBookings([]);
+    } finally {
+      setBookingsLoading(false);
+    }
+  }, [user]);
+
+  const loadTickets = useCallback(async () => {
+    if (!user) {
+      setTickets([]);
+      return;
+    }
+    setTicketsLoading(true);
+    try {
+      const data = await fetchMyTickets();
+      setTickets(data);
+    } catch (error) {
+      console.warn('Unable to load tickets', error);
+      setTickets([]);
+    } finally {
+      setTicketsLoading(false);
+    }
+  }, [user]);
+
+  const handleCancelBooking = async (bookingId: string) => {
+    if (!window.confirm('Are you sure you want to cancel this booking?')) return;
+    setCancellingBookingId(bookingId);
+    try {
+      await cancelMyBooking(bookingId);
+      await loadBookings();
+    } catch (error) {
+      console.error('Failed to cancel booking', error);
+      alert('Failed to cancel booking. Please try again.');
+    } finally {
+      setCancellingBookingId(null);
+    }
+  };
+
+  const openRescheduleModal = (booking: CustomerBooking) => {
+    setRescheduleModal({
+      open: true,
+      booking,
+      selectedDate: '',
+      selectedTime: '',
+      slots: [],
+      slotsLoading: false,
+      submitting: false,
+      error: null,
+    });
+  };
+
+  const closeRescheduleModal = () => {
+    setRescheduleModal({
+      open: false,
+      booking: null,
+      selectedDate: '',
+      selectedTime: '',
+      slots: [],
+      slotsLoading: false,
+      submitting: false,
+      error: null,
+    });
+  };
+
+  const handleRescheduleDateChange = async (date: string) => {
+    if (!rescheduleModal.booking) return;
+    setRescheduleModal((prev) => ({
+      ...prev,
+      selectedDate: date,
+      selectedTime: '',
+      slotsLoading: true,
+      error: null,
+    }));
+    try {
+      const response = await fetchBookingSlots({
+        location: rescheduleModal.booking.location,
+        eventDate: date,
+      });
+      setRescheduleModal((prev) => ({
+        ...prev,
+        slots: response.slots,
+        slotsLoading: false,
+      }));
+    } catch (error) {
+      console.error('Failed to load slots', error);
+      setRescheduleModal((prev) => ({
+        ...prev,
+        slots: [],
+        slotsLoading: false,
+        error: 'Failed to load available times.',
+      }));
+    }
+  };
+
+  const handleRescheduleSubmit = async () => {
+    if (!rescheduleModal.booking || !rescheduleModal.selectedDate || !rescheduleModal.selectedTime) {
+      return;
+    }
+    setRescheduleModal((prev) => ({ ...prev, submitting: true, error: null }));
+    try {
+      await rescheduleMyBooking(
+        rescheduleModal.booking.id,
+        rescheduleModal.selectedDate,
+        rescheduleModal.selectedTime
+      );
+      closeRescheduleModal();
+      await loadBookings();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to reschedule booking.';
+      setRescheduleModal((prev) => ({ ...prev, submitting: false, error: message }));
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     if (safeRedirect) {
@@ -75,12 +250,44 @@ export function AccountPage() {
   useEffect(() => {
     if (user) {
       loadLatestWaiver();
+      loadBookings();
+      loadTickets();
     }
-  }, [user, loadLatestWaiver]);
+  }, [user, loadLatestWaiver, loadBookings, loadTickets]);
+
+  // Reset registration state when user logs out
+  useEffect(() => {
+    if (!user && !isLoading) {
+      setRegisterStep('form');
+      setRegisterOtp('');
+      setResetStep('email');
+      setResetOtp('');
+      setResetSent(false);
+      setMagicLinkSent(false);
+      setStatus({ type: null, message: null });
+    }
+  }, [user, isLoading]);
+
+  // Show auth error from context (e.g., when Google sign-in fails for new user)
+  useEffect(() => {
+    if (authError) {
+      setStatus({ type: 'error', message: authError });
+      setSubmitting(false);
+      // Clear the auth error after showing it
+      clearAuthError();
+    }
+  }, [authError, clearAuthError]);
 
   const handleChange =
     (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: event.target.value }));
+      let value = event.target.value;
+      // Apply formatting for specific fields
+      if (field === 'firstName' || field === 'lastName') {
+        value = formatNameInput(value);
+      } else if (field === 'phone') {
+        value = formatPhoneInput(value);
+      }
+      setForm((prev) => ({ ...prev, [field]: value }));
     };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -90,19 +297,84 @@ export function AccountPage() {
 
     try {
       if (mode === 'login') {
+        // Validate email format
+        if (!isValidEmail(form.email)) {
+          setStatus({ type: 'error', message: 'Please enter a valid email address.' });
+          return;
+        }
         await signInWithEmail(form.email, form.password);
         setStatus({ type: 'success', message: 'Welcome back!' });
       } else if (mode === 'register') {
-        await signUpWithEmail({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          email: form.email,
-          password: form.password,
-          phone: form.phone || undefined,
-        });
-        setStatus({ type: 'success', message: 'Account created! Check your email to verify.' });
+        if (registerStep === 'form') {
+          // Validate all registration fields
+          if (!form.firstName.trim()) {
+            setStatus({ type: 'error', message: 'First name is required.' });
+            return;
+          }
+          if (!isValidName(form.firstName)) {
+            setStatus({ type: 'error', message: 'First name can only contain letters, spaces, hyphens, and apostrophes.' });
+            return;
+          }
+          if (!form.lastName.trim()) {
+            setStatus({ type: 'error', message: 'Last name is required.' });
+            return;
+          }
+          if (!isValidName(form.lastName)) {
+            setStatus({ type: 'error', message: 'Last name can only contain letters, spaces, hyphens, and apostrophes.' });
+            return;
+          }
+          if (!isValidEmail(form.email)) {
+            setStatus({ type: 'error', message: 'Please enter a valid email address.' });
+            return;
+          }
+          if (form.password.length < 8) {
+            setStatus({ type: 'error', message: 'Password must be at least 8 characters.' });
+            return;
+          }
+          if (form.phone && !isValidPhone(form.phone)) {
+            setStatus({ type: 'error', message: 'Please enter a valid 10-digit phone number.' });
+            return;
+          }
+          // Step 1: Submit registration form, send OTP
+          const result = await signUpWithEmail({
+            firstName: form.firstName.trim(),
+            lastName: form.lastName.trim(),
+            email: form.email.trim(),
+            password: form.password,
+            phone: form.phone || undefined,
+          });
+          if (result.requiresVerification) {
+            setRegisterStep('otp');
+            setStatus({ type: 'success', message: 'Verification code sent to your email.' });
+          }
+        } else if (registerStep === 'otp') {
+          // Step 2: Verify OTP, create account, and sign in
+          if (registerOtp.length !== 6) {
+            setStatus({ type: 'error', message: 'Please enter the 6-digit code.' });
+            return;
+          }
+          const result = await verifyRegistrationOTP(form.email, registerOtp, form.password);
+          if (result.success) {
+            if (result.needsSignIn) {
+              // Account created but needs manual sign in
+              setMode('login');
+              setRegisterStep('form');
+              setRegisterOtp('');
+              setStatus({ type: 'success', message: 'Account created! Please sign in with your credentials.' });
+            } else {
+              // Successfully signed in - will redirect via useEffect
+              setStatus({ type: 'success', message: 'Account created successfully! Welcome!' });
+            }
+          } else {
+            setStatus({ type: 'error', message: result.message });
+          }
+        }
       } else if (mode === 'magic-link') {
-        const result = await signInWithMagicLink(form.email);
+        if (!isValidEmail(form.email)) {
+          setStatus({ type: 'error', message: 'Please enter a valid email address.' });
+          return;
+        }
+        const result = await signInWithMagicLink(form.email.trim());
         if (result.success) {
           setMagicLinkSent(true);
           setStatus({ type: 'success', message: result.message });
@@ -110,12 +382,44 @@ export function AccountPage() {
           setStatus({ type: 'error', message: result.message });
         }
       } else if (mode === 'forgot-password') {
-        const result = await resetPassword(form.email);
-        if (result.success) {
-          setResetSent(true);
-          setStatus({ type: 'success', message: result.message });
-        } else {
-          setStatus({ type: 'error', message: result.message });
+        if (resetStep === 'email') {
+          if (!isValidEmail(form.email)) {
+            setStatus({ type: 'error', message: 'Please enter a valid email address.' });
+            return;
+          }
+          // Step 1: Send OTP to email
+          const result = await sendPasswordResetOTP(form.email.trim());
+          if (result.success) {
+            setResetStep('otp');
+            setStatus({ type: 'success', message: 'Verification code sent to your email.' });
+          } else {
+            setStatus({ type: 'error', message: result.message });
+          }
+        } else if (resetStep === 'otp') {
+          // Step 2: Verify OTP - move to password step
+          if (resetOtp.length !== 6) {
+            setStatus({ type: 'error', message: 'Please enter the 6-digit code.' });
+            return;
+          }
+          setResetStep('password');
+          setStatus({ type: null, message: null });
+        } else if (resetStep === 'password') {
+          // Step 3: Reset password with OTP
+          if (newPassword.length < 8) {
+            setStatus({ type: 'error', message: 'Password must be at least 8 characters.' });
+            return;
+          }
+          if (newPassword !== confirmNewPassword) {
+            setStatus({ type: 'error', message: 'Passwords do not match.' });
+            return;
+          }
+          const result = await resetPasswordWithOTP(form.email, resetOtp, newPassword);
+          if (result.success) {
+            setResetStep('done');
+            setStatus({ type: 'success', message: 'Password reset successfully!' });
+          } else {
+            setStatus({ type: 'error', message: result.message });
+          }
         }
       }
     } catch (error) {
@@ -138,13 +442,19 @@ export function AccountPage() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
+  const handleGoogleAuth = async () => {
     setSubmitting(true);
     setStatus({ type: null, message: null });
     try {
-      await signInWithGoogle();
+      if (mode === 'register') {
+        // Sign-up flow: allows creating new users with Google profile name
+        await signUpWithGoogle();
+      } else {
+        // Sign-in flow: requires existing account
+        await signInWithGoogle();
+      }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Google sign-in failed';
+      const message = error instanceof Error ? error.message : 'Google authentication failed';
       setStatus({ type: 'error', message });
       setSubmitting(false);
     }
@@ -415,6 +725,272 @@ export function AccountPage() {
               )}
             </div>
           </div>
+
+          {/* My Bookings Section */}
+          <div className={styles.card}>
+            <div className={styles.cardHeader}>
+              <h2>My Bookings</h2>
+              <a href="/book-party" className={styles.cardHeaderLink}>Book a Party</a>
+            </div>
+            <div className={styles.cardBody}>
+              {bookingsLoading ? (
+                <div className={styles.loadingState}>Loading your bookings...</div>
+              ) : bookings.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p>No bookings yet</p>
+                  <p className={styles.emptyStateHint}>Book a party for your little one</p>
+                  <PrimaryButton to="/book-party">Book a Party</PrimaryButton>
+                </div>
+              ) : (
+                <div className={styles.bookingsList}>
+                  {bookings.map((booking) => {
+                    const eventDate = new Date(booking.eventDate);
+                    const isPast = eventDate < new Date();
+                    const isCancelled = booking.status === 'Cancelled';
+                    const canModify = !isPast && !isCancelled;
+
+                    return (
+                      <div
+                        key={booking.id}
+                        className={styles.bookingCard}
+                        data-status={isCancelled ? 'cancelled' : isPast ? 'past' : 'upcoming'}
+                      >
+                        <div className={styles.bookingHeader}>
+                          <div className={styles.bookingRef}>
+                            <span className={styles.bookingRefLabel}>Ref:</span>
+                            <span className={styles.bookingRefValue}>{booking.reference}</span>
+                          </div>
+                          <span
+                            className={styles.bookingStatus}
+                            data-status={isCancelled ? 'cancelled' : isPast ? 'completed' : booking.status.toLowerCase()}
+                          >
+                            {isCancelled ? 'Cancelled' : isPast ? 'Completed' : booking.status}
+                          </span>
+                        </div>
+
+                        <div className={styles.bookingDetails}>
+                          <div className={styles.bookingPackage}>{booking.partyPackage.name}</div>
+                          <div className={styles.bookingInfo}>
+                            <div className={styles.bookingInfoItem}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <span>
+                                {eventDate.toLocaleDateString('en-US', {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                            <div className={styles.bookingInfoItem}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M12 6v6l4 2" />
+                              </svg>
+                              <span>{booking.startTime} - {booking.endTime}</span>
+                            </div>
+                            <div className={styles.bookingInfoItem}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              <span>{booking.location}</span>
+                            </div>
+                            <div className={styles.bookingInfoItem}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                              </svg>
+                              <span>{booking.guests} guests</span>
+                            </div>
+                          </div>
+                          {(booking.balanceRemaining ?? 0) > 0 && !isCancelled && (
+                            <div className={styles.bookingBalance}>
+                              Balance due: ${(booking.balanceRemaining ?? 0).toFixed(2)}
+                            </div>
+                          )}
+                        </div>
+
+                        {canModify && (
+                          <div className={styles.bookingActions}>
+                            <button
+                              type="button"
+                              className={styles.bookingActionBtn}
+                              onClick={() => openRescheduleModal(booking)}
+                            >
+                              Reschedule
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.bookingActionBtn} ${styles.cancelBtn}`}
+                              onClick={() => handleCancelBooking(booking.id)}
+                              disabled={cancellingBookingId === booking.id}
+                            >
+                              {cancellingBookingId === booking.id ? 'Cancelling...' : 'Cancel'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* My Tickets Section */}
+          <div className={styles.card}>
+            <div className={styles.cardHeader}>
+              <h2>My Tickets</h2>
+              <a href="/buy-ticket" className={styles.cardHeaderLink}>Buy Tickets</a>
+            </div>
+            <div className={styles.cardBody}>
+              {ticketsLoading ? (
+                <div className={styles.loadingState}>Loading your tickets...</div>
+              ) : tickets.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <p>No tickets purchased yet</p>
+                  <p className={styles.emptyStateHint}>Get play passes for your little ones</p>
+                  <PrimaryButton to="/buy-ticket">Buy Tickets</PrimaryButton>
+                </div>
+              ) : (
+                <div className={styles.ticketsList}>
+                  {tickets.map((ticket) => {
+                    const redeemedCount = ticket.codes.filter(c => c.status === 'redeemed').length;
+                    const allRedeemed = redeemedCount === ticket.codes.length;
+
+                    return (
+                      <div key={ticket.id} className={styles.ticketCard}>
+                        <div className={styles.ticketHeader}>
+                          <div className={styles.ticketType}>{ticket.type}</div>
+                          <span
+                            className={styles.ticketStatus}
+                            data-status={allRedeemed ? 'redeemed' : 'active'}
+                          >
+                            {allRedeemed ? 'All Used' : `${redeemedCount}/${ticket.codes.length} Used`}
+                          </span>
+                        </div>
+                        <div className={styles.ticketDetails}>
+                          <div className={styles.ticketInfo}>
+                            <span className={styles.ticketQuantity}>{ticket.quantity} admission(s)</span>
+                            <span className={styles.ticketTotal}>${(ticket.total ?? 0).toFixed(2)}</span>
+                          </div>
+                          <div className={styles.ticketCodes}>
+                            {ticket.codes.map((code) => (
+                              <div
+                                key={code.code}
+                                className={`${styles.ticketCode} ${code.status === 'redeemed' ? styles.ticketCodeRedeemed : styles.ticketCodeUnused}`}
+                              >
+                                <span className={styles.ticketCodeText}>{code.code}</span>
+                                {code.status === 'redeemed' && code.redeemedAt && (
+                                  <span className={styles.ticketCodeDate}>
+                                    Used {formatDate(code.redeemedAt)}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          <div className={styles.ticketPurchaseDate}>
+                            Purchased: {formatDate(ticket.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Reschedule Modal */}
+          {rescheduleModal.open && rescheduleModal.booking && (
+            <div className={styles.modalOverlay} onClick={closeRescheduleModal}>
+              <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <h3>Reschedule Booking</h3>
+                  <button
+                    type="button"
+                    className={styles.modalClose}
+                    onClick={closeRescheduleModal}
+                  >
+                    &times;
+                  </button>
+                </div>
+                <div className={styles.modalBody}>
+                  <p className={styles.modalSubtitle}>
+                    Current: {new Date(rescheduleModal.booking.eventDate).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })} at {rescheduleModal.booking.startTime}
+                  </p>
+
+                  <label className={styles.modalLabel}>
+                    New Date
+                    <input
+                      type="date"
+                      value={rescheduleModal.selectedDate}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={(e) => handleRescheduleDateChange(e.target.value)}
+                      className={styles.modalInput}
+                    />
+                  </label>
+
+                  {rescheduleModal.selectedDate && (
+                    <div className={styles.slotsSection}>
+                      <label className={styles.modalLabel}>Available Times</label>
+                      {rescheduleModal.slotsLoading ? (
+                        <p className={styles.slotsLoading}>Loading available times...</p>
+                      ) : rescheduleModal.slots.length === 0 ? (
+                        <p className={styles.noSlots}>No available times for this date.</p>
+                      ) : (
+                        <div className={styles.slotsGrid}>
+                          {rescheduleModal.slots
+                            .filter((slot) => slot.available)
+                            .map((slot) => (
+                              <button
+                                key={slot.startTime}
+                                type="button"
+                                className={`${styles.slotBtn} ${rescheduleModal.selectedTime === slot.startTime ? styles.slotBtnSelected : ''}`}
+                                onClick={() => setRescheduleModal((prev) => ({ ...prev, selectedTime: slot.startTime }))}
+                              >
+                                {slot.startTime}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {rescheduleModal.error && (
+                    <p className={styles.error}>{rescheduleModal.error}</p>
+                  )}
+                </div>
+                <div className={styles.modalFooter}>
+                  <button
+                    type="button"
+                    className={styles.modalCancelBtn}
+                    onClick={closeRescheduleModal}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.modalSubmitBtn}
+                    onClick={handleRescheduleSubmit}
+                    disabled={
+                      rescheduleModal.submitting ||
+                      !rescheduleModal.selectedDate ||
+                      !rescheduleModal.selectedTime
+                    }
+                  >
+                    {rescheduleModal.submitting ? 'Rescheduling...' : 'Confirm Reschedule'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
     );
@@ -447,24 +1023,31 @@ export function AccountPage() {
     );
   }
 
-  // Password reset sent view
-  if (mode === 'forgot-password' && resetSent) {
+  // Password reset done view
+  if (mode === 'forgot-password' && resetStep === 'done') {
     return (
       <section className={styles.section}>
         <div className={styles.loginCard}>
           <div className={styles.successMessage}>
             <div className={styles.successIcon}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h2>Check your email</h2>
-            <p>We sent a password reset link to <strong>{form.email}</strong></p>
-            <p className={styles.hintText}>Click the link in the email to reset your password.</p>
+            <h2>Password Reset!</h2>
+            <p>Your password has been successfully reset.</p>
+            <p className={styles.hintText}>You can now sign in with your new password.</p>
             <button
               type="button"
               className={styles.linkButton}
-              onClick={() => { setResetSent(false); setMode('login'); }}
+              onClick={() => {
+                setResetStep('email');
+                setResetOtp('');
+                setNewPassword('');
+                setConfirmNewPassword('');
+                setMode('login');
+                setStatus({ type: null, message: null });
+              }}
             >
               Back to sign in
             </button>
@@ -483,25 +1066,25 @@ export function AccountPage() {
             <div className={styles.switcher}>
               <button
                 className={mode === 'login' ? styles.activeTab : styles.tab}
-                onClick={() => setMode('login')}
+                onClick={() => { setMode('login'); setRegisterStep('form'); setRegisterOtp(''); setStatus({ type: null, message: null }); }}
                 type="button"
               >
                 Sign in
               </button>
               <button
                 className={mode === 'register' ? styles.activeTab : styles.tab}
-                onClick={() => setMode('register')}
+                onClick={() => { setMode('register'); setRegisterStep('form'); setRegisterOtp(''); setStatus({ type: null, message: null }); }}
                 type="button"
               >
                 Create account
               </button>
             </div>
 
-            {/* Google Sign In Button */}
+            {/* Google Auth Button */}
             <button
               type="button"
               className={styles.googleButton}
-              onClick={handleGoogleSignIn}
+              onClick={handleGoogleAuth}
               disabled={submitting}
             >
               <svg viewBox="0 0 24 24" width="20" height="20">
@@ -510,7 +1093,7 @@ export function AccountPage() {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
               </svg>
-              Continue with Google
+              {mode === 'register' ? 'Sign up with Google' : 'Sign in with Google'}
             </button>
 
             <div className={styles.divider}>
@@ -530,12 +1113,17 @@ export function AccountPage() {
         {mode === 'forgot-password' && (
           <div className={styles.modeHeader}>
             <h2>Reset your password</h2>
-            <p>Enter your email and we'll send you a reset link.</p>
+            <p>
+              {resetStep === 'email' && 'Enter your email and we\'ll send you a verification code.'}
+              {resetStep === 'otp' && `Enter the 6-digit code sent to ${form.email}`}
+              {resetStep === 'password' && 'Create your new password.'}
+            </p>
           </div>
         )}
 
         <form className={styles.form} onSubmit={handleSubmit}>
-          {mode === 'register' && (
+          {/* Registration form fields - only shown in form step */}
+          {mode === 'register' && registerStep === 'form' && (
             <div className={styles.grid}>
               <label>
                 First name
@@ -558,18 +1146,90 @@ export function AccountPage() {
             </div>
           )}
 
-          <label>
-            Email address
-            <input
-              type="email"
-              value={form.email}
-              onChange={handleChange('email')}
-              required
-              autoComplete="email"
-            />
-          </label>
+          {/* Email field - shown for login, register (form step), magic-link, and forgot-password (email step) */}
+          {(mode === 'login' || mode === 'magic-link' || (mode === 'register' && registerStep === 'form') || (mode === 'forgot-password' && resetStep === 'email')) && (
+            <label>
+              Email address
+              <input
+                type="email"
+                value={form.email}
+                onChange={handleChange('email')}
+                required
+                autoComplete="email"
+              />
+            </label>
+          )}
 
-          {(mode === 'login' || mode === 'register') && (
+          {/* OTP field - shown for registration OTP step */}
+          {mode === 'register' && registerStep === 'otp' && (
+            <>
+              <p style={{ marginBottom: '1rem', color: '#666' }}>
+                We sent a verification code to <strong>{form.email}</strong>
+              </p>
+              <label>
+                Verification Code
+                <input
+                  type="text"
+                  value={registerOtp}
+                  onChange={(e) => setRegisterOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  required
+                  maxLength={6}
+                  placeholder="Enter 6-digit code"
+                  autoComplete="one-time-code"
+                  style={{ letterSpacing: '0.3em', textAlign: 'center' }}
+                />
+              </label>
+            </>
+          )}
+
+          {/* OTP field - shown for forgot-password OTP step */}
+          {mode === 'forgot-password' && resetStep === 'otp' && (
+            <label>
+              Verification Code
+              <input
+                type="text"
+                value={resetOtp}
+                onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                required
+                maxLength={6}
+                placeholder="Enter 6-digit code"
+                autoComplete="one-time-code"
+                style={{ letterSpacing: '0.3em', textAlign: 'center' }}
+              />
+            </label>
+          )}
+
+          {/* New password fields - shown for forgot-password password step */}
+          {mode === 'forgot-password' && resetStep === 'password' && (
+            <>
+              <label>
+                New Password
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  placeholder="At least 8 characters"
+                />
+              </label>
+              <label>
+                Confirm New Password
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  placeholder="Confirm your new password"
+                />
+              </label>
+            </>
+          )}
+
+          {(mode === 'login' || (mode === 'register' && registerStep === 'form')) && (
             <label>
               Password
               <input
@@ -583,7 +1243,7 @@ export function AccountPage() {
             </label>
           )}
 
-          {mode === 'register' && (
+          {mode === 'register' && registerStep === 'form' && (
             <label>
               Phone (optional)
               <input value={form.phone} onChange={handleChange('phone')} autoComplete="tel" />
@@ -596,10 +1256,18 @@ export function AccountPage() {
               : mode === 'login'
                 ? 'Sign in'
                 : mode === 'register'
-                  ? 'Create account'
+                  ? registerStep === 'form'
+                    ? 'Create account'
+                    : 'Verify & Complete Registration'
                   : mode === 'magic-link'
                     ? 'Send magic link'
-                    : 'Send reset link'}
+                    : mode === 'forgot-password'
+                      ? resetStep === 'email'
+                        ? 'Send verification code'
+                        : resetStep === 'otp'
+                          ? 'Verify code'
+                          : 'Reset password'
+                      : 'Submit'}
           </PrimaryButton>
 
           {status.message ? (
@@ -630,7 +1298,7 @@ export function AccountPage() {
           </div>
         )}
 
-        {(mode === 'magic-link' || mode === 'forgot-password') && (
+        {mode === 'magic-link' && (
           <div className={styles.footerLinks}>
             <button
               type="button"
@@ -639,6 +1307,58 @@ export function AccountPage() {
             >
               Back to sign in
             </button>
+          </div>
+        )}
+
+        {mode === 'forgot-password' && (
+          <div className={styles.footerLinks}>
+            {resetStep === 'email' && (
+              <button
+                type="button"
+                className={styles.linkButton}
+                onClick={() => { setMode('login'); setStatus({ type: null, message: null }); }}
+              >
+                Back to sign in
+              </button>
+            )}
+            {resetStep === 'otp' && (
+              <>
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={() => { setResetStep('email'); setResetOtp(''); setStatus({ type: null, message: null }); }}
+                >
+                  Change email
+                </button>
+                <span className={styles.linkDivider}>|</span>
+                <button
+                  type="button"
+                  className={styles.linkButton}
+                  onClick={async () => {
+                    setSubmitting(true);
+                    const result = await sendPasswordResetOTP(form.email);
+                    setSubmitting(false);
+                    if (result.success) {
+                      setStatus({ type: 'success', message: 'New code sent!' });
+                    } else {
+                      setStatus({ type: 'error', message: result.message });
+                    }
+                  }}
+                  disabled={submitting}
+                >
+                  Resend code
+                </button>
+              </>
+            )}
+            {resetStep === 'password' && (
+              <button
+                type="button"
+                className={styles.linkButton}
+                onClick={() => { setResetStep('otp'); setStatus({ type: null, message: null }); }}
+              >
+                Back to code entry
+              </button>
+            )}
           </div>
         )}
 

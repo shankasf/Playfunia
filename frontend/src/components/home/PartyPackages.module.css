@@ -116,7 +116,7 @@
 }
 
 .card {
-  padding: 2.5rem 2rem;
+  padding: 1.75rem 1.5rem;
   background: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.95),
@@ -130,7 +130,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
   overflow: hidden;
 }
@@ -220,17 +220,22 @@
 
 .description {
   color: var(--color-text-muted);
-  min-height: 52px;
-  line-height: 1.6;
+  min-height: 44px;
+  line-height: 1.5;
+  font-size: 0.95rem;
+  margin: 0;
 }
 
 .meta {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  align-items: center;
+  text-align: center;
+  gap: 0.25rem;
   color: var(--color-text);
   font-weight: 600;
-  padding: 1rem;
+  font-size: 0.9rem;
+  padding: 0.75rem;
   background: rgba(124, 58, 237, 0.05);
   border-radius: var(--radius-md);
 }
@@ -245,15 +250,16 @@
   padding: 0;
   margin: 0;
   display: grid;
-  gap: 0.6rem;
+  gap: 0.35rem;
   color: var(--color-text-muted);
+  font-size: 0.85rem;
 }
 
 .card li {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.3rem 0;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
 }
 
 .card li::before {
@@ -267,11 +273,11 @@
 
 .addToCartButton {
   margin-top: auto;
-  padding: 1rem 1.5rem;
+  padding: 0.85rem 1.25rem;
   background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
   color: #fff;
   font-family: 'Fredoka', 'Poppins', sans-serif;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   border: none;
   border-radius: var(--radius-lg);
@@ -319,11 +325,11 @@
 
 @media (max-width: 720px) {
   .card {
-    padding: 2rem 1.75rem;
+    padding: 1.5rem 1.25rem;
   }
 
   .grid {
-    gap: 1.5rem;
+    gap: 1.25rem;
   }
 }
 
@@ -357,37 +363,38 @@
   }
 
   .card {
-    padding: 1.75rem 1.25rem;
-    border-radius: 22px;
+    padding: 1.25rem 1rem;
+    border-radius: 18px;
+    gap: 0.75rem;
   }
 
   .cardTitle {
-    font-size: 1.35rem;
+    font-size: 1.25rem;
   }
 
   .price {
-    font-size: 2rem;
+    font-size: 1.75rem;
   }
 
   .badge {
-    top: 0.85rem;
-    right: 0.85rem;
-    padding: 0.3rem 0.7rem;
-    font-size: 0.7rem;
+    top: 0.75rem;
+    right: 0.75rem;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.65rem;
   }
 
   .description {
     min-height: auto;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
   }
 
   .meta {
-    font-size: 0.9rem;
-    padding: 0.85rem;
+    font-size: 0.85rem;
+    padding: 0.6rem;
   }
 
   .card ul {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
   }
 
   .note {

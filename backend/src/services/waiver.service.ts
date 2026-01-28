@@ -64,6 +64,11 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput) {
     throw new AppError('Invalid guardian ID', 400);
   }
 
+  // Validate guardian name
+  if (!input.guardianName || !input.guardianName.trim()) {
+    throw new AppError('Guardian name is required', 400);
+  }
+
   const guardian = await UserRepository.findById(userId);
   if (!guardian) {
     throw new AppError('Guardian not found', 404);
@@ -102,8 +107,13 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput) {
   try {
     for (const child of input.children) {
       const { firstName, lastName } = splitName(child.name);
-      if (!firstName) {
+      if (!firstName || !firstName.trim()) {
         throw new AppError('Each child must include a first name.', 400);
+      }
+
+      // Validate birth date before converting
+      if (!child.birthDate || isNaN(child.birthDate.getTime())) {
+        throw new AppError('Each child must have a valid birth date.', 400);
       }
 
       // Check for existing child with same first name and birth date
@@ -366,8 +376,11 @@ export async function signWaiverForWaiverUser(waiverUserId: string, input: SignW
     // Data has changed or not a quick re-sign - create new waiver record
     // Update WaiverUser with guardian details (using new schema column names)
     const { firstName: guardianFirstName, lastName: guardianLastName } = splitName(input.guardianName);
+    if (!guardianFirstName || !guardianFirstName.trim()) {
+      throw new AppError('Guardian name is required', 400);
+    }
     const updateData: Record<string, unknown> = {
-      guardian_first_name: guardianFirstName || 'Unknown',
+      guardian_first_name: guardianFirstName,
       guardian_last_name: guardianLastName || '',
       guardian_date_of_birth: input.guardianDob?.toISOString().split('T')[0],
       marketing_opt_in: input.marketingOptIn ?? false,
@@ -386,14 +399,25 @@ export async function signWaiverForWaiverUser(waiverUserId: string, input: SignW
 
     await WaiverUserRepository.update(waiverUserIdNum, updateData);
 
-    // Update children - filter out entries with missing birth dates
+    // Validate children have names and birth dates
+    const validChildren = input.children.filter(child => child.birthDate);
+    for (const child of validChildren) {
+      if (!child.name || !child.name.trim()) {
+        throw new AppError('Child name is required', 400);
+      }
+    }
+    if (validChildren.length === 0) {
+      throw new AppError('At least one child with name and birth date is required', 400);
+    }
+
+    // Update children
     await WaiverUserRepository.updateChildren(
       waiverUserIdNum,
-      input.children.map((child) => ({
+      validChildren.map((child) => ({
         name: child.name,
         birth_date: child.birthDate?.toISOString().split('T')[0] ?? '',
         gender: child.gender,
-      })).filter(child => child.birth_date) // Only include children with valid birth dates
+      }))
     );
 
     const archiveUntil = DateTime.now().plus({ years: 5 }).toISO();

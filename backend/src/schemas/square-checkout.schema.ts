@@ -17,6 +17,36 @@ export const squareCheckoutItemSchema = z.discriminatedUnion('type', [
     autoRenew: z.boolean().optional(),
     unitPrice: z.number().positive(),
   }),
+  z.object({
+    type: z.literal('booking'),
+    label: z.string().min(1), // Package name
+    packageId: z.string().min(1),
+    unitPrice: z.number().positive(), // Total price
+    location: z.string().min(1),
+    eventDate: z.string().min(1),
+    startTime: z.string().min(1),
+    guestCount: z.number().int().min(1),
+    // Booking creation data
+    childIds: z.array(z.string()).optional(),
+    notes: z.string().optional(),
+    addOns: z.array(z.object({
+      id: z.string(),
+      quantity: z.number().int().min(1),
+    })).optional(),
+    // Guest booking data (for non-authenticated users)
+    guestInfo: z.object({
+      firstName: z.string().min(1),
+      lastName: z.string().min(1),
+      email: z.string().email(),
+      phone: z.string().min(1),
+      childName: z.string().min(1),
+      childBirthDate: z.string().optional(),
+      additionalChildren: z.array(z.object({
+        name: z.string().min(1),
+        birthDate: z.string().optional(),
+      })).optional(),
+    }).optional(),
+  }),
 ]);
 
 export type SquareCheckoutItemInput = z.infer<typeof squareCheckoutItemSchema>;

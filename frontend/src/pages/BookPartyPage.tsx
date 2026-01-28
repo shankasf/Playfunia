@@ -82,14 +82,24 @@ function loadBookingState(): SavedBookingState | null {
   try {
     const saved = sessionStorage.getItem(BOOKING_STATE_KEY);
     if (!saved) return null;
-    const parsed = JSON.parse(saved) as SavedBookingState;
+    const parsed = JSON.parse(saved);
+    // Validate parsed data has expected structure
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof parsed.timestamp !== 'number'
+    ) {
+      sessionStorage.removeItem(BOOKING_STATE_KEY);
+      return null;
+    }
     // Expire after 30 minutes
     if (Date.now() - parsed.timestamp > 30 * 60 * 1000) {
       sessionStorage.removeItem(BOOKING_STATE_KEY);
       return null;
     }
-    return parsed;
+    return parsed as SavedBookingState;
   } catch (e) {
+    sessionStorage.removeItem(BOOKING_STATE_KEY);
     return null;
   }
 }
@@ -264,7 +274,7 @@ export function BookPartyPage() {
           getPricingConfig(),
         ]);
         if (mounted) {
-          setAddOnPricing(addOnsResult.addOns);
+          setAddOnPricing(addOnsResult.addOns ?? []);
           setPricingConfig(configResult.config);
         }
       } catch (error) {
@@ -329,6 +339,12 @@ export function BookPartyPage() {
     waiverConfirmed,
   ]);
 
+  // Sort packages by price ascending
+  const sortedPackages = useMemo(
+    () => [...packages].sort((a, b) => (a.basePrice ?? 0) - (b.basePrice ?? 0)),
+    [packages]
+  );
+
   const selectedPackage = useMemo(
     () => packages.find((item) => item.id === selectedPackageId) ?? null,
     [packages, selectedPackageId]
@@ -337,7 +353,7 @@ export function BookPartyPage() {
   const latestWaiver = useMemo(() => (waivers.length > 0 ? waivers[0] : null), [waivers]);
 
   const selectedChildIds = useMemo(
-    () => user?.children.filter((child) => childSelections[child.id]).map((child) => child.id) ?? [],
+    () => (user?.children ?? []).filter((child) => childSelections[child.id]).map((child) => child.id),
     [childSelections, user]
   );
 
@@ -611,7 +627,7 @@ export function BookPartyPage() {
       }
       // Validate child birth date if provided
       if (guestChildBirthDate && !isValidChildDOB(guestChildBirthDate)) {
-        setStatus({ type: 'error', message: 'Please enter a valid birth date. Child must be between 0-13 years old.' });
+        setStatus({ type: 'error', message: 'Please enter a valid birth date. Child must be between 1-13 years old.' });
         return;
       }
       // Check additional children have valid names and DOBs
@@ -625,7 +641,7 @@ export function BookPartyPage() {
           return;
         }
         if (child.birthDate && !isValidChildDOB(child.birthDate)) {
-          setStatus({ type: 'error', message: 'Please enter valid birth dates. Children must be between 0-13 years old.' });
+          setStatus({ type: 'error', message: 'Please enter valid birth dates. Children must be between 1-13 years old.' });
           return;
         }
       }
@@ -646,93 +662,62 @@ export function BookPartyPage() {
       }
     }
 
-    setSubmitting(true);
-    setStatus({ type: 'info', message: 'Saving your party details...' });
+    // Standard e-commerce: Add to cart only (no database record until payment)
+    const totalAmount = (estimate?.total ?? cartTotal) + 50; // total + cleaning fee
+    const guestCount = Math.max(packageQty * (selectedPackage?.maxGuests ?? 12) + extraChildQty, 1);
+    const cartItemId = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    try {
-      if (!user) {
-        // Guest booking
-        const totalAmount = cartTotal + 50; // total + cleaning fee
-        const depositAmount = paymentOption === 'full' ? totalAmount : onlinePaymentAmount;
-
-        const payload: CreateGuestBookingPayload = {
-          guestFirstName: guestFirstName.trim(),
-          guestLastName: guestLastName.trim(),
-          guestEmail: guestEmail.trim(),
-          guestPhone: guestPhone.trim(),
+    if (!user) {
+      // Guest booking - store guest info in cart
+      addBookingDepositItem({
+        id: cartItemId,
+        type: 'booking',
+        packageId: selectedPackageId,
+        packageName: selectedPackage?.name ?? 'Party Package',
+        location,
+        eventDate: selectedDate.toISOString().slice(0, 10),
+        startTime: selectedSlot,
+        guestCount,
+        total: totalAmount,
+        notes: notes.trim() || undefined,
+        addOns: addOnPayload.length ? addOnPayload : undefined,
+        guestInfo: {
+          firstName: guestFirstName.trim(),
+          lastName: guestLastName.trim(),
+          email: guestEmail.trim(),
+          phone: guestPhone.trim(),
           childName: guestChildName.trim(),
           childBirthDate: guestChildBirthDate || undefined,
           additionalChildren: guestChildren.length > 0
             ? guestChildren.map(c => ({ name: c.name.trim(), birthDate: c.birthDate || undefined }))
             : undefined,
-          partyPackageId: selectedPackageId,
-          location,
-          eventDate: selectedDate.toISOString().slice(0, 10),
-          startTime: selectedSlot,
-          guests: Math.max(packageQty * (selectedPackage?.maxGuests ?? 12) + extraChildQty, 1),
-          notes: notes.trim() || undefined,
-          addOns: addOnPayload.length ? addOnPayload : undefined,
-          paymentOption,
-          onlinePaymentAmount: depositAmount,
-        };
-
-        const result = await createGuestBooking(payload);
-        // Add to cart for guest checkout
-        addBookingDepositItem({
-          id: `booking-${result.bookingId}`,
-          type: 'booking',
-          bookingId: result.bookingId,
-          reference: result.reference,
-          location,
-          eventDate: selectedDate.toISOString().slice(0, 10),
-          startTime: selectedSlot,
-          total: result.total,
-          depositAmount: result.depositAmount,
-          balanceRemaining: result.balanceRemaining,
-          status: 'awaiting_deposit',
-        });
-        clearBookingState();
-        setStatus({
-          type: 'success',
-          message: `Party reserved! Click the cart icon to pay your deposit. Confirmation sent to ${result.guestEmail}.`
-        });
-      } else {
-        // Authenticated booking
-        const payload: CreateBookingPayload = {
-          childIds: selectedChildIds,
-          partyPackageId: selectedPackageId,
-          location,
-          eventDate: selectedDate.toISOString().slice(0, 10),
-          startTime: selectedSlot,
-          guests: Math.max(packageQty * (selectedPackage?.maxGuests ?? 12) + extraChildQty, 1),
-          notes: notes.trim() || undefined,
-          addOns: addOnPayload.length ? addOnPayload : undefined,
-        };
-
-        const result = await createBooking(payload);
-        addBookingDepositItem({
-          id: `booking-${result.bookingId}`,
-          type: 'booking',
-          bookingId: result.bookingId,
-          reference: result.reference,
-          location,
-          eventDate: selectedDate.toISOString().slice(0, 10),
-          startTime: selectedSlot,
-          total: result.total,
-          depositAmount: result.depositAmount,
-          balanceRemaining: result.balanceRemaining,
-          status: 'awaiting_deposit',
-        });
-        clearBookingState();
-        setStatus({ type: 'success', message: 'Party added to cart! Click the cart icon to complete your deposit payment.' });
-      }
-    } catch (error) {
-      setStatus({
-        type: 'error',
-        message: getErrorMessage(error, 'Could not complete booking. Try another slot.'),
+        },
+        status: 'pending',
       });
-    } finally {
-      setSubmitting(false);
+      clearBookingState();
+      setStatus({
+        type: 'success',
+        message: 'Party added to cart! Click the cart icon to complete payment.'
+      });
+    } else {
+      // Authenticated booking - store user's selected children
+      addBookingDepositItem({
+        id: cartItemId,
+        type: 'booking',
+        packageId: selectedPackageId,
+        packageName: selectedPackage?.name ?? 'Party Package',
+        location,
+        eventDate: selectedDate.toISOString().slice(0, 10),
+        startTime: selectedSlot,
+        guestCount,
+        total: totalAmount,
+        childIds: selectedChildIds,
+        notes: notes.trim() || undefined,
+        addOns: addOnPayload.length ? addOnPayload : undefined,
+        status: 'pending',
+      });
+      clearBookingState();
+      setStatus({ type: 'success', message: 'Party added to cart! Click the cart icon to complete payment.' });
     }
   };
 
@@ -792,16 +777,19 @@ export function BookPartyPage() {
           </div>
 
           {/* Package Selection */}
-          {packages.length > 0 && (
+          {sortedPackages.length > 0 && (
             <div className={styles.section}>
               <h2>Choose package type</h2>
               <div className={styles.packageGrid}>
-                {packages.map((pkg) => (
+                {sortedPackages.map((pkg) => (
                   <button
                     key={pkg.id}
                     type="button"
                     className={`${styles.packageCard} ${pkg.id === selectedPackageId ? styles.packageCardSelected : ''}`}
-                    onClick={() => setSelectedPackageId(pkg.id)}
+                    onClick={() => {
+                      setSelectedPackageId(pkg.id);
+                      if (packageQty === 0) setPackageQty(1);
+                    }}
                   >
                     <div className={styles.packageCardHeader}>
                       <h3>{pkg.name}</h3>
@@ -919,9 +907,9 @@ export function BookPartyPage() {
             )}
           </div>
 
-          {/* Ticket Selection */}
+          {/* Party Package Count */}
           <div className={styles.ticketSection}>
-            <h2>Select tickets</h2>
+            <h2>Select party package count</h2>
             <div className={styles.ticketList}>
               {/* Base Package */}
               <div className={styles.ticketRow}>
@@ -1039,9 +1027,9 @@ export function BookPartyPage() {
             <div className={styles.childrenSection}>
               <h2>Children celebrating</h2>
 
-              {user.children.length > 0 && (
+              {(user.children?.length ?? 0) > 0 && (
                 <div className={styles.childrenList}>
-                  {user.children.map((child) => (
+                  {(user.children ?? []).map((child) => (
                     <label key={child.id} className={styles.childCheckbox}>
                       <input
                         type="checkbox"
@@ -1059,7 +1047,7 @@ export function BookPartyPage() {
                 </div>
               )}
 
-              {user.children.length === 0 && !showAddChildForm && (
+              {(user.children?.length ?? 0) === 0 && !showAddChildForm && (
                 <div className={styles.emptyChildren}>
                   <p>No children added yet. Add a child to continue.</p>
                 </div>
@@ -1283,7 +1271,7 @@ export function BookPartyPage() {
                 className={styles.addGuestChildBtn}
                 onClick={() => setGuestChildren(prev => [
                   ...prev,
-                  { id: `guest-child-${Date.now()}`, name: '', birthDate: '' }
+                  { id: crypto.randomUUID(), name: '', birthDate: '' }
                 ])}
               >
                 + Add another child
@@ -1577,20 +1565,22 @@ export function BookPartyPage() {
                                 </div>
                               </div>
 
-                              <div className={styles.waiverChildrenSection}>
-                                <div className={styles.waiverLabel}>Children</div>
-                                <div className={styles.waiverChildrenGrid}>
-                                  {latestWaiver.children.map((child) => (
-                                    <div key={`${child.name}-${child.birthDate}`} className={styles.waiverChildCard}>
-                                      <div className={styles.waiverValue}>{child.name}</div>
-                                      <div className={styles.waiverSubValue}>
-                                        DOB: {formatIsoDate(child.birthDate)}
-                                        {child.gender ? ` · ${child.gender}` : ''}
+                              {latestWaiver.children && latestWaiver.children.length > 0 && (
+                                <div className={styles.waiverChildrenSection}>
+                                  <div className={styles.waiverLabel}>Children</div>
+                                  <div className={styles.waiverChildrenGrid}>
+                                    {latestWaiver.children.map((child) => (
+                                      <div key={`${child.name}-${child.birthDate}`} className={styles.waiverChildCard}>
+                                        <div className={styles.waiverValue}>{child.name}</div>
+                                        <div className={styles.waiverSubValue}>
+                                          DOB: {formatIsoDate(child.birthDate)}
+                                          {child.gender ? ` · ${child.gender}` : ''}
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
+                              )}
 
                               {latestWaiver.acceptedPolicies?.length ? (
                                 <div className={styles.waiverPolicies}>
@@ -1695,12 +1685,12 @@ function formatIsoDate(value?: string) {
   return formatDate(value);
 }
 
-function buildAddOnPayload(state: AddOnState): BookingAddOnSelection[] {
-  const items: BookingAddOnSelection[] = [];
-  if (state.extraHour) items.push({ id: 'extra_hour' });
+function buildAddOnPayload(state: AddOnState): Array<{ id: string; quantity: number }> {
+  const items: Array<{ id: string; quantity: number }> = [];
+  if (state.extraHour) items.push({ id: 'extra_hour', quantity: 1 });
   if (state.extraChildCount > 0) items.push({ id: 'extra_child', quantity: state.extraChildCount });
-  if (state.facePainting) items.push({ id: 'face_painting' });
-  if (state.photoVideo) items.push({ id: 'photo_video' });
+  if (state.facePainting) items.push({ id: 'face_painting', quantity: 1 });
+  if (state.photoVideo) items.push({ id: 'photo_video', quantity: 1 });
   return items;
 }
 

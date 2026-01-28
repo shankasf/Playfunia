@@ -35,14 +35,18 @@ const envSchema = z
     OPENAI_API_KEY: z.string().optional(),
     // Chatbot service URL
     CHATBOT_SERVICE_URL: z.string().default('http://localhost:8000'),
-    // SMTP Email Configuration (legacy)
+    // SMTP Email Configuration (AWS SES)
     SMTP_HOST: z.string().optional(),
-    SMTP_PORT: z.coerce.number().optional(),
-    SMTP_SECURE: z.coerce.boolean().default(false),
+    SMTP_PORT: z.coerce.number().default(587).optional(),
+    SMTP_SECURE: z.preprocess(val => val === 'true' || val === true, z.boolean()).default(false),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().optional(),
     SMTP_FROM_NAME: z.string().default('Playfunia'),
+    // Twilio SMS Configuration
+    TWILIO_ACCOUNT_SID: z.string().optional(),
+    TWILIO_AUTH_TOKEN: z.string().optional(),
+    TWILIO_PHONE_NUMBER: z.string().optional(),
   })
   .strip();
 
@@ -84,7 +88,7 @@ export const appConfig = {
   instagramUserId: env.INSTAGRAM_USER_ID,
   openaiApiKey: env.OPENAI_API_KEY,
   chatbotServiceUrl: env.CHATBOT_SERVICE_URL,
-  // SMTP Email Configuration (legacy)
+  // SMTP Email Configuration (AWS SES)
   smtpHost: env.SMTP_HOST,
   smtpPort: env.SMTP_PORT,
   smtpSecure: env.SMTP_SECURE,
@@ -92,4 +96,8 @@ export const appConfig = {
   smtpPass: env.SMTP_PASS,
   smtpFrom: env.SMTP_FROM,
   smtpFromName: env.SMTP_FROM_NAME,
+  // Twilio SMS Configuration
+  twilioAccountSid: env.TWILIO_ACCOUNT_SID,
+  twilioAuthToken: env.TWILIO_AUTH_TOKEN,
+  twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
 };

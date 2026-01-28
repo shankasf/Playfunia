@@ -1,12 +1,18 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
+import jwt from 'jsonwebtoken';
 
-import { supabaseAuthGuard, requireRoles, type SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
+import { appConfig } from '../config/env';
+import { supabaseAuthGuard, requireRoles, ROLES, type SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
+import { UserRepository } from '../repositories';
 import { recalculateBookingPricingHandler } from '../controllers/booking.controller';
 import {
   // Dashboard
   getAdminSummaryHandler,
   adminEventStreamHandler,
-  
+
+  // Roles
+  listRolesHandler,
+
   // Users
   listUsersHandler,
   getUserHandler,
@@ -137,7 +143,6 @@ import {
   exportContactsHandler,
 } from '../controllers/admin.controller';
 import { AppError } from '../utils/app-error';
-import { verifyJwt } from '../utils/jwt';
 
 export const adminRouter = Router();
 
@@ -147,10 +152,14 @@ adminRouter.get('/waivers/export', adminQueryTokenGuard, exportWaiversHandler);
 adminRouter.get('/contacts/export', adminQueryTokenGuard, exportContactsHandler);
 
 // ============= Protected admin routes =============
-adminRouter.use(supabaseAuthGuard, requireRoles('admin', 'staff'));
+// Both admin and employee roles can access the admin dashboard
+adminRouter.use(supabaseAuthGuard, requireRoles(ROLES.ADMIN, ROLES.EMPLOYEE));
 
 // Dashboard
 adminRouter.get('/summary', getAdminSummaryHandler);
+
+// Roles (for user management dropdown)
+adminRouter.get('/roles', listRolesHandler);
 
 // Users CRUD
 adminRouter.get('/users', listUsersHandler);
@@ -289,7 +298,14 @@ adminRouter.patch('/resources/:id', updateResourceHandler);
 adminRouter.delete('/resources/:id', deleteResourceHandler);
 
 // ============= Guards =============
-function adminQueryTokenGuard(req: Request, _res: Response, next: NextFunction) {
+interface SupabaseJWTPayload {
+  sub: string;
+  email?: string;
+  role: string;
+  exp: number;
+}
+
+async function adminQueryTokenGuard(req: Request, _res: Response, next: NextFunction) {
   const tokenFromQuery = typeof req.query.token === 'string' ? req.query.token : undefined;
   const header = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.replace('Bearer ', '').trim()
@@ -300,26 +316,51 @@ function adminQueryTokenGuard(req: Request, _res: Response, next: NextFunction) 
   }
 
   try {
-    const payload = verifyJwt<{ sub: string; email: string; roles: string[] }>(token);
-    const roles = payload.roles ?? [];
-    if (!roles.some(role => role === 'admin' || role === 'staff')) {
+    const jwtSecret = appConfig.supabaseJwtSecret;
+    if (!jwtSecret) {
+      console.error('SUPABASE_JWT_SECRET not configured');
+      return next(new AppError('Authentication not configured', 500));
+    }
+
+    const payload = jwt.verify(token, jwtSecret, {
+      algorithms: ['HS256'],
+    }) as SupabaseJWTPayload;
+
+    if (payload.role !== 'authenticated') {
+      return next(new AppError('Invalid authentication', 401));
+    }
+
+    // Look up user in database to get roles
+    const user = await UserRepository.findByAuthUserId(payload.sub);
+    if (!user) {
+      return next(new AppError('User not found', 401));
+    }
+
+    const roles = user.roles ?? [];
+    if (!roles.some((role: string) => role === ROLES.ADMIN || role === ROLES.EMPLOYEE)) {
       return next(new AppError('Forbidden', 403));
     }
 
     (req as SupabaseAuthenticatedRequest).user = {
-      id: payload.sub,
+      id: String(user.user_id),
       authUserId: payload.sub,
-      email: payload.email,
+      email: user.email,
       roles,
     };
 
     return next();
   } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      return next(new AppError('Token expired', 401));
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      return next(new AppError('Invalid token', 401));
+    }
     return next(new AppError('Invalid or expired token', 401, { cause: error }));
   }
 }
 
-function adminStreamGuard(req: Request, _res: Response, next: NextFunction) {
+async function adminStreamGuard(req: Request, _res: Response, next: NextFunction) {
   const tokenFromQuery = typeof req.query.token === 'string' ? req.query.token : undefined;
   const header = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.replace('Bearer ', '').trim()
@@ -330,21 +371,46 @@ function adminStreamGuard(req: Request, _res: Response, next: NextFunction) {
   }
 
   try {
-    const payload = verifyJwt<{ sub: string; email: string; roles: string[] }>(token);
-    const roles = payload.roles ?? [];
-    if (!roles.some(role => role === 'admin' || role === 'staff')) {
+    const jwtSecret = appConfig.supabaseJwtSecret;
+    if (!jwtSecret) {
+      console.error('SUPABASE_JWT_SECRET not configured');
+      return next(new AppError('Authentication not configured', 500));
+    }
+
+    const payload = jwt.verify(token, jwtSecret, {
+      algorithms: ['HS256'],
+    }) as SupabaseJWTPayload;
+
+    if (payload.role !== 'authenticated') {
+      return next(new AppError('Invalid authentication', 401));
+    }
+
+    // Look up user in database to get roles
+    const user = await UserRepository.findByAuthUserId(payload.sub);
+    if (!user) {
+      return next(new AppError('User not found', 401));
+    }
+
+    const roles = user.roles ?? [];
+    if (!roles.some((role: string) => role === ROLES.ADMIN || role === ROLES.EMPLOYEE)) {
       return next(new AppError('Forbidden', 403));
     }
 
     (req as SupabaseAuthenticatedRequest).user = {
-      id: payload.sub,
+      id: String(user.user_id),
       authUserId: payload.sub,
-      email: payload.email,
+      email: user.email,
       roles,
     };
 
     return next();
   } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      return next(new AppError('Token expired', 401));
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      return next(new AppError('Invalid token', 401));
+    }
     return next(new AppError('Invalid or expired token', 401, { cause: error }));
   }
 }

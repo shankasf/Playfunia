@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import type { PartyPackage } from "../../data/types";
 import styles from "./PartyPackages.module.css";
@@ -9,6 +10,12 @@ interface Props {
 
 export function PartyPackages({ packages, isLoading }: Props) {
   const navigate = useNavigate();
+
+  // Sort packages by price from low to high
+  const sortedPackages = useMemo(
+    () => [...packages].sort((a, b) => (a.basePrice ?? 0) - (b.basePrice ?? 0)),
+    [packages]
+  );
 
   const handleAddToCart = (packageId: string) => {
     navigate(`/book-party?package=${packageId}`);
@@ -35,7 +42,7 @@ export function PartyPackages({ packages, isLoading }: Props) {
         </p>
       </div>
       <div className={styles.grid}>
-        {(isLoading ? new Array(3).fill(null) : packages).map((pkg, idx) => (
+        {(isLoading ? new Array(3).fill(null) : sortedPackages).map((pkg, idx) => (
           <article key={pkg?.id ?? idx} className={styles.card}>
             <div className={styles.badge}>{pkg?.durationMinutes ?? "--"} min</div>
             <h3>{pkg?.name ?? "Party loading"}</h3>
@@ -49,7 +56,6 @@ export function PartyPackages({ packages, isLoading }: Props) {
               </span>
             </div>
             <ul>
-              <li>Friendly Playfunia party host</li>
               <li>Grip socks required for all guests</li>
               <li>Additional child $40 | Additional guest $10</li>
             </ul>
@@ -59,7 +65,7 @@ export function PartyPackages({ packages, isLoading }: Props) {
               onClick={() => pkg?.id && handleAddToCart(pkg.id)}
               disabled={isLoading || !pkg?.id}
             >
-              Add to Cart
+              Book Now
             </button>
           </article>
         ))}

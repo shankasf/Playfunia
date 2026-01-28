@@ -68,9 +68,9 @@ export function isValidChildDOB(dob: string): boolean {
   const today = new Date();
   if (date >= today) return false;
 
-  // Child must be 0-13 years old
+  // Child must be 1-13 years old
   const age = calculateAge(date);
-  return age >= 0 && age <= 13;
+  return age >= 1 && age <= 13;
 }
 
 export function calculateAge(birthDate: Date): number {
@@ -92,7 +92,7 @@ export const ValidationMessages = {
   phoneRequired: 'Phone number is required',
   phoneInvalid: 'Please enter a valid 10-digit phone number',
   dobInvalid: 'Please enter a valid date of birth',
-  childDobInvalid: 'Child must be between 0-13 years old',
+  childDobInvalid: 'Child must be between 1-13 years old',
 };
 
 // Combined validation for guest form

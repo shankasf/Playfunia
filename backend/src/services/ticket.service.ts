@@ -156,19 +156,21 @@ export async function listTicketsForGuardian(guardianId: string) {
   const user = await UserRepository.findById(userId);
   if (!user?.customer_id) return [];
 
-  const orders = await OrderRepository.findByCustomerId(user.customer_id);
-  
-  // Filter to admission orders only
-  return orders
-    .filter(o => o.order_type === 'Admission')
-    .map(o => ({
-      id: String(o.order_id),
-      type: 'admission',
-      quantity: (o.order_items as Array<{ quantity: number }>)?.reduce((sum, item) => sum + item.quantity, 0) ?? 0,
-      total: o.total_usd,
-      status: o.status,
-      createdAt: o.created_at,
-    }));
+  const purchases = await TicketPurchaseRepository.findByCustomerId(user.customer_id);
+
+  return purchases.map(p => {
+    // Parse codes if it's a string
+    const codes = typeof p.codes === 'string' ? JSON.parse(p.codes) : (p.codes ?? []);
+    return {
+      id: String(p.purchase_id),
+      type: p.ticket_type ?? 'Admission',
+      quantity: p.quantity,
+      total: p.total ?? 0,
+      status: p.status,
+      createdAt: p.created_at,
+      codes: codes as Array<{ code: string; status: string; redeemedAt?: string }>,
+    };
+  });
 }
 
 export async function listAllTickets() {

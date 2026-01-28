@@ -43,12 +43,20 @@ export interface MembershipPlanPricing {
   guestPassesPerMonth: number;
 }
 
+export interface StoreHours {
+  day: string;
+  dayIndex: number;
+  open: string;
+  close: string;
+}
+
 export interface PricingConfig {
   cleaningFee: number;
   gripSocksPrice: number;
   extraChildAdmission: number;
   depositPercentage: number;
   siblingDiscountRate: number;
+  storeHours: StoreHours[];
 }
 
 export interface AllPricing {

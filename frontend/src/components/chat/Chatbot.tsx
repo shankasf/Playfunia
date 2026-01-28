@@ -161,6 +161,16 @@ export function Chatbot() {
     playNotificationRef.current = createNotificationSound();
   }, []);
 
+  // Cleanup: abort any in-flight request on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
+
   // Play notification sound
   const playNotificationSound = useCallback(() => {
     if (playNotificationRef.current) {
@@ -261,7 +271,10 @@ export function Chatbot() {
       })
       .catch(errorInstance => {
         // Ignore abort errors - they're expected when cancelling
-        if (errorInstance instanceof Error && errorInstance.name === "AbortError") {
+        if (
+          controller.signal.aborted ||
+          (errorInstance instanceof Error && errorInstance.name === "AbortError")
+        ) {
           return;
         }
         setError(errorInstance instanceof Error ? errorInstance.message : "Something went wrong.");

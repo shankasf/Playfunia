@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { getAllPricing, type AllPricing } from "../api/pricing";
 import { PrimaryButton } from "../components/common/PrimaryButton";
@@ -21,18 +21,36 @@ type GuestForm = {
 export function BuyTicketPage() {
   const { user } = useAuth();
   const { items, addTicketPurchase, updateTicketQuantity, removeItem } = useCheckout();
-  const [quantity, setQuantity] = useState(1);
+  const [searchParams] = useSearchParams();
+
+  // Restore quantity from URL params (for returning from waiver page)
+  const initialQuantity = useMemo(() => {
+    const qtyParam = searchParams.get('qty');
+    if (qtyParam) {
+      const parsed = parseInt(qtyParam, 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 6) {
+        return parsed;
+      }
+    }
+    return 1;
+  }, [searchParams]);
+
+  const [quantity, setQuantity] = useState(initialQuantity);
+  const [extraAdults, setExtraAdults] = useState(0);
   const [status, setStatus] = useState<{ type: "idle" | "success" | "error"; message?: string }>({ type: "idle" });
 
-  // Find existing pending ticket in cart
-  const existingTicket = useMemo(() => {
-    return items.find(
+  const EXTRA_ADULT_PRICE = 5;
+
+  // Find all pending tickets in cart
+  const ticketsInCart = useMemo(() => {
+    return items.filter(
       (item): item is TicketCartItem => item.type === "ticket" && item.status === "pending"
     );
   }, [items]);
 
-  // Get cart quantity for display
-  const cartQuantity = existingTicket?.quantity ?? 0;
+  // Get total tickets in cart
+  const totalTicketsInCart = ticketsInCart.reduce((sum, t) => sum + t.quantity, 0);
+  const cartTotal = ticketsInCart.reduce((sum, t) => sum + t.total, 0);
 
   // Pricing data from API
   const [pricingData, setPricingData] = useState<AllPricing | null>(null);
@@ -129,8 +147,9 @@ export function BuyTicketPage() {
     return bundle ? `$${bundle.price}` : "...";
   };
 
-  // Helper to get config value
-  const getConfigValue = (key: keyof AllPricing["config"]): number => {
+  // Helper to get numeric config value
+  type NumericConfigKey = 'cleaningFee' | 'gripSocksPrice' | 'extraChildAdmission' | 'depositPercentage';
+  const getConfigValue = (key: NumericConfigKey): number => {
     if (!pricingData) return 0;
     return pricingData.config[key];
   };
@@ -139,25 +158,11 @@ export function BuyTicketPage() {
     setGuestForm(prev => ({ ...prev, [field]: value }));
   };
 
-  // Handlers for cart quantity controls
-  const handleIncrement = () => {
-    if (existingTicket) {
-      const newQty = existingTicket.quantity + 1;
-      if (newQty <= 10) {
-        updateTicketQuantity(existingTicket.id, newQty);
-      }
-    }
-  };
-
-  const handleDecrement = () => {
-    if (existingTicket) {
-      const newQty = existingTicket.quantity - 1;
-      if (newQty <= 0) {
-        removeItem(existingTicket.id);
-        setStatus({ type: "idle" });
-      } else {
-        updateTicketQuantity(existingTicket.id, newQty);
-      }
+  // Handler to remove a ticket from cart
+  const handleRemoveTicket = (ticketId: string) => {
+    removeItem(ticketId);
+    if (ticketsInCart.length <= 1) {
+      setStatus({ type: "idle" });
     }
   };
 
@@ -169,22 +174,34 @@ export function BuyTicketPage() {
       return;
     }
 
-    // Add ticket to cart
+    // Add ticket to cart as a single bundle
     const cartId = `ticket-${Date.now()}`;
+    const extraAdultsCost = extraAdults * EXTRA_ADULT_PRICE;
+    const totalWithAdults = pricing.total + extraAdultsCost;
+    let bundleLabel = quantity === 1 ? "General Admission (1 Child)" : `${quantity} Children Bundle`;
+    if (extraAdults > 0) {
+      bundleLabel += ` + ${extraAdults} Extra Adult${extraAdults > 1 ? 's' : ''}`;
+    }
     addTicketPurchase({
       id: cartId,
       type: "ticket",
-      label: pricing.label,
-      quantity,
-      unitPrice: Number(pricing.unitPrice.toFixed(2)),
-      total: pricing.total,
+      label: bundleLabel,
+      quantity: 1,
+      unitPrice: totalWithAdults,
+      total: totalWithAdults,
       status: "pending",
     });
 
     setStatus({
       type: "success",
-      message: `${quantity} play pass${quantity === 1 ? "" : "es"} added to cart! Click the cart icon to complete your purchase.`,
+      message: `${bundleLabel} added to cart!`,
     });
+
+    // Reset extra adults for next purchase
+    setExtraAdults(0);
+
+    // Reset quantity for next addition
+    setQuantity(1);
   };
 
   // Show guest form for non-authenticated users
@@ -221,22 +238,65 @@ export function BuyTicketPage() {
 
               <div className={styles.bundleList}>
                 <div className={styles.bundleOption}>
-                  <span>Single Play Pass</span>
+                  <span>General Admission</span>
                   <span>{getBundlePrice(1)}</span>
                 </div>
                 <div className={styles.bundleOption}>
-                  <span>Sibling Duo Bundle</span>
+                  <span>2 Children <span className={styles.savings}>(Save $5)</span></span>
                   <span>{getBundlePrice(2)}</span>
                 </div>
                 <div className={styles.bundleOption}>
-                  <span>Bestie Trio Bundle</span>
+                  <span>3 Children <span className={styles.savings}>(Save $10)</span></span>
                   <span>{getBundlePrice(3)}</span>
+                </div>
+                <div className={styles.bundleOption}>
+                  <span>4 Children <span className={styles.savings}>(Save $15)</span></span>
+                  <span>{getBundlePrice(4)}</span>
+                </div>
+                <div className={styles.bundleOption}>
+                  <span>5 Children <span className={styles.savings}>(Save $20)</span></span>
+                  <span>{getBundlePrice(5)}</span>
+                </div>
+                <div className={styles.bundleOption}>
+                  <span>6 Children <span className={styles.savings}>(Save $30)</span></span>
+                  <span>{getBundlePrice(6)}</span>
                 </div>
               </div>
 
-              <p className={styles.helper}>
-                Need more than three passes? Each additional child is only ${getConfigValue("extraChildAdmission")} when purchased with the trio bundle.
-              </p>
+              <div className={styles.pricingNotes}>
+                <p>This discount applies to siblings only.</p>
+                <p>One adult may enter free with each paid child admission.</p>
+                <p>Each extra adult will be charged a $5 entry fee.</p>
+              </div>
+
+              <div className={styles.extraAdultsSection}>
+                <div className={styles.extraAdultsHeader}>
+                  <span>Extra Adults</span>
+                  <span className={styles.extraAdultsNote}>({quantity} free adult{quantity > 1 ? 's' : ''} included with your bundle)</span>
+                </div>
+                <div className={styles.extraAdultsControls}>
+                  <button
+                    type="button"
+                    className={styles.adultBtn}
+                    onClick={() => setExtraAdults(prev => Math.max(0, prev - 1))}
+                    disabled={extraAdults === 0}
+                    aria-label="Decrease extra adults"
+                  >
+                    −
+                  </button>
+                  <span className={styles.adultCount}>{extraAdults}</span>
+                  <button
+                    type="button"
+                    className={styles.adultBtn}
+                    onClick={() => setExtraAdults(prev => prev + 1)}
+                    aria-label="Increase extra adults"
+                  >
+                    +
+                  </button>
+                  <span className={styles.adultPrice}>${EXTRA_ADULT_PRICE} each</span>
+                </div>
+              </div>
+
               <p className={styles.helper}>Grip socks are required for play; pick them up on-site for ${getConfigValue("gripSocksPrice")} a pair.</p>
 
               <div className={styles.summary}>
@@ -248,13 +308,15 @@ export function BuyTicketPage() {
                   <span>Total kids</span>
                   <span>{quantity}</span>
                 </div>
-                <div className={styles.summaryRow}>
-                  <span>Per pass</span>
-                  <span>${pricing.unitPrice.toFixed(2)}</span>
-                </div>
+                {extraAdults > 0 && (
+                  <div className={styles.summaryRow}>
+                    <span>Extra adults ({extraAdults} × ${EXTRA_ADULT_PRICE})</span>
+                    <span>${(extraAdults * EXTRA_ADULT_PRICE).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className={`${styles.summaryRow} ${styles.summaryTotal}`}>
                   <span>Total today</span>
-                  <span>${pricing.total.toFixed(2)}</span>
+                  <span>${(pricing.total + extraAdults * EXTRA_ADULT_PRICE).toFixed(2)}</span>
                 </div>
               </div>
 
@@ -273,38 +335,39 @@ export function BuyTicketPage() {
               {status.type === "error" ? (
                 <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
               ) : null}
-              {status.type === "success" || existingTicket ? (
-                <p className={`${styles.status} ${styles.statusSuccess}`}>
-                  {cartQuantity} play pass{cartQuantity === 1 ? "" : "es"} in cart.{" "}
-                  <Link to="/cart" className={styles.cartLink}>View cart</Link>
-                </p>
+              {status.type === "success" ? (
+                <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
               ) : null}
 
-              {existingTicket ? (
-                <div className={styles.quantityControls}>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={handleDecrement}
-                    aria-label="Decrease quantity"
-                  >
-                    −
-                  </button>
-                  <span className={styles.quantityDisplay}>{cartQuantity}</span>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={handleIncrement}
-                    disabled={cartQuantity >= 10}
-                    aria-label="Increase quantity"
-                  >
-                    +
-                  </button>
+              <PrimaryButton type="submit">
+                Add to Cart
+              </PrimaryButton>
+
+              {ticketsInCart.length > 0 && (
+                <div className={styles.cartSummary}>
+                  <h3>In Your Cart</h3>
+                  <ul className={styles.cartList}>
+                    {ticketsInCart.map((ticket) => (
+                      <li key={ticket.id} className={styles.cartItem}>
+                        <span>{ticket.quantity}x {ticket.label}</span>
+                        <span>${ticket.total.toFixed(2)}</span>
+                        <button
+                          type="button"
+                          className={styles.removeBtn}
+                          onClick={() => handleRemoveTicket(ticket.id)}
+                          aria-label="Remove from cart"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className={styles.cartTotal}>
+                    <span>Total: {totalTicketsInCart} pass{totalTicketsInCart === 1 ? "" : "es"}</span>
+                    <span>${cartTotal.toFixed(2)}</span>
+                  </div>
+                  <Link to="/cart" className={styles.viewCartBtn}>View Cart & Checkout</Link>
                 </div>
-              ) : (
-                <PrimaryButton type="submit">
-                  Add to Cart
-                </PrimaryButton>
               )}
             </div>
           </form>
@@ -325,22 +388,34 @@ export function BuyTicketPage() {
       return;
     }
 
-    // Add ticket to cart
+    // Add ticket to cart as a single bundle
     const cartId = `ticket-${Date.now()}`;
+    const extraAdultsCost = extraAdults * EXTRA_ADULT_PRICE;
+    const totalWithAdults = pricing.total + extraAdultsCost;
+    let bundleLabel = quantity === 1 ? "General Admission (1 Child)" : `${quantity} Children Bundle`;
+    if (extraAdults > 0) {
+      bundleLabel += ` + ${extraAdults} Extra Adult${extraAdults > 1 ? 's' : ''}`;
+    }
     addTicketPurchase({
       id: cartId,
       type: "ticket",
-      label: pricing.label,
-      quantity,
-      unitPrice: Number(pricing.unitPrice.toFixed(2)),
-      total: pricing.total,
+      label: bundleLabel,
+      quantity: 1,
+      unitPrice: totalWithAdults,
+      total: totalWithAdults,
       status: "pending",
     });
 
     setStatus({
       type: "success",
-      message: `${quantity} play pass${quantity === 1 ? "" : "es"} added to cart! Click the cart icon to complete your purchase.`,
+      message: `${bundleLabel} added to cart!`,
     });
+
+    // Reset extra adults for next purchase
+    setExtraAdults(0);
+
+    // Reset quantity for next addition
+    setQuantity(1);
   };
 
   return (
@@ -375,22 +450,65 @@ export function BuyTicketPage() {
 
             <div className={styles.bundleList}>
               <div className={styles.bundleOption}>
-                <span>Single Play Pass</span>
+                <span>General Admission</span>
                 <span>{getBundlePrice(1)}</span>
               </div>
               <div className={styles.bundleOption}>
-                <span>Sibling Duo Bundle</span>
+                <span>2 Children <span className={styles.savings}>(Save $5)</span></span>
                 <span>{getBundlePrice(2)}</span>
               </div>
               <div className={styles.bundleOption}>
-                <span>Bestie Trio Bundle</span>
+                <span>3 Children <span className={styles.savings}>(Save $10)</span></span>
                 <span>{getBundlePrice(3)}</span>
+              </div>
+              <div className={styles.bundleOption}>
+                <span>4 Children <span className={styles.savings}>(Save $15)</span></span>
+                <span>{getBundlePrice(4)}</span>
+              </div>
+              <div className={styles.bundleOption}>
+                <span>5 Children <span className={styles.savings}>(Save $20)</span></span>
+                <span>{getBundlePrice(5)}</span>
+              </div>
+              <div className={styles.bundleOption}>
+                <span>6 Children <span className={styles.savings}>(Save $30)</span></span>
+                <span>{getBundlePrice(6)}</span>
               </div>
             </div>
 
-            <p className={styles.helper}>
-              Need more than three passes? Each additional child is only ${getConfigValue("extraChildAdmission")} when purchased with the trio bundle.
-            </p>
+            <div className={styles.pricingNotes}>
+              <p>This discount applies to siblings only.</p>
+              <p>One adult may enter free with each paid child admission.</p>
+              <p>Each extra adult will be charged a $5 entry fee.</p>
+            </div>
+
+            <div className={styles.extraAdultsSection}>
+              <div className={styles.extraAdultsHeader}>
+                <span>Extra Adults</span>
+                <span className={styles.extraAdultsNote}>({quantity} free adult{quantity > 1 ? 's' : ''} included with your bundle)</span>
+              </div>
+              <div className={styles.extraAdultsControls}>
+                <button
+                  type="button"
+                  className={styles.adultBtn}
+                  onClick={() => setExtraAdults(prev => Math.max(0, prev - 1))}
+                  disabled={extraAdults === 0}
+                  aria-label="Decrease extra adults"
+                >
+                  −
+                </button>
+                <span className={styles.adultCount}>{extraAdults}</span>
+                <button
+                  type="button"
+                  className={styles.adultBtn}
+                  onClick={() => setExtraAdults(prev => prev + 1)}
+                  aria-label="Increase extra adults"
+                >
+                  +
+                </button>
+                <span className={styles.adultPrice}>${EXTRA_ADULT_PRICE} each</span>
+              </div>
+            </div>
+
             <p className={styles.helper}>Grip socks are required for play; pick them up on-site for ${getConfigValue("gripSocksPrice")} a pair.</p>
 
             <div className={styles.summary}>
@@ -402,13 +520,15 @@ export function BuyTicketPage() {
                 <span>Total kids</span>
                 <span>{quantity}</span>
               </div>
-              <div className={styles.summaryRow}>
-                <span>Per pass</span>
-                <span>${pricing.unitPrice.toFixed(2)}</span>
-              </div>
+              {extraAdults > 0 && (
+                <div className={styles.summaryRow}>
+                  <span>Extra adults ({extraAdults} × ${EXTRA_ADULT_PRICE})</span>
+                  <span>${(extraAdults * EXTRA_ADULT_PRICE).toFixed(2)}</span>
+                </div>
+              )}
               <div className={`${styles.summaryRow} ${styles.summaryTotal}`}>
                 <span>Total today</span>
-                <span>${pricing.total.toFixed(2)}</span>
+                <span>${(pricing.total + extraAdults * EXTRA_ADULT_PRICE).toFixed(2)}</span>
               </div>
             </div>
 
@@ -418,7 +538,7 @@ export function BuyTicketPage() {
               ) : (
                 <>
                   <strong>Action needed:</strong> Please complete the Playfunia waiver before purchasing tickets.{" "}
-                  <PrimaryButton to="/waiver">Sign the waiver</PrimaryButton>
+                  <PrimaryButton to={`/waiver?return=/buy-ticket?qty=${quantity}`}>Sign the waiver</PrimaryButton>
                 </>
               )}
             </div>
@@ -426,38 +546,39 @@ export function BuyTicketPage() {
             {status.type === "error" ? (
               <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
             ) : null}
-            {status.type === "success" || existingTicket ? (
-              <p className={`${styles.status} ${styles.statusSuccess}`}>
-                {cartQuantity} play pass{cartQuantity === 1 ? "" : "es"} in cart.{" "}
-                <Link to="/cart" className={styles.cartLink}>View cart</Link>
-              </p>
+            {status.type === "success" ? (
+              <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
             ) : null}
 
-            {existingTicket ? (
-              <div className={styles.quantityControls}>
-                <button
-                  type="button"
-                  className={styles.quantityBtn}
-                  onClick={handleDecrement}
-                  aria-label="Decrease quantity"
-                >
-                  −
-                </button>
-                <span className={styles.quantityDisplay}>{cartQuantity}</span>
-                <button
-                  type="button"
-                  className={styles.quantityBtn}
-                  onClick={handleIncrement}
-                  disabled={cartQuantity >= 10}
-                  aria-label="Increase quantity"
-                >
-                  +
-                </button>
+            <PrimaryButton type="submit" disabled={!hasValidWaiver}>
+              Add to Cart
+            </PrimaryButton>
+
+            {ticketsInCart.length > 0 && (
+              <div className={styles.cartSummary}>
+                <h3>In Your Cart</h3>
+                <ul className={styles.cartList}>
+                  {ticketsInCart.map((ticket) => (
+                    <li key={ticket.id} className={styles.cartItem}>
+                      <span>{ticket.quantity}x {ticket.label}</span>
+                      <span>${ticket.total.toFixed(2)}</span>
+                      <button
+                        type="button"
+                        className={styles.removeBtn}
+                        onClick={() => handleRemoveTicket(ticket.id)}
+                        aria-label="Remove from cart"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className={styles.cartTotal}>
+                  <span>Total: {totalTicketsInCart} pass{totalTicketsInCart === 1 ? "" : "es"}</span>
+                  <span>${cartTotal.toFixed(2)}</span>
+                </div>
+                <Link to="/cart" className={styles.viewCartBtn}>View Cart & Checkout</Link>
               </div>
-            ) : (
-              <PrimaryButton type="submit" disabled={!hasValidWaiver}>
-                Add to Cart
-              </PrimaryButton>
             )}
           </div>
         </form>

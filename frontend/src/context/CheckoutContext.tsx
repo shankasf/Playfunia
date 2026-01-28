@@ -3,15 +3,32 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 export type BookingCartItem = {
   id: string;
   type: "booking";
-  bookingId: string;
-  reference: string;
+  // Cart-only fields (no bookingId until payment)
+  packageId: string;
+  packageName: string;
   location: string;
   eventDate: string;
   startTime: string;
+  guestCount: number;
   total: number;
-  depositAmount: number;
-  balanceRemaining: number;
-  status: "awaiting_deposit" | "deposit_paid";
+  // Booking creation data
+  childIds?: string[];
+  notes?: string;
+  addOns?: Array<{ id: string; quantity: number }>;
+  // Guest booking data (if not logged in)
+  guestInfo?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    childName: string;
+    childBirthDate?: string;
+    additionalChildren?: Array<{ name: string; birthDate?: string }>;
+  };
+  // After payment
+  bookingId?: string;
+  reference?: string;
+  status: "pending" | "paid";
 };
 
 export type DiscountLine = {
@@ -53,7 +70,7 @@ export type CheckoutItem = BookingCartItem | TicketCartItem | MembershipCartItem
 interface CheckoutContextValue {
   items: CheckoutItem[];
   addBookingDepositItem: (item: BookingCartItem) => void;
-  markBookingDepositPaid: (bookingId: string, balanceRemaining: number) => void;
+  markBookingPaid: (cartItemId: string, bookingId: string, reference: string) => void;
   addTicketPurchase: (item: TicketCartItem) => void;
   updateTicketQuantity: (itemId: string, newQuantity: number) => void;
   markTicketFulfilled: (itemId: string, update: { ticketId?: string; codes?: string[]; discounts?: DiscountLine[]; promoCode?: string }) => void;
@@ -110,19 +127,26 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
 
   const addBookingDepositItem = (item: BookingCartItem) => {
     setItems(prev => {
-      const filtered = prev.filter(existing => !(existing.type === "booking" && existing.bookingId === item.bookingId));
+      // Remove any existing booking with same details (package + date + time)
+      const filtered = prev.filter(existing =>
+        !(existing.type === "booking" &&
+          existing.packageId === item.packageId &&
+          existing.eventDate === item.eventDate &&
+          existing.startTime === item.startTime)
+      );
       return [...filtered, item];
     });
   };
 
-  const markBookingDepositPaid = (bookingId: string, balanceRemaining: number) => {
+  const markBookingPaid = (cartItemId: string, bookingId: string, reference: string) => {
     setItems(prev =>
       prev.map(item => {
-        if (item.type === "booking" && item.bookingId === bookingId) {
+        if (item.type === "booking" && item.id === cartItemId) {
           return {
             ...item,
-            status: "deposit_paid",
-            balanceRemaining,
+            bookingId,
+            reference,
+            status: "paid" as const,
           };
         }
         return item;
@@ -205,7 +229,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     () => ({
       items,
       addBookingDepositItem,
-      markBookingDepositPaid,
+      markBookingPaid,
       addTicketPurchase,
       updateTicketQuantity,
       markTicketFulfilled,

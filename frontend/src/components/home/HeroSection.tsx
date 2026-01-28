@@ -13,7 +13,16 @@ export const HeroSection = memo(function HeroSection() {
 
   return (
     <section className={styles.hero} id="hero">
-      <div className={styles.imagePanel} style={{ backgroundImage: `url(${heroImage})` }} />
+      <div className={styles.imagePanel}>
+        <img
+          src={heroImage}
+          alt="Playfunia colorful ball pit with kids playing"
+          className={styles.heroImage}
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
+        />
+      </div>
       <div className={styles.content}>
         <span className={styles.tag}>{greeting}</span>
         <h1>The most fun indoor playground experience for kids ages 1-13.</h1>

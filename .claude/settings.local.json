@@ -10,7 +10,8 @@
       "Glob",
       "WebFetch",
       "Delete",
-      "WebSearch"
+      "WebSearch",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }

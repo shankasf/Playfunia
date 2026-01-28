@@ -7,6 +7,9 @@ import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlan
 import { AppError } from '../utils/app-error';
 import { reserveTickets } from './ticket.service';
 import { purchaseMembership } from './membership.service';
+import { sendOrderConfirmation } from './email.service';
+import { sendOrderConfirmationSms, sendTicketConfirmationSms } from './sms.service';
+import { generateReceiptPDF, createReceiptRecord } from './receipt.service';
 
 import type {
   CheckoutIntentInput,
@@ -64,9 +67,13 @@ export interface CheckoutSummary {
   currency: string;
   subtotal: number;
   discounts: Array<{ label: string; amount: number }>;
+  taxAmount: number;
   total: number;
   lines: CheckoutLine[];
 }
+
+// Tax rate constant (8%)
+const TAX_RATE = 0.08;
 
 function roundCurrency(value: number) {
   return Math.round(value * 100) / 100;
@@ -183,7 +190,11 @@ async function buildSummary(
 
   const totalBeforePromo = roundCurrency(subtotal - lineDiscountTotal);
   const promoDiscount = await applyPromo(totalBeforePromo, promoCode);
-  const total = Math.max(roundCurrency(totalBeforePromo - promoDiscount), 0);
+  const subtotalAfterDiscounts = Math.max(roundCurrency(totalBeforePromo - promoDiscount), 0);
+
+  // Calculate tax (8%)
+  const taxAmount = roundCurrency(subtotalAfterDiscounts * TAX_RATE);
+  const total = roundCurrency(subtotalAfterDiscounts + taxAmount);
 
   const discounts: Array<{ label: string; amount: number }> = [];
   if (lineDiscountTotal > 0) {
@@ -198,6 +209,7 @@ async function buildSummary(
       currency: 'usd',
       subtotal,
       discounts,
+      taxAmount,
       total,
       lines,
     },
@@ -344,6 +356,121 @@ export async function finalizeCheckout(userId: string, input: CheckoutFinalizeIn
       await PaymentRepository.update(payment.payment_id, { status: 'Captured' });
     }
 
+    // Send confirmation email and SMS
+    const orderDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const emailItems = summary.lines.map((line, idx) => {
+      const ticketResult = ticketResults.find(t => t.cartIndex === idx);
+      const ticketData = ticketResult?.ticket as { codes?: Array<{ code: string }> } | undefined;
+      return {
+        label: line.label,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        total: line.total,
+        codes: ticketData?.codes?.map(c => c.code),
+      };
+    });
+
+    // Create receipt record for ticket purchases
+    let orderNumber = `PF-${Date.now()}`;
+    if (ticketResults.length > 0) {
+      try {
+        const firstTicket = ticketResults[0]?.ticket as { orderId?: number } | undefined;
+        const referenceId = firstTicket?.orderId ?? parseInt(userId, 10);
+        const receiptResult = await createReceiptRecord({
+          purchaseType: 'ticket',
+          referenceId,
+          customerId: user.customer_id ?? undefined,
+          subtotal: summary.subtotal,
+          discount: summary.discounts.reduce((sum, d) => sum + d.amount, 0),
+          tax: summary.taxAmount,
+          total: summary.total,
+          paymentMethod: 'Credit Card (Stripe)',
+          paymentId: input.paymentIntentId,
+          metadata: {
+            items: emailItems,
+            discounts: summary.discounts,
+          },
+        });
+        orderNumber = receiptResult.receiptNumber;
+      } catch (receiptError) {
+        console.error('Failed to create ticket receipt record:', receiptError);
+      }
+    }
+
+    if (user.email) {
+      try {
+        const receiptPdf = await generateReceiptPDF({
+          receiptNumber: orderNumber,
+          date: orderDate,
+          customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
+          customerEmail: user.email,
+          items: emailItems,
+          subtotal: summary.subtotal,
+          taxAmount: summary.taxAmount,
+          discounts: summary.discounts,
+          total: summary.total,
+          paymentMethod: 'Credit Card (Stripe)',
+          paymentId: input.paymentIntentId,
+        });
+
+        await sendOrderConfirmation({
+          email: user.email,
+          customerName: user.first_name ?? 'Customer',
+          orderNumber,
+          orderDate,
+          items: emailItems,
+          subtotal: summary.subtotal,
+          taxAmount: summary.taxAmount,
+          discounts: summary.discounts,
+          total: summary.total,
+          paymentMethod: 'Credit Card (Stripe)',
+          receiptPdf,
+        });
+      } catch (emailError) {
+        console.error('Failed to send order confirmation email:', emailError);
+      }
+    }
+
+    // Send SMS notification
+    if (user.phone) {
+      try {
+        // Send ticket-specific SMS if there are tickets
+        const ticketItems = ticketResults.map(t => {
+          const ticket = t.ticket as { codes?: Array<{ code: string }> };
+          const line = summary.lines[t.cartIndex];
+          return {
+            label: line?.label ?? 'Ticket',
+            quantity: line?.quantity ?? 1,
+            codes: ticket?.codes?.map(c => c.code) ?? [],
+          };
+        });
+
+        if (ticketItems.length > 0) {
+          await sendTicketConfirmationSms({
+            phone: user.phone,
+            customerName: user.first_name ?? 'Customer',
+            tickets: ticketItems,
+            totalAmount: summary.total,
+          });
+        } else {
+          await sendOrderConfirmationSms({
+            phone: user.phone,
+            customerName: user.first_name ?? 'Customer',
+            orderNumber,
+            total: summary.total,
+            itemCount: summary.lines.length,
+          });
+        }
+      } catch (smsError) {
+        console.error('Failed to send order confirmation SMS:', smsError);
+      }
+    }
+
     return {
       paymentIntentId: input.paymentIntentId,
       summary,
@@ -408,12 +535,128 @@ export async function finalizeCheckout(userId: string, input: CheckoutFinalizeIn
     await PaymentRepository.update(payment.payment_id, { status: 'Captured' });
   }
 
+  // Send confirmation email and SMS
+  const receiptEmailAddr = intent.receipt_email ?? user.email;
+  const orderDate2 = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const emailItems2 = summary.lines.map((line, idx) => {
+    const ticketResult = ticketResults.find(t => t.cartIndex === idx);
+    const ticketData = ticketResult?.ticket as { codes?: Array<{ code: string }> } | undefined;
+    return {
+      label: line.label,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      total: line.total,
+      codes: ticketData?.codes?.map(c => c.code),
+    };
+  });
+
+  // Create receipt record for ticket purchases
+  let orderNumber2 = `PF-${Date.now()}`;
+  if (ticketResults.length > 0) {
+    try {
+      const firstTicket = ticketResults[0]?.ticket as { orderId?: number } | undefined;
+      const referenceId = firstTicket?.orderId ?? parseInt(userId, 10);
+      const receiptResult = await createReceiptRecord({
+        purchaseType: 'ticket',
+        referenceId,
+        customerId: user.customer_id ?? undefined,
+        subtotal: summary.subtotal,
+        discount: summary.discounts.reduce((sum, d) => sum + d.amount, 0),
+        tax: summary.taxAmount,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Stripe)',
+        paymentId: intent.id,
+        metadata: {
+          items: emailItems2,
+          discounts: summary.discounts,
+        },
+      });
+      orderNumber2 = receiptResult.receiptNumber;
+    } catch (receiptError) {
+      console.error('Failed to create ticket receipt record:', receiptError);
+    }
+  }
+
+  if (receiptEmailAddr) {
+    try {
+      const receiptPdf = await generateReceiptPDF({
+        receiptNumber: orderNumber2,
+        date: orderDate2,
+        customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
+        customerEmail: receiptEmailAddr,
+        items: emailItems2,
+        subtotal: summary.subtotal,
+        taxAmount: summary.taxAmount,
+        discounts: summary.discounts,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Stripe)',
+        paymentId: intent.id,
+      });
+
+      await sendOrderConfirmation({
+        email: receiptEmailAddr,
+        customerName: user.first_name ?? 'Customer',
+        orderNumber: orderNumber2,
+        orderDate: orderDate2,
+        items: emailItems2,
+        subtotal: summary.subtotal,
+        taxAmount: summary.taxAmount,
+        discounts: summary.discounts,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Stripe)',
+        receiptPdf,
+      });
+    } catch (emailError) {
+      console.error('Failed to send order confirmation email:', emailError);
+    }
+  }
+
+  // Send SMS notification
+  if (user.phone) {
+    try {
+      // Send ticket-specific SMS if there are tickets
+      const ticketItems = ticketResults.map(t => {
+        const ticket = t.ticket as { codes?: Array<{ code: string }> };
+        const line = summary.lines[t.cartIndex];
+        return {
+          label: line?.label ?? 'Ticket',
+          quantity: line?.quantity ?? 1,
+          codes: ticket?.codes?.map(c => c.code) ?? [],
+        };
+      });
+
+      if (ticketItems.length > 0) {
+        await sendTicketConfirmationSms({
+          phone: user.phone,
+          customerName: user.first_name ?? 'Customer',
+          tickets: ticketItems,
+          totalAmount: summary.total,
+        });
+      } else {
+        await sendOrderConfirmationSms({
+          phone: user.phone,
+          customerName: user.first_name ?? 'Customer',
+          orderNumber: orderNumber2,
+          total: summary.total,
+          itemCount: summary.lines.length,
+        });
+      }
+    } catch (smsError) {
+      console.error('Failed to send order confirmation SMS:', smsError);
+    }
+  }
+
   return {
     paymentIntentId: intent.id,
     summary,
     tickets: ticketResults,
     memberships: membershipResults,
-    receiptEmail: intent.receipt_email ?? user.email ?? null,
+    receiptEmail: receiptEmailAddr ?? null,
   };
 }
 
@@ -434,7 +677,11 @@ async function buildGuestSummary(items: CheckoutItemInput[], promoCode?: string)
 
   const totalBeforePromo = roundCurrency(subtotal - lineDiscountTotal);
   const promoDiscount = await applyPromo(totalBeforePromo, promoCode);
-  const total = Math.max(roundCurrency(totalBeforePromo - promoDiscount), 0);
+  const subtotalAfterDiscounts = Math.max(roundCurrency(totalBeforePromo - promoDiscount), 0);
+
+  // Calculate tax (8%)
+  const taxAmount = roundCurrency(subtotalAfterDiscounts * TAX_RATE);
+  const total = roundCurrency(subtotalAfterDiscounts + taxAmount);
 
   const discounts: Array<{ label: string; amount: number }> = [];
   if (lineDiscountTotal > 0) {
@@ -448,6 +695,7 @@ async function buildGuestSummary(items: CheckoutItemInput[], promoCode?: string)
     currency: 'usd',
     subtotal,
     discounts,
+    taxAmount,
     total,
     lines,
   };
@@ -586,6 +834,119 @@ export async function finalizeGuestCheckout(input: GuestCheckoutFinalizeInput) {
       await PaymentRepository.update(payment.payment_id, { status: 'Captured' });
     }
 
+    // Send confirmation email and SMS
+    const guestOrderDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const guestEmailItems = summary.lines.map((line, idx) => {
+      const ticketResult = ticketResults.find(t => t.cartIndex === idx);
+      return {
+        label: line.label,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        total: line.total,
+        codes: ticketResult?.ticket?.codes?.map(c => c.code),
+      };
+    });
+
+    const guestCustomerName = `${input.guestFirstName} ${input.guestLastName}`.trim() || 'Customer';
+
+    // Create receipt record for guest ticket purchases
+    let guestOrderNumber = `PF-${Date.now()}`;
+    if (ticketResults.length > 0) {
+      try {
+        const firstTicket = ticketResults[0]?.ticket as { orderId?: number } | undefined;
+        const referenceId = firstTicket?.orderId ?? guestCustomer.customer_id;
+        const receiptResult = await createReceiptRecord({
+          purchaseType: 'ticket',
+          referenceId,
+          customerId: guestCustomer.customer_id,
+          subtotal: summary.subtotal,
+          discount: summary.discounts.reduce((sum, d) => sum + d.amount, 0),
+          tax: summary.taxAmount,
+          total: summary.total,
+          paymentMethod: 'Credit Card (Stripe)',
+          paymentId: input.paymentIntentId,
+          metadata: {
+            items: guestEmailItems,
+            discounts: summary.discounts,
+            guestName: guestCustomerName,
+            guestEmail: input.guestEmail,
+          },
+        });
+        guestOrderNumber = receiptResult.receiptNumber;
+      } catch (receiptError) {
+        console.error('Failed to create guest ticket receipt record:', receiptError);
+      }
+    }
+
+    if (input.guestEmail) {
+      try {
+        const receiptPdf = await generateReceiptPDF({
+          receiptNumber: guestOrderNumber,
+          date: guestOrderDate,
+          customerName: guestCustomerName,
+          customerEmail: input.guestEmail,
+          items: guestEmailItems,
+          subtotal: summary.subtotal,
+          taxAmount: summary.taxAmount,
+          discounts: summary.discounts,
+          total: summary.total,
+          paymentMethod: 'Credit Card (Stripe)',
+          paymentId: input.paymentIntentId,
+        });
+
+        await sendOrderConfirmation({
+          email: input.guestEmail,
+          customerName: input.guestFirstName ?? 'Customer',
+          orderNumber: guestOrderNumber,
+          orderDate: guestOrderDate,
+          items: guestEmailItems,
+          subtotal: summary.subtotal,
+          taxAmount: summary.taxAmount,
+          discounts: summary.discounts,
+          total: summary.total,
+          paymentMethod: 'Credit Card (Stripe)',
+          receiptPdf,
+        });
+      } catch (emailError) {
+        console.error('Failed to send guest order confirmation email:', emailError);
+      }
+    }
+
+    // Send SMS notification for guest
+    if (input.guestPhone) {
+      try {
+        const ticketItems = ticketResults.map(t => ({
+          label: summary.lines[t.cartIndex]?.label ?? 'Ticket',
+          quantity: summary.lines[t.cartIndex]?.quantity ?? 1,
+          codes: t.ticket?.codes?.map(c => c.code) ?? [],
+        }));
+
+        if (ticketItems.length > 0) {
+          await sendTicketConfirmationSms({
+            phone: input.guestPhone,
+            customerName: input.guestFirstName ?? 'Customer',
+            tickets: ticketItems,
+            totalAmount: summary.total,
+          });
+        } else {
+          await sendOrderConfirmationSms({
+            phone: input.guestPhone,
+            customerName: input.guestFirstName ?? 'Customer',
+            orderNumber: guestOrderNumber,
+            total: summary.total,
+            itemCount: summary.lines.length,
+          });
+        }
+      } catch (smsError) {
+        console.error('Failed to send guest order confirmation SMS:', smsError);
+      }
+    }
+
     return {
       paymentIntentId: input.paymentIntentId,
       summary,
@@ -635,11 +996,125 @@ export async function finalizeGuestCheckout(input: GuestCheckoutFinalizeInput) {
     await PaymentRepository.update(payment.payment_id, { status: 'Captured' });
   }
 
+  // Send confirmation email and SMS
+  const receiptEmailAddr = intent.receipt_email ?? input.guestEmail;
+  const guestOrderDate2 = new Date().toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+  const guestEmailItems2 = summary.lines.map((line, idx) => {
+    const ticketResult = ticketResults.find(t => t.cartIndex === idx);
+    return {
+      label: line.label,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      total: line.total,
+      codes: ticketResult?.ticket?.codes?.map(c => c.code),
+    };
+  });
+
+  const guestCustomerName2 = `${input.guestFirstName} ${input.guestLastName}`.trim() || 'Customer';
+
+  // Create receipt record for guest ticket purchases
+  let guestOrderNumber2 = `PF-${Date.now()}`;
+  if (ticketResults.length > 0) {
+    try {
+      const firstTicket = ticketResults[0]?.ticket as { orderId?: number } | undefined;
+      const referenceId = firstTicket?.orderId ?? guestCustomer.customer_id;
+      const receiptResult = await createReceiptRecord({
+        purchaseType: 'ticket',
+        referenceId,
+        customerId: guestCustomer.customer_id,
+        subtotal: summary.subtotal,
+        discount: summary.discounts.reduce((sum, d) => sum + d.amount, 0),
+        tax: summary.taxAmount,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Stripe)',
+        paymentId: intent.id,
+        metadata: {
+          items: guestEmailItems2,
+          discounts: summary.discounts,
+          guestName: guestCustomerName2,
+          guestEmail: input.guestEmail,
+        },
+      });
+      guestOrderNumber2 = receiptResult.receiptNumber;
+    } catch (receiptError) {
+      console.error('Failed to create guest ticket receipt record:', receiptError);
+    }
+  }
+
+  if (receiptEmailAddr) {
+    try {
+      const receiptPdf = await generateReceiptPDF({
+        receiptNumber: guestOrderNumber2,
+        date: guestOrderDate2,
+        customerName: guestCustomerName2,
+        customerEmail: receiptEmailAddr,
+        items: guestEmailItems2,
+        subtotal: summary.subtotal,
+        taxAmount: summary.taxAmount,
+        discounts: summary.discounts,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Stripe)',
+        paymentId: intent.id,
+      });
+
+      await sendOrderConfirmation({
+        email: receiptEmailAddr,
+        customerName: input.guestFirstName ?? 'Customer',
+        orderNumber: guestOrderNumber2,
+        orderDate: guestOrderDate2,
+        items: guestEmailItems2,
+        subtotal: summary.subtotal,
+        taxAmount: summary.taxAmount,
+        discounts: summary.discounts,
+        total: summary.total,
+        paymentMethod: 'Credit Card (Stripe)',
+        receiptPdf,
+      });
+    } catch (emailError) {
+      console.error('Failed to send guest order confirmation email:', emailError);
+    }
+  }
+
+  // Send SMS notification for guest
+  if (input.guestPhone) {
+    try {
+      const ticketItems = ticketResults.map(t => ({
+        label: summary.lines[t.cartIndex]?.label ?? 'Ticket',
+        quantity: summary.lines[t.cartIndex]?.quantity ?? 1,
+        codes: t.ticket?.codes?.map(c => c.code) ?? [],
+      }));
+
+      if (ticketItems.length > 0) {
+        await sendTicketConfirmationSms({
+          phone: input.guestPhone,
+          customerName: input.guestFirstName ?? 'Customer',
+          tickets: ticketItems,
+          totalAmount: summary.total,
+        });
+      } else {
+        await sendOrderConfirmationSms({
+          phone: input.guestPhone,
+          customerName: input.guestFirstName ?? 'Customer',
+          orderNumber: guestOrderNumber2,
+          total: summary.total,
+          itemCount: summary.lines.length,
+        });
+      }
+    } catch (smsError) {
+      console.error('Failed to send guest order confirmation SMS:', smsError);
+    }
+  }
+
   return {
     paymentIntentId: intent.id,
     summary,
     tickets: ticketResults,
     memberships: [],
-    receiptEmail: intent.receipt_email ?? input.guestEmail,
+    receiptEmail: receiptEmailAddr,
   };
 }

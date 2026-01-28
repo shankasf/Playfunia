@@ -4,6 +4,7 @@ import { AppError } from '../utils/app-error';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { signJwt } from '../utils/jwt';
 import { appConfig } from '../config/env';
+import { supabase } from '../config/supabase';
 
 interface AuthTokenPayload extends Record<string, unknown> {
   sub: string;
@@ -32,6 +33,128 @@ function sanitizeUser(user: Record<string, unknown>) {
   };
 }
 
+// Check if email is already registered
+export async function checkEmailExists(email: string): Promise<boolean> {
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = await UserRepository.findByEmail(normalizedEmail);
+  return !!existing;
+}
+
+// Hash password for pending registration
+export async function prepareRegistration(input: RegisterInput): Promise<{
+  email: string;
+  passwordHash: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+}> {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const existing = await UserRepository.findByEmail(normalizedEmail);
+
+  if (existing) {
+    throw new AppError('A user with this email already exists', 409);
+  }
+
+  const passwordHash = await hashPassword(input.password);
+
+  return {
+    email: normalizedEmail,
+    passwordHash,
+    password: input.password, // Store raw password temporarily for Supabase Auth
+    firstName: input.firstName,
+    lastName: input.lastName,
+    phone: input.phone,
+  };
+}
+
+// Create user from verified registration data
+export async function createVerifiedUser(data: {
+  email: string;
+  passwordHash: string;
+  password: string; // Raw password for Supabase Auth
+  firstName: string;
+  lastName: string;
+  phone?: string;
+}) {
+  const normalizedEmail = data.email.trim().toLowerCase();
+
+  // Double-check email doesn't exist (race condition protection)
+  const existing = await UserRepository.findByEmail(normalizedEmail);
+  if (existing) {
+    // User already exists - this can happen if they registered before
+    // Just return the existing user so they can sign in
+    const token = signAuthToken(String(existing.user_id), existing.email, existing.roles ?? ['user']);
+    return {
+      user: sanitizeUser(existing),
+      token,
+    };
+  }
+
+  // Create user in Supabase Auth first (so frontend can sign in)
+  let authUserId: string | undefined;
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email: normalizedEmail,
+    password: data.password,
+    email_confirm: true, // Already verified via our OTP
+    user_metadata: {
+      first_name: data.firstName,
+      last_name: data.lastName,
+      phone: data.phone,
+    },
+  });
+
+  if (authError) {
+    // If user already exists in Supabase Auth, try to get their ID
+    if (authError.message.includes('already been registered')) {
+      // User exists in Supabase Auth but not in our table - get their ID
+      const { data: existingUsers } = await supabase.auth.admin.listUsers();
+      const existingAuthUser = existingUsers?.users?.find(u => u.email === normalizedEmail);
+      authUserId = existingAuthUser?.id;
+    } else {
+      console.error('Failed to create Supabase Auth user:', authError);
+      throw new AppError('Failed to create account. Please try again.', 500);
+    }
+  } else {
+    authUserId = authData?.user?.id;
+  }
+
+  // Create user in our public.users table
+  try {
+    const user = await UserRepository.create({
+      first_name: data.firstName,
+      last_name: data.lastName,
+      email: normalizedEmail,
+      password_hash: data.passwordHash,
+      phone: data.phone,
+      roles: ['user'],
+      auth_user_id: authUserId,
+    });
+
+    const token = signAuthToken(String(user.user_id), user.email, user.roles ?? ['user']);
+
+    return {
+      user: sanitizeUser(user),
+      token,
+    };
+  } catch (err: unknown) {
+    // Handle duplicate key error - user was created between our check and insert
+    const error = err as { code?: string };
+    if (error.code === '23505') {
+      const existingUser = await UserRepository.findByEmail(normalizedEmail);
+      if (existingUser) {
+        const token = signAuthToken(String(existingUser.user_id), existingUser.email, existingUser.roles ?? ['user']);
+        return {
+          user: sanitizeUser(existingUser),
+          token,
+        };
+      }
+    }
+    throw err;
+  }
+}
+
+// Legacy register function (creates user immediately) - kept for backwards compatibility
 export async function registerUser(input: RegisterInput) {
   const normalizedEmail = input.email.trim().toLowerCase();
   const existing = await UserRepository.findByEmail(normalizedEmail);

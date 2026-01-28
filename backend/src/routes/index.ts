@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { authRouter } from './auth.routes';
 import { bookingRouter } from './booking.routes';
 import { chatbotRouter } from './chatbot.routes';
+import { contactRouter } from './contact.routes';
 import { healthRouter } from './health.routes';
 import { membershipRouter } from './membership.routes';
 import { partyPackageRouter } from './party-package.routes';
@@ -16,11 +17,13 @@ import { adminRouter } from './admin.routes';
 import { checkoutRouter } from './checkout.routes';
 import { squareRouter } from './square.routes';
 import { pricingRouter } from './pricing.routes';
+import { receiptRouter } from './receipt.routes';
 
 export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/chatbot', chatbotRouter);
+apiRouter.use('/contact', contactRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/users', userRouter);
 apiRouter.use('/bookings', bookingRouter);
@@ -35,3 +38,4 @@ apiRouter.use('/admin', adminRouter);
 apiRouter.use('/checkout', checkoutRouter);
 apiRouter.use('/square', squareRouter);
 apiRouter.use('/pricing', pricingRouter);
+apiRouter.use('/receipts', receiptRouter);

@@ -34,8 +34,18 @@ function buildHeaders(init?: RequestInit) {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const message = await response.text();
-    throw new Error(message || 'Request failed');
+    const text = await response.text();
+    let message = text || 'Request failed';
+    // Try to parse JSON error response to extract message
+    try {
+      const json = JSON.parse(text);
+      if (json.message) {
+        message = json.message;
+      }
+    } catch {
+      // Not JSON, use raw text
+    }
+    throw new Error(message);
   }
   return response.json() as Promise<T>;
 }
@@ -59,6 +69,27 @@ export async function apiPost<TResponse, TBody>(
     body: JSON.stringify(body),
     ...init,
     headers: buildHeaders(init),
+  });
+
+  return handleResponse<TResponse>(response);
+}
+
+// Public POST request (no auth required)
+export async function apiPostPublic<TResponse, TBody>(
+  path: string,
+  body: TBody,
+  init?: RequestInit
+): Promise<TResponse> {
+  const headers = new Headers(init?.headers ?? {});
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    ...init,
+    headers,
   });
 
   return handleResponse<TResponse>(response);

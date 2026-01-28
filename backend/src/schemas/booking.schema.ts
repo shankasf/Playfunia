@@ -106,3 +106,10 @@ export const bookingDepositConfirmSchema = z.object({
 });
 
 export type BookingDepositConfirmInput = z.infer<typeof bookingDepositConfirmSchema>;
+
+export const rescheduleBookingSchema = z.object({
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Time must be in HH:MM format'),
+});
+
+export type RescheduleBookingInput = z.infer<typeof rescheduleBookingSchema>;

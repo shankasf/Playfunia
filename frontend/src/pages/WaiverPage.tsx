@@ -7,6 +7,7 @@ import { WaiverForm } from '../components/waiver/WaiverForm';
 import { apiPost } from '../api/client';
 import { fetchMyWaivers, type GuardianWaiver } from '../api/waivers';
 import { formatBirthDate } from '../lib/dateUtils';
+import { isValidEmail, isValidPhone, formatPhoneInput } from '../utils/validation';
 import styles from './WaiverPage.module.css';
 
 const toDateInputValue = (value?: string) => {
@@ -312,8 +313,8 @@ export function WaiverPage() {
                 </div>
               </div>
               <div className={styles.waiverActions}>
-                <PrimaryButton to={returnUrl ?? '/book-party'} className={styles.primaryAction}>
-                  {returnUrl ? 'Continue with Existing Waiver' : 'Book a Party'}
+                <PrimaryButton to={returnUrl ?? '/account'} className={styles.primaryAction}>
+                  {returnUrl ? 'Continue' : 'Back to Account'}
                 </PrimaryButton>
                 {showForm ? (
                   <button
@@ -568,6 +569,16 @@ export function WaiverPage() {
                 return;
               }
 
+              // Validate email or phone format
+              if (loginMode === 'email' && !isValidEmail(loginInput.trim())) {
+                setLoginError('Please enter a valid email address');
+                return;
+              }
+              if (loginMode === 'phone' && !isValidPhone(loginInput.trim())) {
+                setLoginError('Please enter a valid 10-digit phone number');
+                return;
+              }
+
               setLoginLoading(true);
               setLoginError(null);
 
@@ -597,7 +608,10 @@ export function WaiverPage() {
               className={styles.loginInput}
               placeholder={loginMode === 'email' ? 'you@example.com' : '(555) 123-4567'}
               value={loginInput}
-              onChange={(e) => setLoginInput(e.target.value)}
+              onChange={(e) => {
+                const value = loginMode === 'phone' ? formatPhoneInput(e.target.value) : e.target.value;
+                setLoginInput(value);
+              }}
               autoComplete={loginMode === 'email' ? 'email' : 'tel'}
               disabled={loginLoading}
             />

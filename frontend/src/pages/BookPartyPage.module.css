@@ -1043,10 +1043,8 @@
   background: #f8f9fa;
   padding: 2rem;
   border-left: 1px solid #e0e0e0;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow-y: auto;
+  min-height: 100%;
+  align-self: stretch;
 }
 
 .cartHeader {

@@ -24,7 +24,7 @@ interface CartDrawerProps {
 }
 
 export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
-  const { items, removeItem, updateTicketQuantity, markTicketFulfilled, markMembershipActivated, markBookingDepositPaid, clear } = useCheckout();
+  const { items, removeItem, updateTicketQuantity, markTicketFulfilled, markMembershipActivated, markBookingPaid, clear } = useCheckout();
   const { user, refreshProfile } = useAuth();
 
   const [squareConfig, setSquareConfig] = useState<SquareConfig | null>(null);
@@ -43,17 +43,19 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const pendingItems = items.filter(item => {
     if (item.type === 'ticket') return item.status === 'pending';
     if (item.type === 'membership') return item.status === 'pending';
-    if (item.type === 'booking') return item.status === 'awaiting_deposit';
+    if (item.type === 'booking') return item.status === 'pending';
     return false;
   });
 
   // Calculate totals
+  const TAX_RATE = 0.08; // 8% tax
+
   const subtotal = pendingItems.reduce((sum, item) => {
-    if (item.type === 'ticket') return sum + item.total;
-    if (item.type === 'membership') return sum + item.total;
-    if (item.type === 'booking') return sum + item.depositAmount;
-    return sum;
+    return sum + item.total;
   }, 0);
+
+  const taxAmount = Number((subtotal * TAX_RATE).toFixed(2));
+  const total = Number((subtotal + taxAmount).toFixed(2));
 
   // Load Square config
   useEffect(() => {
@@ -166,14 +168,21 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             unitPrice: item.total,
           };
         }
-        // For bookings, treat deposit as a ticket-like item
+        // For bookings, send as proper booking type with package details
         if (item.type === 'booking') {
           return {
-            type: 'ticket' as const,
-            label: `Party Deposit - ${item.reference}`,
-            quantity: 1,
-            unitPrice: item.depositAmount,
-            metadata: { bookingId: item.bookingId, reference: item.reference },
+            type: 'booking' as const,
+            label: item.packageName,
+            packageId: item.packageId,
+            unitPrice: item.total,
+            location: item.location,
+            eventDate: item.eventDate,
+            startTime: item.startTime,
+            guestCount: item.guestCount,
+            childIds: item.childIds,
+            notes: item.notes,
+            addOns: item.addOns,
+            guestInfo: item.guestInfo,
           };
         }
         return null;
@@ -214,19 +223,22 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
         }
       });
 
-      // Handle booking deposits
-      pendingItems.forEach(item => {
-        if (item.type === 'booking') {
-          markBookingDepositPaid(item.bookingId, item.balanceRemaining);
-        }
-      });
+      // Mark bookings as paid with their new bookingId and reference
+      if (result.bookings) {
+        result.bookings.forEach((booking: { cartIndex: number; bookingId: string; reference: string }) => {
+          const originalItem = pendingItems[booking.cartIndex];
+          if (originalItem?.type === 'booking') {
+            markBookingPaid(originalItem.id, booking.bookingId, booking.reference);
+          }
+        });
+      }
 
       // Refresh user profile if authenticated
       if (user) {
         await refreshProfile().catch(console.error);
       }
 
-      setSuccess('Payment successful! Your order has been confirmed.');
+      setSuccess('Payment successful! Your order has been confirmed. A receipt has been sent to your email and mobile number (if provided).');
       setShowPayment(false);
 
       // Close drawer after short delay
@@ -241,7 +253,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     } finally {
       setProcessing(false);
     }
-  }, [pendingItems, user, guestFirstName, guestLastName, guestEmail, guestPhone, markTicketFulfilled, markMembershipActivated, markBookingDepositPaid, refreshProfile, clear, onClose]);
+  }, [pendingItems, user, guestFirstName, guestLastName, guestEmail, guestPhone, markTicketFulfilled, markMembershipActivated, markBookingPaid, refreshProfile, clear, onClose]);
 
   
   const renderItemDetails = (item: CheckoutItem) => {
@@ -282,9 +294,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       case 'booking':
         return (
           <>
-            <span className={styles.itemLabel}>Party Booking</span>
+            <span className={styles.itemLabel}>{item.packageName}</span>
             <span className={styles.itemQty}>{item.reference}</span>
-            <span className={styles.itemNote}>Deposit: ${item.depositAmount.toFixed(2)}</span>
+            <span className={styles.itemNote}>{item.eventDate} at {item.startTime}</span>
           </>
         );
       default:
@@ -293,7 +305,6 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   };
 
   const getItemPrice = (item: CheckoutItem) => {
-    if (item.type === 'booking') return item.depositAmount;
     return item.total;
   };
 
@@ -414,9 +425,13 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   <span>Subtotal</span>
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
+                <div className={styles.summaryRow}>
+                  <span>Tax (8%)</span>
+                  <span>${taxAmount.toFixed(2)}</span>
+                </div>
                 <div className={`${styles.summaryRow} ${styles.total}`}>
                   <span>Total</span>
-                  <span>${subtotal.toFixed(2)}</span>
+                  <span>${total.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -437,7 +452,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 <div className={styles.paymentSection}>
                   <h3 className={styles.paymentTitle}>Payment</h3>
                   <SquarePaymentForm
-                    amount={subtotal}
+                    amount={total}
                     currency="USD"
                     description={`${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} - Playfunia`}
                     submitLabel={processing ? 'Processing...' : 'Pay Now'}

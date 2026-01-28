@@ -40,11 +40,6 @@ export function MembershipPage() {
           typeof plan.visitsPerMonth === 'number' ? `${plan.visitsPerMonth}` : 'Unlimited',
       },
       {
-        label: 'Party discount',
-        render: (plan: MembershipPlanDto) =>
-          typeof plan.discountPercent === 'number' ? `${plan.discountPercent}% off` : 'Included',
-      },
-      {
         label: 'Guest passes',
         render: (plan: MembershipPlanDto) =>
           typeof plan.guestPassesPerMonth === 'number'
@@ -94,7 +89,7 @@ export function MembershipPage() {
           <div className={styles.intro}>
             <span className={styles.tag}>Memberships</span>
             <h1>Sign in to join the Playfunia Club</h1>
-            <p>Lock in unlimited play, party discounts, and special invites. Sign in or create an account to continue.</p>
+            <p>Lock in unlimited play and special invites. Sign in or create an account to continue.</p>
             <PrimaryButton to="/account">Sign in or create account</PrimaryButton>
           </div>
         </div>
@@ -158,7 +153,7 @@ export function MembershipPage() {
           <div className={styles.compare}>
             <div className={styles.compareHeader}>
               <h2>Compare memberships</h2>
-              <p>See visits, discounts, and guest passes at a glance across Silver, Gold, Platinum, and VIP Platinum.</p>
+              <p>See visits and guest passes at a glance across Silver, Gold, Platinum, and VIP Platinum.</p>
             </div>
             <div className={styles.compareTable}>
               <div className={styles.compareRow}>
@@ -212,11 +207,6 @@ export function MembershipPage() {
                         {typeof plan.visitsPerMonth === "number"
                           ? `${plan.visitsPerMonth} visits/month included`
                           : "Unlimited visits during open play"}
-                      </span>
-                      <span>
-                        {typeof plan.discountPercent === "number"
-                          ? `${plan.discountPercent}% party & camp discount`
-                          : "Member savings included"}
                       </span>
                       <span>
                         {typeof plan.guestPassesPerMonth === "number"
@@ -287,14 +277,6 @@ export function MembershipPage() {
                     <span>Unlimited</span>
                   </div>
                 )}
-                <div className={styles.summaryRow}>
-                  <span>Party & camp discount</span>
-                  <span>
-                    {typeof selectedPlan.discountPercent === "number"
-                      ? `${selectedPlan.discountPercent}%`
-                      : "Included"}
-                  </span>
-                </div>
                 <div className={styles.summaryRow}>
                   <span>Guest passes</span>
                   <span>

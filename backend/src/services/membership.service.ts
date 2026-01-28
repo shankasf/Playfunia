@@ -3,6 +3,9 @@ import { DateTime } from 'luxon';
 import { MembershipRepository, MembershipPlanRepository, UserRepository, CustomerRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { publishAdminEvent } from './admin-events.service';
+import { sendMembershipConfirmation } from './email.service';
+import { sendMembershipConfirmationSms } from './sms.service';
+import { createReceiptRecord, generateMembershipReceiptPDF } from './receipt.service';
 
 import type {
   PurchaseMembershipInput,
@@ -96,6 +99,111 @@ export async function purchaseMembership(userId: string, input: PurchaseMembersh
     visits_per_month: plan.visits_per_month ?? undefined,
   });
 
+  // Calculate total for receipt
+  const totalAmount = plan.monthly_price * input.durationMonths;
+
+  // Generate receipt record and PDF
+  let receiptNumber: string | undefined;
+  let receiptPdf: Buffer | undefined;
+
+  try {
+    console.log('[MembershipService] Creating receipt record for membership:', membership.membership_id);
+    const receiptResult = await createReceiptRecord({
+      purchaseType: 'membership',
+      referenceId: membership.membership_id,
+      customerId,
+      subtotal: totalAmount,
+      discount: 0,
+      tax: 0,
+      total: totalAmount,
+      paymentMethod: 'Credit Card',
+      paymentId: `membership_${membership.membership_id}`,
+      metadata: {
+        planName: plan.name,
+        tier,
+        durationMonths: input.durationMonths,
+        monthlyPrice: plan.monthly_price,
+        startDate: startedAt.toISODate(),
+        expiryDate: expiresAt.toISODate(),
+      },
+    });
+    receiptNumber = receiptResult.receiptNumber;
+    console.log('[MembershipService] Receipt record created:', receiptNumber);
+
+    // Generate PDF
+    console.log('[MembershipService] Generating PDF for receipt:', receiptNumber);
+    receiptPdf = await generateMembershipReceiptPDF({
+      receiptNumber,
+      date: startedAt.toLocaleString(DateTime.DATE_FULL),
+      customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
+      customerEmail: user.email ?? '',
+      planName: plan.name,
+      monthlyPrice: plan.monthly_price,
+      durationMonths: input.durationMonths,
+      subtotal: totalAmount,
+      total: totalAmount,
+      paymentMethod: 'Credit Card',
+      paymentId: `membership_${membership.membership_id}`,
+      startDate: startedAt.toLocaleString(DateTime.DATE_FULL),
+      expiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
+      benefits: plan.benefits ?? undefined,
+    });
+    console.log('[MembershipService] PDF generated, size:', receiptPdf.length, 'bytes');
+  } catch (receiptError) {
+    // Log full error details for debugging
+    const err = receiptError as Error & { code?: string; details?: string; hint?: string };
+    console.error('[MembershipService] Failed to generate membership receipt:', {
+      message: err.message,
+      code: err.code,
+      details: err.details,
+      hint: err.hint,
+      stack: err.stack,
+    });
+    // Don't fail the purchase if receipt generation fails
+  }
+
+  // Send membership confirmation email
+  if (user.email) {
+    try {
+      await sendMembershipConfirmation({
+        email: user.email,
+        customerName: user.first_name ?? 'Customer',
+        tierName: plan.name,
+        startDate: startedAt.toLocaleString(DateTime.DATE_FULL),
+        expiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
+        visitsPerMonth: plan.visits_per_month ?? null,
+        guestPassesPerMonth: plan.guest_passes_per_month ?? null,
+        discountPercent: plan.discount_percent ?? null,
+        benefits: plan.benefits ?? null,
+        autoRenew: true,
+        monthlyPrice: plan.monthly_price,
+        receiptPdf,
+        receiptNumber,
+      });
+    } catch (emailError) {
+      console.error('Failed to send membership confirmation email:', emailError);
+      // Don't fail the purchase if email fails
+    }
+  }
+
+  // Send membership confirmation SMS
+  if (user.phone) {
+    try {
+      await sendMembershipConfirmationSms({
+        phone: user.phone,
+        customerName: user.first_name ?? 'Customer',
+        tierName: plan.name,
+        startDate: startedAt.toLocaleString(DateTime.DATE_FULL),
+        expiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
+        visitsPerMonth: plan.visits_per_month ?? null,
+        monthlyPrice: plan.monthly_price,
+      });
+    } catch (smsError) {
+      console.error('Failed to send membership confirmation SMS:', smsError);
+      // Don't fail the purchase if SMS fails
+    }
+  }
+
   return {
     membershipId: String(membership.membership_id),
     tierName: plan.name,
@@ -104,6 +212,7 @@ export async function purchaseMembership(userId: string, input: PurchaseMembersh
     expiresAt: membership.end_date,
     autoRenew: true,
     visitsPerMonth: plan.visits_per_month,
+    receiptNumber,
   };
 }
 
@@ -167,21 +276,27 @@ export async function recordMembershipVisit(
   const visitsRemaining = visitsPerMonth !== null ? visitsPerMonth - visitsUsed : null;
 
   // Decrement visits remaining if applicable
-  if (visitsRemaining !== null) {
-    if (visitsRemaining <= 0) {
-      throw new AppError('Visit limit reached for this membership period', 400);
-    }
-
-    await MembershipRepository.update(membership.membership_id, {
-      visits_used_this_period: visitsUsed + 1,
-      last_visit_at: new Date().toISOString(),
-    });
+  if (visitsRemaining !== null && visitsRemaining <= 0) {
+    throw new AppError('Visit limit reached for this membership period', 400);
   }
+
+  // Use atomic update to prevent race conditions
+  const updatedMembership = await MembershipRepository.recordVisitAtomic(
+    membership.membership_id,
+    visitsPerMonth
+  );
+
+  if (!updatedMembership && visitsPerMonth !== null) {
+    throw new AppError('Visit limit reached for this membership period', 400);
+  }
+
+  const newVisitsUsed = updatedMembership?.visits_used_this_period ?? visitsUsed + 1;
+  const newVisitsRemaining = visitsPerMonth !== null ? visitsPerMonth - newVisitsUsed : null;
 
   publishAdminEvent('membership.visitRecorded', {
     userId: targetUserId,
     tier: membership.tier,
-    visitsRemaining: visitsRemaining !== null ? visitsRemaining - 1 : null,
+    visitsRemaining: newVisitsRemaining,
   });
 
   return {
@@ -190,7 +305,7 @@ export async function recordMembershipVisit(
       tier: membership.tier,
       tierName: plan?.name ?? membership.tier,
       visitsPerMonth,
-      visitsRemaining: visitsRemaining !== null ? visitsRemaining - 1 : null,
+      visitsRemaining: newVisitsRemaining,
     },
   };
 }
@@ -229,20 +344,23 @@ export async function recordMembershipVisitByMembershipId(membershipId: number):
   const visitsUsed = membership.visits_used_this_period ?? 0;
   const visitsRemaining = visitsPerMonth !== null ? visitsPerMonth - visitsUsed : null;
 
-  if (visitsRemaining !== null) {
-    if (visitsRemaining <= 0) {
-      throw new AppError('Visit limit reached for this membership period', 400);
-    }
-    
-    await MembershipRepository.update(membership.membership_id, {
-      visits_used_this_period: visitsUsed + 1,
-      last_visit_at: new Date().toISOString(),
-    });
+  if (visitsRemaining !== null && visitsRemaining <= 0) {
+    throw new AppError('Visit limit reached for this membership period', 400);
   }
 
-  const newVisitsUsed = visitsUsed + 1;
-  const newVisitsRemaining = visitsRemaining !== null ? visitsRemaining - 1 : null;
-  const now = new Date().toISOString();
+  // Use atomic update to prevent race conditions
+  const updatedMembership = await MembershipRepository.recordVisitAtomic(
+    membership.membership_id,
+    visitsPerMonth
+  );
+
+  if (!updatedMembership && visitsPerMonth !== null) {
+    throw new AppError('Visit limit reached for this membership period', 400);
+  }
+
+  const newVisitsUsed = updatedMembership?.visits_used_this_period ?? visitsUsed + 1;
+  const newVisitsRemaining = visitsPerMonth !== null ? visitsPerMonth - newVisitsUsed : null;
+  const now = updatedMembership?.last_visit_at ?? new Date().toISOString();
 
   publishAdminEvent('membership.visitRecorded', {
     membershipId,

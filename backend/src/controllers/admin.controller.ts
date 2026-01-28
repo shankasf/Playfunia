@@ -56,6 +56,16 @@ export const getAdminSummaryHandler = asyncHandler(async (_req, res) => {
   return res.status(200).json(summary);
 });
 
+// ============= Roles =============
+export const listRolesHandler = asyncHandler(async (_req, res) => {
+  const roles = [
+    { id: 'customer', name: 'Customer', description: 'Regular users who book parties, buy tickets' },
+    { id: 'employee', name: 'Employee', description: 'Staff who check in members, redeem tickets, view dashboard' },
+    { id: 'admin', name: 'Admin', description: 'Full system access, manage users, content, pricing' },
+  ];
+  return res.status(200).json({ roles });
+});
+
 // ============= Users CRUD =============
 export const listUsersHandler = asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit as string) || 50;
@@ -377,6 +387,11 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
   const depositPaid = Number(b.deposit_paid) || 0;
   const balanceRemaining = totalAmount - depositPaid;
 
+  // Guest booking info (stored in notes field for guest bookings)
+  const guestName = b.guest_name?.toString() ?? null;
+  const guestEmail = b.guest_email?.toString() ?? null;
+  const guestPhone = b.guest_phone?.toString() ?? null;
+
   return {
     id: String(b.booking_id),
     reference: b.reference?.toString() ?? '',
@@ -384,21 +399,27 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
     eventDate,
     startTime,
     endTime,
+    guests: Number(b.guests) || 0,
+    total: Number(b.total) || 0,
     status: b.status ?? 'Pending',
     paymentStatus: b.payment_status ?? 'awaiting_deposit',
     depositAmount: depositPaid,
     balanceRemaining,
     notes: b.notes ?? null,
+    privateNotes: b.private_notes ?? null,
     guardian: customer ? {
       firstName: customer.full_name?.toString().split(' ')[0] ?? '',
       lastName: customer.full_name?.toString().split(' ').slice(1).join(' ') ?? '',
       email: customer.email ?? '',
       phone: customer.phone ?? '',
     } : null,
-    partyPackage: pkg ? { 
-      id: String(pkg.package_id), 
-      name: pkg.name?.toString() ?? '' 
+    partyPackage: pkg ? {
+      id: String(pkg.package_id),
+      name: pkg.name?.toString() ?? ''
     } : null,
+    guestName,
+    guestEmail,
+    guestPhone,
   };
 }
 
@@ -425,18 +446,20 @@ export const updateBookingHandler = asyncHandler(async (req, res) => {
   const bookingId = parseIntParam(req.params.id);
   
   // Transform frontend field names to database field names
-  const { status, eventDate, startTime, location, notes } = req.body as {
+  const { status, eventDate, startTime, location, notes, privateNotes } = req.body as {
     status?: string;
     eventDate?: string;
     startTime?: string;
     location?: string;
     notes?: string;
+    privateNotes?: string;
   };
-  
+
   const dbUpdates: Record<string, unknown> = {};
-  
+
   if (status !== undefined) dbUpdates.status = status;
   if (notes !== undefined) dbUpdates.notes = notes;
+  if (privateNotes !== undefined) dbUpdates.private_notes = privateNotes;
   if (location !== undefined) dbUpdates.location_name = location;
   
   // If eventDate or startTime changed, recalculate scheduled_start/scheduled_end
@@ -667,8 +690,15 @@ export const updateTicketPurchaseHandler = asyncHandler(async (req, res) => {
 
 export const redeemTicketCodeHandler = asyncHandler(async (req, res) => {
   const { purchaseId, code } = req.body;
-  const rawTicket = await AdminService.redeemTicketCode(purchaseId, code);
-  publishAdminEvent('ticket.redeemed', { purchaseId, code });
+  if (!purchaseId || !code) {
+    throw new AppError('purchaseId and code are required', 400);
+  }
+  const parsedPurchaseId = typeof purchaseId === 'string' ? parseInt(purchaseId, 10) : purchaseId;
+  if (isNaN(parsedPurchaseId)) {
+    throw new AppError('Invalid purchaseId', 400);
+  }
+  const rawTicket = await AdminService.redeemTicketCode(parsedPurchaseId, code);
+  publishAdminEvent('ticket.redeemed', { purchaseId: parsedPurchaseId, code });
   const ticket = transformTicket(rawTicket as Record<string, unknown>);
   return res.status(200).json({ ticket });
 });
@@ -729,9 +759,9 @@ export const redeemTicketByCodeHandler = asyncHandler(async (req, res) => {
     throw new AppError('Ticket code is required', 400);
   }
 
-  const result = await AdminService.redeemTicketByCode(code, redeemedBy);
+  const ticket = await AdminService.redeemTicketByCode(code, redeemedBy);
   publishAdminEvent('ticket.redeemed', { code, redeemedBy });
-  return res.status(200).json(result);
+  return res.status(200).json({ ticket });
 });
 
 /**
@@ -958,8 +988,10 @@ export const deleteResourceHandler = asyncHandler(async (req, res) => {
 });
 
 // ============= Export Functions =============
-export const exportWaiversHandler = asyncHandler(async (_req, res) => {
-  const waivers = await AdminService.exportWaiversToCsv();
+export const exportWaiversHandler = asyncHandler(async (req, res) => {
+  const dateFrom = typeof req.query.dateFrom === 'string' ? req.query.dateFrom : undefined;
+  const dateTo = typeof req.query.dateTo === 'string' ? req.query.dateTo : undefined;
+  const waivers = await AdminService.exportWaiversToCsv(dateFrom, dateTo);
 
   const maxChildren = Math.max(1, ...waivers.map(w => (w.children as unknown[])?.length ?? 0));
 
@@ -1024,8 +1056,10 @@ export const exportWaiversHandler = asyncHandler(async (_req, res) => {
   return res.status(200).send(csv);
 });
 
-export const exportContactsHandler = asyncHandler(async (_req, res) => {
-  const contacts = await AdminService.exportContactsToCsv();
+export const exportContactsHandler = asyncHandler(async (req, res) => {
+  const dateFrom = typeof req.query.dateFrom === 'string' ? req.query.dateFrom : undefined;
+  const dateTo = typeof req.query.dateTo === 'string' ? req.query.dateTo : undefined;
+  const contacts = await AdminService.exportContactsToCsv(dateFrom, dateTo);
 
   const rows = contacts.map(contact => [
     contact.name,
@@ -1048,16 +1082,32 @@ export function adminEventStreamHandler(req: Request, res: Response) {
   res.setHeader('Connection', 'keep-alive');
   (res as Response & { flushHeaders?: () => void }).flushHeaders?.();
 
+  let isConnectionOpen = true;
+
   const send = (event: AdminEvent) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    if (!isConnectionOpen) return;
+    try {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    } catch (err) {
+      console.error('[SSE] Write error:', err);
+      cleanup();
+    }
+  };
+
+  const cleanup = () => {
+    if (!isConnectionOpen) return;
+    isConnectionOpen = false;
+    unsubscribe();
+    res.end();
   };
 
   getRecentAdminEvents().forEach(send);
 
   const unsubscribe = subscribeAdminEvents(send);
 
-  req.on('close', () => {
-    unsubscribe();
-    res.end();
+  req.on('close', cleanup);
+  req.on('error', (err) => {
+    console.error('[SSE] Request error:', err);
+    cleanup();
   });
 }

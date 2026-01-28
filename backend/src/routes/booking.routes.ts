@@ -13,6 +13,7 @@ import {
   confirmBookingDepositHandler,
   processSquareDepositHandler,
   updateBookingStatusHandler,
+  rescheduleBookingHandler,
 } from '../controllers/booking.controller';
 import { supabaseAuthGuard, optionalSupabaseAuthGuard, requireRoles } from '../middleware/supabase-auth.middleware';
 
@@ -32,6 +33,7 @@ bookingRouter.post('/:bookingId/deposit-intent', createBookingDepositIntentHandl
 bookingRouter.post('/:bookingId/deposit/confirm', confirmBookingDepositHandler);
 bookingRouter.post('/:bookingId/deposit/square', processSquareDepositHandler);
 bookingRouter.patch('/:bookingId/cancel', cancelBookingHandler);
+bookingRouter.patch('/:bookingId/reschedule', rescheduleBookingHandler);
 bookingRouter.get('/admin', requireRoles('admin', 'staff'), listAllBookingsHandler);
 bookingRouter.patch(
   '/:bookingId/status',

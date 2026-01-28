@@ -3,8 +3,86 @@ import { randomUUID } from 'crypto';
 
 import { getStripeClient } from '../config/stripe';
 import { appConfig } from '../config/env';
-import { UserRepository, PartyBookingRepository, PaymentRepository, OrderRepository } from '../repositories';
+import { UserRepository, PartyBookingRepository, PaymentRepository, OrderRepository, PartyPackageRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
+import { sendBookingConfirmation, type BookingEmailData } from './email.service';
+import { sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
+
+// Helper to send booking confirmation email and SMS
+async function sendBookingConfirmationEmail(
+  booking: any,
+  guardian: any,
+  depositAmount: number
+): Promise<void> {
+  const partyPackage = booking.package_id
+    ? await PartyPackageRepository.findById(booking.package_id)
+    : null;
+
+  const reference = booking.reference ?? `PF-${booking.booking_id}`;
+  const guestName = `${guardian.first_name} ${guardian.last_name}`.trim();
+  const eventDate = booking.event_date
+    ? new Date(booking.event_date).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : 'TBD';
+  const startTime = booking.start_time ?? 'TBD';
+  const location = booking.location_name ?? 'Albany';
+  const packageName = partyPackage?.name ?? 'Party Package';
+  const guestCount = booking.guests ?? 10;
+  const totalAmount = booking.total ?? 0;
+  const balanceRemaining = booking.balance_remaining ?? 0;
+
+  // Send email
+  if (guardian.email) {
+    try {
+      const emailData: BookingEmailData = {
+        reference,
+        guestName,
+        email: guardian.email,
+        eventDate,
+        startTime,
+        location,
+        packageName,
+        guestCount,
+        depositAmount,
+        totalAmount,
+        balanceRemaining,
+      };
+
+      await sendBookingConfirmation(emailData);
+    } catch (error) {
+      console.error('Failed to send booking confirmation email:', error);
+      // Don't throw - email failure shouldn't fail the payment
+    }
+  }
+
+  // Send SMS
+  const phone = guardian.phone || booking.guest_phone;
+  if (phone) {
+    try {
+      const smsData: BookingSmsData = {
+        phone,
+        guestName,
+        reference,
+        eventDate,
+        startTime,
+        location,
+        packageName,
+        guestCount,
+        depositAmount,
+        balanceRemaining,
+      };
+
+      await sendBookingConfirmationSms(smsData);
+    } catch (error) {
+      console.error('Failed to send booking confirmation SMS:', error);
+      // Don't throw - SMS failure shouldn't fail the payment
+    }
+  }
+}
 
 function assertStripeConfigured() {
   if (!appConfig.mockPayments && !appConfig.stripeSecretKey) {
@@ -169,12 +247,19 @@ export async function confirmBookingDepositPayment(
       payment_status: 'deposit_paid',
       status: 'Confirmed',
       balance_remaining: newBalance,
+      deposit_paid_at: new Date().toISOString(),
     });
 
     // Update payment record to Captured status
     const payment = await PaymentRepository.findByStripePaymentIntentId(paymentIntentId);
     if (payment) {
       await PaymentRepository.update(payment.payment_id, { status: 'Captured' });
+    }
+
+    // Send booking confirmation email
+    const updatedBooking = await PartyBookingRepository.findById(bookingIdNum);
+    if (updatedBooking) {
+      await sendBookingConfirmationEmail(updatedBooking, guardian, depositAmount);
     }
 
     return {
@@ -195,9 +280,9 @@ export async function confirmBookingDepositPayment(
     throw new AppError('Payment does not belong to this booking', 400);
   }
 
-  const amountReceived = (intent.amount_received ?? intent.amount ?? 0) / 100;
-  const expectedAmount = Number(depositAmount.toFixed(2));
-  if (Number(amountReceived.toFixed(2)) !== expectedAmount) {
+  const receivedCents = intent.amount_received ?? intent.amount ?? 0;
+  const expectedCents = Math.round(depositAmount * 100);
+  if (receivedCents !== expectedCents) {
     throw new AppError('Payment amount does not match the required deposit', 400);
   }
 
@@ -205,12 +290,19 @@ export async function confirmBookingDepositPayment(
     payment_status: 'deposit_paid',
     status: 'Confirmed',
     balance_remaining: newBalance,
+    deposit_paid_at: new Date().toISOString(),
   });
 
   // Update payment record
   const payment = await PaymentRepository.findByStripePaymentIntentId(paymentIntentId);
   if (payment) {
     await PaymentRepository.update(payment.payment_id, { status: 'Captured' });
+  }
+
+  // Send booking confirmation email
+  const updatedBooking = await PartyBookingRepository.findById(bookingIdNum);
+  if (updatedBooking) {
+    await sendBookingConfirmationEmail(updatedBooking, guardian, depositAmount);
   }
 
   return {

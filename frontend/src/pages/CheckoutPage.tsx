@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { PrimaryButton } from "../components/common/PrimaryButton";
-import { PaymentForm } from "../components/checkout/PaymentForm";
 import { SquarePaymentForm } from "../components/checkout/SquarePaymentForm";
+import { PaymentForm } from "../components/checkout/PaymentForm";
 import { formatTime, formatDateWithWeekday } from "../lib/dateUtils";
 import {
   useCheckout,
@@ -11,12 +11,7 @@ import {
   type TicketCartItem,
   type MembershipCartItem,
 } from "../context/CheckoutContext";
-import {
-  createBookingDepositIntent,
-  confirmBookingDeposit,
-  processSquareDeposit,
-  BookingDepositIntentResponse,
-} from "../api/bookings";
+// Booking payment now handled through unified cart checkout (CartPage/CartDrawer)
 import { createCheckoutIntent, finalizeCheckout, type CheckoutSummary } from "../api/checkout";
 import {
   createSquareCheckoutIntent,
@@ -28,14 +23,7 @@ import styles from "./CheckoutPage.module.css";
 
 type PaymentProvider = 'stripe' | 'square';
 
-type PaymentState = {
-  intent?: BookingDepositIntentResponse;
-  loading: boolean;
-  error?: string;
-  completed?: boolean;
-  squareReady?: boolean;
-  depositAmount?: number;
-};
+// Booking payment state no longer needed - bookings go through cart checkout
 
 type CartPaymentState = {
   loading: boolean;
@@ -52,21 +40,21 @@ type CartPaymentState = {
 export function CheckoutPage() {
   const { user } = useAuth();
   const hasValidWaiver = user?.hasValidWaiver ?? false;
-  const { items, removeItem, clear, markBookingDepositPaid, markTicketFulfilled, markMembershipActivated } =
+  const { items, removeItem, clear, markTicketFulfilled, markMembershipActivated } =
     useCheckout();
   const location = useLocation();
-  const [payments, setPayments] = useState<Record<string, PaymentState>>({});
   const [status, setStatus] = useState<string | null>(null);
-  const [promoCode, setPromoCode] = useState("");
   const [cartPayment, setCartPayment] = useState<CartPaymentState>({ loading: false });
   const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>('square');
   const [squareAvailable, setSquareAvailable] = useState(false);
 
   // Check if Square is available on mount
   useEffect(() => {
+    let isMounted = true;
     getSquareConfig()
-      .then(config => setSquareAvailable(config.available))
-      .catch(() => setSquareAvailable(false));
+      .then(config => { if (isMounted) setSquareAvailable(config.available); })
+      .catch(() => { if (isMounted) setSquareAvailable(false); });
+    return () => { isMounted = false; };
   }, []);
 
   const bookingItems = useMemo(
@@ -97,108 +85,18 @@ export function CheckoutPage() {
     }
   }, [location.state]);
 
-  const totalDepositsDueNow = bookingItems
-    .filter(item => item.status === "awaiting_deposit")
-    .reduce((sum, item) => sum + item.depositAmount, 0);
+  const totalBookingsDueNow = bookingItems
+    .filter(item => item.status === "pending")
+    .reduce((sum, item) => sum + item.total, 0);
 
-  const totalBalancesDueLater = bookingItems.reduce((sum, item) => sum + item.balanceRemaining, 0);
+  const totalBalancesDueLater = 0; // No balance due - full payment required
 
   const cartSubtotal = payableItems.reduce((sum, item) => sum + item.total, 0);
 
-  const handleStartDeposit = async (bookingId: string, depositAmount: number) => {
-    if (!hasValidWaiver) {
-      setStatus("Please complete the waiver before paying a deposit.");
-      return;
-    }
-    setPayments(prev => ({ ...prev, [bookingId]: { loading: true } }));
-
-    // Use Square if available
-    if (squareAvailable) {
-      setPayments(prev => ({
-        ...prev,
-        [bookingId]: { loading: false, squareReady: true, depositAmount },
-      }));
-      setStatus("Secure payment form ready. Enter your card details to pay the deposit.");
-      return;
-    }
-
-    // Fallback to Stripe
-    try {
-      const intent = await createBookingDepositIntent(bookingId);
-
-      // Mock payment mode - auto-confirm without Stripe
-      if (intent.mock && intent.paymentIntentId) {
-        const confirmation = await confirmBookingDeposit(bookingId, intent.paymentIntentId);
-        markBookingDepositPaid(bookingId, confirmation.balanceRemaining);
-        setPayments(prev => ({
-          ...prev,
-          [bookingId]: { loading: false, completed: true },
-        }));
-        setStatus(`Deposit confirmed for booking (test mode).`);
-        return;
-      }
-
-      setPayments(prev => ({
-        ...prev,
-        [bookingId]: { loading: false, intent },
-      }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to prepare deposit payment.";
-      setPayments(prev => ({ ...prev, [bookingId]: { loading: false, error: message } }));
-    }
-  };
-
-  // Square deposit payment handler
-  const handleSquareDepositSuccess = async (bookingId: string, sourceId: string, verificationToken?: string) => {
-    setPayments(prev => ({
-      ...prev,
-      [bookingId]: { ...(prev[bookingId] ?? {}), loading: true, error: undefined },
-    }));
-    try {
-      const result = await processSquareDeposit(bookingId, sourceId, verificationToken);
-      markBookingDepositPaid(bookingId, result.balanceRemaining);
-      setPayments(prev => ({
-        ...prev,
-        [bookingId]: { ...(prev[bookingId] ?? {}), loading: false, completed: true, squareReady: false },
-      }));
-      setStatus(`Deposit confirmed for booking. Thank you!`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Payment failed. Please try again.";
-      setPayments(prev => ({
-        ...prev,
-        [bookingId]: { ...(prev[bookingId] ?? {}), loading: false, error: message },
-      }));
-    }
-  };
-
-  const handleDepositSuccess = async (bookingId: string, paymentIntentId: string) => {
-    setPayments(prev => ({
-      ...prev,
-      [bookingId]: { ...(prev[bookingId] ?? {}), loading: true, error: undefined },
-    }));
-    try {
-      const confirmation = await confirmBookingDeposit(bookingId, paymentIntentId);
-      markBookingDepositPaid(bookingId, confirmation.balanceRemaining);
-      setPayments(prev => ({
-        ...prev,
-        [bookingId]: { ...(prev[bookingId] ?? {}), loading: false, completed: true },
-      }));
-      setStatus(`Deposit confirmed for booking ${confirmation.bookingId}.`);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Payment captured, but we could not finalize your booking. Please contact support.";
-      setPayments(prev => ({
-        ...prev,
-        [bookingId]: { ...(prev[bookingId] ?? {}), loading: false, error: message },
-      }));
-    }
-  };
+  // Booking payments now handled through unified cart checkout (CartPage/CartDrawer)
 
   const handleClear = () => {
     clear();
-    setPayments({});
     setCartPayment({ loading: false });
   };
 
@@ -215,7 +113,6 @@ export function CheckoutPage() {
     setCartPayment({ loading: true });
     try {
       const payload = {
-        promoCode: promoCode.trim() ? promoCode.trim() : undefined,
         items: payableItems.map(item =>
           item.type === "ticket"
             ? {
@@ -281,7 +178,6 @@ export function CheckoutPage() {
       const payload = {
         sourceId,
         verificationToken,
-        promoCode: promoCode.trim() ? promoCode.trim() : undefined,
         items: payableItems.map(item =>
           item.type === "ticket"
             ? {
@@ -311,8 +207,6 @@ export function CheckoutPage() {
           markTicketFulfilled(item.id, {
             ticketId: (entry.ticket as { id?: string; _id?: string }).id ?? (entry.ticket as { _id?: string })._id,
             codes,
-            discounts: cartPayment.summary?.lines?.[entry.cartIndex]?.discounts,
-            promoCode: payload.promoCode,
           });
         }
       });
@@ -350,7 +244,6 @@ export function CheckoutPage() {
     try {
       const payload = {
         paymentIntentId,
-        promoCode: promoCode.trim() ? promoCode.trim() : undefined,
         items: payableItems.map(item =>
           item.type === "ticket"
             ? {
@@ -380,8 +273,6 @@ export function CheckoutPage() {
           markTicketFulfilled(item.id, {
             ticketId: (entry.ticket as { id?: string; _id?: string }).id ?? (entry.ticket as { _id?: string })._id,
             codes,
-            discounts: cartPayment.summary?.lines?.[entry.cartIndex]?.discounts,
-            promoCode: payload.promoCode,
           });
         }
       });
@@ -450,86 +341,46 @@ export function CheckoutPage() {
           {bookingItems.length > 0 ? (
             <section className={styles.section}>
               <header>
-                <h2>Party deposits</h2>
-                <p>Pay 50% now to lock in your celebration. The remaining balance is due on party day.</p>
+                <h2>Party Bookings</h2>
+                <p>Complete payment through the cart to confirm your celebration.</p>
               </header>
               <ul className={styles.list}>
-                {bookingItems.map(item => {
-                  const state = payments[item.bookingId] ?? { loading: false };
-                  return (
-                    <li key={item.bookingId} className={styles.card}>
-                      <div className={styles.cardHeader}>
-                        <div>
-                          <span className={styles.badge}>Booking</span>
-                          <h3>{item.reference}</h3>
-                          <p>
-                            {item.location} • {formatDisplayDate(item.eventDate)} at {formatTime(item.startTime)}
-                          </p>
-                        </div>
-                        <button type="button" onClick={() => removeItem(item.id)} className={styles.removeButton}>
-                          Remove
-                        </button>
+                {bookingItems.map(item => (
+                  <li key={item.id} className={styles.card}>
+                    <div className={styles.cardHeader}>
+                      <div>
+                        <span className={styles.badge}>Booking</span>
+                        <h3>{item.packageName}</h3>
+                        <p>
+                          {item.location} • {formatDisplayDate(item.eventDate)} at {formatTime(item.startTime)}
+                        </p>
                       </div>
-                      <dl className={styles.summaryGrid}>
-                        <div>
-                          <dt>Total party cost</dt>
-                          <dd>{formatCurrency(item.total)}</dd>
-                        </div>
-                        <div>
-                          <dt>Deposit due now</dt>
-                          <dd>{formatCurrency(item.depositAmount)}</dd>
-                        </div>
-                        <div>
-                          <dt>Balance due at event</dt>
-                          <dd>{formatCurrency(item.balanceRemaining)}</dd>
-                        </div>
-                        <div>
-                          <dt>Status</dt>
-                          <dd>{item.status === "deposit_paid" ? "Deposit paid" : "Awaiting deposit"}</dd>
-                        </div>
-                      </dl>
+                      <button type="button" onClick={() => removeItem(item.id)} className={styles.removeButton}>
+                        Remove
+                      </button>
+                    </div>
+                    <dl className={styles.summaryGrid}>
+                      <div>
+                        <dt>Total</dt>
+                        <dd>{formatCurrency(item.total)}</dd>
+                      </div>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{item.status === "paid" ? "Paid" : "In cart - awaiting payment"}</dd>
+                      </div>
+                    </dl>
 
-                      {item.status === "deposit_paid" ? (
-                        <div className={styles.depositComplete}>
-                          Deposit received. A Playfunia host will reach out with party details.
-                        </div>
-                      ) : state.loading && !state.intent && !state.squareReady ? (
-                        <p>Preparing secure payment form...</p>
-                      ) : state.squareReady ? (
-                        <SquarePaymentForm
-                          amount={state.depositAmount ?? item.depositAmount}
-                          currency="usd"
-                          description={`Deposit for ${item.reference}`}
-                          submitLabel="Pay deposit"
-                          processingLabel="Processing deposit..."
-                          onSuccess={(sourceId, verificationToken) =>
-                            handleSquareDepositSuccess(item.bookingId, sourceId, verificationToken)
-                          }
-                        />
-                      ) : state.intent ? (
-                        <PaymentForm
-                          clientSecret={state.intent.clientSecret}
-                          amount={state.intent.amount / 100}
-                          currency={state.intent.currency}
-                          description={`Deposit for ${item.reference}`}
-                          submitLabel="Pay deposit"
-                          processingLabel="Processing deposit..."
-                          onSuccess={paymentIntentId => handleDepositSuccess(item.bookingId, paymentIntentId)}
-                        />
-                      ) : (
-                        <PrimaryButton
-                          type="button"
-                          onClick={() => handleStartDeposit(item.bookingId, item.depositAmount)}
-                          disabled={state.loading || !hasValidWaiver}
-                        >
-                          {state.loading ? "Preparing..." : hasValidWaiver ? "Pay deposit" : "Waiver required"}
-                        </PrimaryButton>
-                      )}
-
-                      {state.error ? <p className={styles.error}>{state.error}</p> : null}
-                    </li>
-                  );
-                })}
+                    {item.status === "paid" ? (
+                      <div className={styles.depositComplete}>
+                        Payment received. A Playfunia host will reach out with party details.
+                      </div>
+                    ) : (
+                      <PrimaryButton to="/cart">
+                        Go to Cart to Complete Payment
+                      </PrimaryButton>
+                    )}
+                  </li>
+                ))}
               </ul>
             </section>
           ) : null}
@@ -606,47 +457,19 @@ export function CheckoutPage() {
         <aside className={styles.summary}>
           <h2>Order summary</h2>
           <dl>
-            <div>
-              <dt>Deposits due now</dt>
-              <dd>{formatCurrency(totalDepositsDueNow)}</dd>
-            </div>
-            <div>
-              <dt>Tickets & memberships</dt>
-              <dd>{formatCurrency(orderSummary?.total ?? cartSubtotal)}</dd>
-            </div>
-            <div>
-              <dt>Balances due at visit</dt>
-              <dd>{formatCurrency(totalBalancesDueLater)}</dd>
-            </div>
-            {orderSummary?.discounts?.length ? (
+            {totalBookingsDueNow > 0 && (
               <div>
-                <dt>Discounts applied</dt>
-                <dd>
-                  {orderSummary.discounts
-                    .filter(discount => discount.amount > 0)
-                    .map(discount => `${discount.label}: -${formatCurrency(discount.amount)}`)
-                    .join(" · ")}
-                </dd>
+                <dt>Party bookings</dt>
+                <dd>{formatCurrency(totalBookingsDueNow)}</dd>
               </div>
-            ) : null}
+            )}
+            {cartSubtotal > 0 && (
+              <div>
+                <dt>Tickets & memberships</dt>
+                <dd>{formatCurrency(orderSummary?.total ?? cartSubtotal)}</dd>
+              </div>
+            )}
           </dl>
-
-          <div className={styles.promoRow}>
-            <input
-              type="text"
-              value={promoCode}
-              onChange={event => setPromoCode(event.target.value)}
-              placeholder="Promo code"
-              className={styles.promoInput}
-            />
-            <PrimaryButton
-              type="button"
-              onClick={prepareCartPayment}
-              className={`${styles.secondary} ${styles.promoButton}`}
-            >
-              Apply & refresh
-            </PrimaryButton>
-          </div>
 
           {cartPayment.error ? <p className={styles.error}>{cartPayment.error}</p> : null}
           {cartPayment.success && cartPayment.receiptEmail ? (

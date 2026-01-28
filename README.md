@@ -29,8 +29,8 @@ The PlayFunia digital platform is a full-stack playground experience that brings
 **Core capabilities**
 - **Marketing Microsite**: Responsive, themed landing pages for admissions, memberships, parties, events, testimonials, FAQs, and contact information.
 - **Account & Authentication**: Guardian registration, login, JWT-based sessions, and stored membership data.
-- **Booking Engine**: Endpoints for party reservations, schedule availability, price estimates, cancellation, admin status updates, and partial payment/deposit handling.
-- **Payment Processing**: Integrated Square payment gateway for secure deposit and full payment processing with webhook support.
+- **Booking Engine**: Endpoints for party reservations, schedule availability, price estimates, cancellation, and admin status updates. Uses industry-standard cart-based checkout.
+- **Payment Processing**: Integrated Square payment gateway with full payment model (no deposits), idempotent transactions, and pre-validation of availability before charging.
 - **Email Service**: OTP verification and booking confirmation emails via integrated email service.
 - **Content Services**: CMS-like APIs for FAQs, announcements, testimonials, and front-page highlights.
 - **Data Integration**: Supabase (PostgreSQL) for users, children, memberships, packages, bookings, events, waivers, testimonials, FAQs, announcements, and content. Dynamic pricing fetched from database.
@@ -383,15 +383,92 @@ The platform includes several performance optimizations for fast page loads and 
 
 ---
 
+## Industry-Standard E-commerce Checkout Pipeline
+
+The platform implements a **market-standard checkout flow** following best practices used by major e-commerce companies:
+
+### Checkout Flow (6 Phases)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PHASE 1: PRE-VALIDATION (Before Payment)                       │
+│  • Verify package/membership exists and is active               │
+│  • Check slot availability (prevents double-booking)            │
+│  • Return HTTP 409 Conflict for unavailable slots               │
+├─────────────────────────────────────────────────────────────────┤
+│  PHASE 2: CREATE ORDER                                          │
+│  • Create order record with status "Pending"                    │
+│  • Generate idempotency key (order_id + sourceId)               │
+├─────────────────────────────────────────────────────────────────┤
+│  PHASE 3: PROCESS PAYMENT                                       │
+│  • Charge payment with idempotency key                          │
+│  • On failure: Update order to "Failed" status                  │
+│  • On success: Record payment in database                       │
+├─────────────────────────────────────────────────────────────────┤
+│  PHASE 4: FULFILL ITEMS                                         │
+│  • Update order status to "Processing"                          │
+│  • Create tickets/memberships/bookings                          │
+│  • Track fulfillment errors per item (no abort on single fail)  │
+├─────────────────────────────────────────────────────────────────┤
+│  PHASE 5: UPDATE ORDER STATUS                                   │
+│  • "Completed" - all items fulfilled                            │
+│  • "Partial" - some items had fulfillment errors                │
+├─────────────────────────────────────────────────────────────────┤
+│  PHASE 6: SEND NOTIFICATIONS (Async)                            │
+│  • Fire-and-forget pattern (non-blocking)                       │
+│  • Customer sees confirmation immediately                       │
+│  • Email/SMS sent in background                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Cart-Based Checkout
+
+All purchases follow the **standard e-commerce cart pattern**:
+
+| Action | Behavior |
+|--------|----------|
+| Add to Cart | Frontend only (localStorage) - NO database record |
+| Checkout | Database record created AFTER successful payment |
+| Party Bookings | Only appear in admin list after payment confirmed |
+
+### Payment Model
+
+**Full payment required** for all purchase types:
+- Tickets: Full amount at checkout
+- Memberships: Full amount at checkout
+- Party Bookings: Full amount at checkout (no deposits)
+
+### PDF Receipts
+
+PDF receipts are generated for all purchase types:
+- **Tickets**: Order receipt with ticket codes
+- **Memberships**: Membership activation receipt
+- **Party Bookings**: Booking confirmation with package details
+
+Receipts are:
+- Attached to confirmation emails
+- Stored in database with verification hash
+- Include unique receipt numbers (TR-, MR-, BR- prefixes)
+
+---
+
 ## Roadmap & Next Steps
 **Completed:**
 - ✅ Chatbot FastAPI service integrated with enhanced UI (markdown support, typing indicators)
-- ✅ Square payment integration for party booking deposits
+- ✅ Square payment integration for secure checkout
 - ✅ Email service for OTP verification and booking confirmations
 - ✅ Admin dashboard with user management and booking controls
 - ✅ Dynamic pricing fetched from Supabase database
 - ✅ SWR caching for instant page refreshes and improved UX
 - ✅ Database indexes for optimized query performance
+- ✅ **Industry-standard e-commerce checkout pipeline**
+- ✅ **Full payment model (no deposits) for all purchase types**
+- ✅ **Pre-validation of slot availability before payment**
+- ✅ **Async (non-blocking) email/SMS notifications**
+- ✅ **PDF receipts for all purchase types (tickets, memberships, bookings)**
+- ✅ **Cart-based checkout (database records created only after payment)**
+- ✅ **Idempotent payment processing to prevent duplicates**
+- ✅ **Graceful partial fulfillment handling**
 
 **In Progress:**
 - Implement guardian portal features (child management, waiver uploads, loyalty points)

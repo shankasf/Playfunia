@@ -63,9 +63,27 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
         console.log('[Square] Payments instance created successfully');
         setPayments(paymentsInstance);
 
-        // Create card payment method
+        // Create card payment method with custom styles
         console.log('[Square] Creating card element...');
-        const cardInstance = await paymentsInstance.card();
+        const cardInstance = await paymentsInstance.card({
+          style: {
+            '.input-container': {
+              borderRadius: '6px',
+            },
+            '.input-container.is-focus': {
+              borderColor: '#7c3aed',
+            },
+            'input': {
+              color: '#1a1a2e',
+            },
+            'input::placeholder': {
+              color: '#9ca3af',
+            },
+            '.message-text': {
+              color: '#dc2626',
+            },
+          },
+        });
 
         if (!mounted) return;
 

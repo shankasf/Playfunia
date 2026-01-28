@@ -1,285 +1,383 @@
 .page {
-  padding: 3rem 1.5rem 4rem;
-  background: linear-gradient(180deg, #fff4e6 0%, #ffffff 50%);
+  padding: 2.5rem 1.5rem 3.5rem;
+  background: linear-gradient(180deg, #fef7f0 0%, #ffffff 100%);
   min-height: calc(100vh - 80px);
 }
 
 .container {
   max-width: 1100px;
   margin: 0 auto;
-  display: grid;
-  gap: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
 }
 
+/* Intro Section */
 .intro {
   background: #ffffff;
-  border-radius: 24px;
-  padding: 2.5rem 3rem;
-  box-shadow: 0 20px 40px rgba(255, 163, 67, 0.18);
+  border-radius: 20px;
+  padding: 2rem 2.5rem;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
+  display: inline-block;
+  font-size: 0.75rem;
   font-weight: 600;
   color: #ff7a00;
-  background: rgba(255, 122, 0, 0.12);
-  padding: 0.4rem 0.9rem;
-  border-radius: 999px;
-  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, rgba(255, 122, 0, 0.1), rgba(255, 150, 50, 0.1));
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
 .intro h1 {
   margin-top: 1rem;
-  font-size: clamp(2rem, 3vw, 2.7rem);
-  color: #2f1f0f;
+  font-size: 1.85rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  line-height: 1.3;
 }
 
 .intro p {
-  margin-top: 0.8rem;
-  font-size: 1.1rem;
-  color: #5c4632;
+  margin-top: 0.75rem;
+  font-size: 1rem;
+  color: #555;
   line-height: 1.6;
+  max-width: 700px;
 }
 
-.layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 2rem;
-}
-
+/* Comparison Table */
 .compare {
   background: #ffffff;
-  border-radius: 20px;
-  padding: 1.5rem 1.75rem;
-  box-shadow: 0 12px 28px rgba(191, 112, 21, 0.12);
+  border-radius: 16px;
+  padding: 1.5rem 2rem;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .compareHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .compareHeader h2 {
   margin: 0;
-  font-size: 1.3rem;
-  color: #2f1f0f;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a1a1a;
 }
 
 .compareHeader p {
-  margin: 0;
-  color: #6b5039;
-  font-size: 0.95rem;
+  margin: 0.35rem 0 0;
+  color: #666;
+  font-size: 0.9rem;
 }
 
 .compareTable {
-  display: grid;
-  gap: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .compareRow {
   display: grid;
-  grid-template-columns: 180px repeat(auto-fit, minmax(140px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: 160px repeat(4, 1fr);
+  gap: 1rem;
   align-items: center;
-  background: #fff7ef;
-  border: 1px solid rgba(191, 112, 21, 0.16);
-  border-radius: 12px;
-  padding: 0.8rem 1rem;
+  background: #fafafa;
+  border-radius: 10px;
+  padding: 0.875rem 1.25rem;
+  transition: background 0.2s ease;
+}
+
+.compareRow:hover {
+  background: #f5f5f5;
 }
 
 .compareLabel {
-  font-weight: 700;
-  color: #2f1f0f;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #333;
 }
 
 .compareCell {
-  font-weight: 600;
-  color: #4a341f;
-  display: grid;
-  gap: 0.15rem;
+  font-size: 0.9rem;
+  color: #444;
+  text-align: center;
 }
 
 .compareTier {
   font-weight: 700;
-  color: #2f1f0f;
+  font-size: 0.95rem;
+  color: #1a1a1a;
 }
 
 .comparePrice {
-  font-size: 0.95rem;
-  color: #6b5039;
+  font-size: 0.85rem;
+  color: #ff7a00;
+  font-weight: 600;
 }
 
+/* Layout */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 2rem;
+  align-items: start;
+}
+
+/* Plan Cards */
 .plans {
   display: grid;
-  gap: 1.5rem;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
 }
 
 .planCard {
-  border-radius: 20px;
-  padding: 1.9rem;
   background: #ffffff;
-  box-shadow: 0 15px 35px rgba(191, 112, 21, 0.12);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
   border: 2px solid transparent;
-  display: grid;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
-  transition:
-    border-color 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  transition: all 0.25s ease;
 }
 
 .planCard:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 22px 45px rgba(191, 112, 21, 0.18);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.1);
 }
 
 .planSelected {
   border-color: #ff7a00;
-  background: rgba(255, 122, 0, 0.08);
+  background: linear-gradient(180deg, #fff9f5 0%, #ffffff 100%);
 }
 
 .planHeader {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 1rem;
+  align-items: center;
 }
 
 .planHeader h3 {
   margin: 0;
-  font-size: 1.4rem;
-  color: #2f1f0f;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1a1a1a;
 }
 
 .planPrice {
-  font-size: 1.6rem;
+  font-size: 1.35rem;
   font-weight: 700;
-  color: #2f1f0f;
+  color: #ff7a00;
 }
 
 .planDescription {
-  color: #5c4632;
-  line-height: 1.6;
-  font-size: 1rem;
+  color: #555;
+  line-height: 1.55;
+  font-size: 0.9rem;
+  margin: 0;
 }
 
 .planMeta {
   display: flex;
-  gap: 1rem;
-  color: #6b5039;
-  font-size: 0.95rem;
   flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.planMeta span {
+  font-size: 0.8rem;
+  color: #555;
+  background: #f5f5f5;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #eee;
 }
 
 .benefitList {
   margin: 0;
-  padding-left: 1.2rem;
-  color: #442f1d;
-  display: grid;
-  gap: 0.35rem;
-  font-size: 0.98rem;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
+.benefitList li {
+  font-size: 0.88rem;
+  color: #444;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.benefitList li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #22c55e;
+  font-weight: 700;
+}
+
+/* Purchase Card */
 .purchaseCard {
   position: sticky;
-  top: 120px;
+  top: 100px;
   background: #ffffff;
-  border-radius: 20px;
-  padding: 1.9rem;
-  box-shadow: 0 18px 40px rgba(191, 112, 21, 0.16);
-  display: grid;
-  gap: 1.2rem;
+  border-radius: 16px;
+  padding: 1.75rem;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 .purchaseCard h2 {
   margin: 0;
-  font-size: 1.35rem;
-  color: #2f1f0f;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #eee;
 }
 
 .field {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 0.5rem;
 }
 
 .field label {
   font-weight: 600;
-  color: #2f1f0f;
+  font-size: 0.9rem;
+  color: #333;
 }
 
 .field select,
 .field input {
-  border: 1px solid rgba(47, 31, 15, 0.12);
+  border: 2px solid #e5e7eb;
   border-radius: 12px;
-  padding: 0.85rem 1rem;
+  padding: 0.875rem 1rem;
   font-size: 1rem;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
+  font-weight: 500;
+  background: #fff;
+  color: #1a1a1a;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23ff7a00' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 18px;
+  padding-right: 2.75rem;
+  background-color: linear-gradient(180deg, #fff 0%, #fafafa 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.field select:hover {
+  border-color: #ff7a00;
+  box-shadow: 0 4px 12px rgba(255, 122, 0, 0.1);
 }
 
 .field select:focus,
 .field input:focus {
   outline: none;
   border-color: #ff7a00;
-  box-shadow: 0 0 0 4px rgba(255, 122, 0, 0.15);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(255, 122, 0, 0.12), 0 4px 12px rgba(255, 122, 0, 0.08);
+}
+
+.field select option {
+  padding: 0.75rem;
+  font-weight: 500;
 }
 
 .toggleRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border: 1px dashed rgba(255, 122, 0, 0.4);
-  border-radius: 14px;
-  padding: 0.85rem 1rem;
-  background: rgba(255, 122, 0, 0.07);
+  background: linear-gradient(135deg, #fff9f5, #fff5ee);
+  border: 1px solid rgba(255, 122, 0, 0.2);
+  border-radius: 10px;
+  padding: 0.875rem 1rem;
 }
 
 .toggleRow label {
   font-weight: 600;
-  color: #2f1f0f;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.toggleRow input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: #ff7a00;
 }
 
 .summaryRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 1rem;
-  color: #2f1f0f;
+  font-size: 0.9rem;
+  color: #444;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.summaryRow:last-of-type {
+  border-bottom: none;
 }
 
 .summaryTotal {
-  font-size: 1.45rem;
+  font-size: 1.25rem;
   font-weight: 700;
+  color: #1a1a1a;
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+  border-top: 2px solid #ff7a00;
+  border-bottom: none;
+}
+
+.summaryTotal span:last-child {
+  color: #ff7a00;
 }
 
 .status {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
 }
 
 .statusError {
-  color: #c1262a;
+  color: #dc2626;
+  background: #fef2f2;
 }
 
 .statusSuccess {
-  color: #2f8a4b;
+  color: #16a34a;
+  background: #f0fdf4;
 }
 
 .helper {
-  font-size: 0.95rem;
-  color: #5c4632;
+  font-size: 0.85rem;
+  color: #666;
   line-height: 1.5;
 }
 
-@media (max-width: 960px) {
+/* Responsive Styles */
+@media (max-width: 1024px) {
   .layout {
     grid-template-columns: 1fr;
   }
@@ -288,67 +386,66 @@
     position: static;
   }
 
-  .compareRow {
-    grid-template-columns: 1fr;
+  .plans {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  .intro {
-    padding: 2rem;
+  .compareRow {
+    grid-template-columns: 140px repeat(4, 1fr);
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .page {
     padding: 2rem 1rem 3rem;
   }
 
   .intro {
     padding: 1.5rem;
-    border-radius: 18px;
+    border-radius: 16px;
   }
 
   .intro h1 {
-    font-size: clamp(1.5rem, 5vw, 2rem);
+    font-size: 1.5rem;
   }
 
   .intro p {
-    font-size: 1rem;
+    font-size: 0.95rem;
+  }
+
+  .plans {
+    grid-template-columns: 1fr;
+    gap: 1rem;
   }
 
   .planCard {
-    padding: 1.5rem;
-    border-radius: 16px;
-  }
-
-  .planHeader {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .planPrice {
-    font-size: 1.4rem;
-  }
-
-  .purchaseCard {
-    padding: 1.5rem;
-    border-radius: 16px;
+    padding: 1.25rem;
   }
 
   .compare {
     padding: 1.25rem;
-    border-radius: 16px;
+    overflow-x: auto;
+  }
+
+  .compareRow {
+    grid-template-columns: 120px repeat(4, minmax(80px, 1fr));
+    min-width: 500px;
   }
 
   .compareHeader {
     flex-direction: column;
     align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .purchaseCard {
+    padding: 1.5rem;
   }
 }
 
 @media (max-width: 480px) {
   .page {
-    padding: 1.5rem 0.75rem 2.5rem;
+    padding: 1.5rem 0.875rem 2.5rem;
   }
 
   .container {
@@ -359,35 +456,47 @@
     padding: 1.25rem;
   }
 
+  .intro h1 {
+    font-size: 1.35rem;
+  }
+
   .tag {
-    font-size: 0.75rem;
-    padding: 0.3rem 0.7rem;
+    font-size: 0.7rem;
+    padding: 0.35rem 0.75rem;
   }
 
   .planCard {
-    padding: 1.25rem;
+    padding: 1.1rem;
+    border-radius: 14px;
   }
 
   .planHeader h3 {
+    font-size: 1.05rem;
+  }
+
+  .planPrice {
     font-size: 1.2rem;
   }
 
-  .planMeta {
-    flex-direction: column;
-    gap: 0.5rem;
+  .planMeta span {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
   }
 
-  .benefitList {
-    font-size: 0.9rem;
+  .benefitList li {
+    font-size: 0.85rem;
   }
 
-  .field select,
-  .field input {
-    padding: 0.75rem;
-    font-size: 0.95rem;
+  .purchaseCard {
+    padding: 1.25rem;
+    border-radius: 14px;
+  }
+
+  .purchaseCard h2 {
+    font-size: 1.1rem;
   }
 
   .summaryTotal {
-    font-size: 1.25rem;
+    font-size: 1.15rem;
   }
 }

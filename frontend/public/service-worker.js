@@ -1,21 +1,50 @@
-const CACHE_NAME = 'playfunia-v1';
-const STATIC_CACHE = 'playfunia-static-v1';
-const IMAGE_CACHE = 'playfunia-images-v1';
+const CACHE_NAME = 'playfunia-v4';
+const STATIC_CACHE = 'playfunia-static-v4';
+const IMAGE_CACHE = 'playfunia-images-v4';
 
-// Assets to cache immediately on install
+// Track if user has consented to enhanced caching
+let imageCacheEnabled = true; // Default to true for performance
+
+// Assets to cache immediately on install (critical path)
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/images/logo.png',
+  '/images/hero-ballpit-logo.jpg', // Hero image - critical for FCP
+];
+
+// Additional images to cache for faster subsequent loads
+const PRECACHE_IMAGES = [
+  '/images/facility/entrance.jpg',
+  '/images/facility/play-area.jpg',
+  '/images/facility/party-room.jpg',
+  '/images/facility/toddler-zone.jpg',
+  '/images/facility/slide-area.jpg',
+  '/images/facility/trampoline.jpg',
+  '/images/parties/birthday-parties.jpg',
+  '/images/zones/ball-pit.jpg',
+  '/images/zones/trampolines.jpg',
+  '/images/zones/slides.jpg',
+  '/images/zones/toddler-area.jpg',
 ];
 
 // Install event - precache critical assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS);
-    })
+    Promise.all([
+      // Cache critical static assets
+      caches.open(STATIC_CACHE).then((cache) => {
+        return cache.addAll(PRECACHE_ASSETS);
+      }),
+      // Cache images separately for better cache management
+      caches.open(IMAGE_CACHE).then((cache) => {
+        // Use addAll with catch to prevent install failure if some images don't exist yet
+        return cache.addAll(PRECACHE_IMAGES).catch(() => {
+          console.log('[SW] Some precache images not available yet');
+        });
+      }),
+    ])
   );
   self.skipWaiting();
 });
@@ -34,10 +63,39 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Handle messages from the main app
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'ENABLE_IMAGE_CACHE') {
+    imageCacheEnabled = true;
+    console.log('[SW] Image caching enabled by user consent');
+
+    // Proactively cache common images when user accepts
+    caches.open(IMAGE_CACHE).then((cache) => {
+      cache.addAll(PRECACHE_IMAGES).catch(() => {
+        console.log('[SW] Some images not available for precaching');
+      });
+    });
+  }
+
+  if (event.data && event.data.type === 'DISABLE_IMAGE_CACHE') {
+    imageCacheEnabled = false;
+    console.log('[SW] Image caching disabled');
+  }
+
+  if (event.data && event.data.type === 'CLEAR_IMAGE_CACHE') {
+    caches.delete(IMAGE_CACHE).then(() => {
+      console.log('[SW] Image cache cleared');
+    });
+  }
+});
+
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Skip non-http/https requests (e.g., chrome-extension://)
+  if (!url.protocol.startsWith('http')) return;
 
   // Skip non-GET requests
   if (request.method !== 'GET') return;
@@ -45,27 +103,28 @@ self.addEventListener('fetch', (event) => {
   // Skip API requests
   if (url.pathname.startsWith('/api')) return;
 
-  // Handle image requests - cache first with network fallback
+  // Handle image requests - cache first with long-term storage
+  // Images rarely change, so serve from cache immediately for speed
   if (request.destination === 'image' || url.pathname.match(/\.(jpg|jpeg|png|gif|webp|svg|heic)$/i)) {
     event.respondWith(
       caches.open(IMAGE_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {
           if (cachedResponse) {
-            // Return cached and update in background
-            fetch(request).then((networkResponse) => {
-              if (networkResponse.ok) {
-                cache.put(request, networkResponse.clone());
-              }
-            }).catch(() => {});
+            // Return cached immediately - don't revalidate every time
+            // Images are versioned or rarely change
             return cachedResponse;
           }
 
-          // Not in cache, fetch from network
+          // Not in cache, fetch from network and cache for future
           return fetch(request).then((networkResponse) => {
             if (networkResponse.ok) {
+              // Clone and cache the response
               cache.put(request, networkResponse.clone());
             }
             return networkResponse;
+          }).catch(() => {
+            // Network failed, return placeholder or let browser handle
+            return new Response('', { status: 404 });
           });
         });
       })

@@ -64,6 +64,11 @@ export interface SquareCheckoutFinalizeResponse {
       visitsPerMonth: number | null;
     };
   }>;
+  bookings: Array<{
+    cartIndex: number;
+    bookingId: string;
+    reference: string;
+  }>;
   receiptEmail: string | null;
   receiptUrl?: string | null;
 }

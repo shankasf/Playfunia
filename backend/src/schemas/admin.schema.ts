@@ -23,6 +23,7 @@ export const adminBookingUpdateSchema = z
       .optional(),
     location: z.string().min(2).optional(),
     notes: z.string().max(500).optional(),
+    privateNotes: z.string().max(1000).optional(),
   })
   .refine(data => Object.keys(data).length > 0, {
     message: 'At least one field must be provided to update a booking.',
@@ -32,12 +33,20 @@ export const adminBookingUpdateSchema = z
 export type AdminBookingUpdateInput = z.infer<typeof adminBookingUpdateSchema>;
 
 // ============= User Schemas =============
+// Valid roles for the application
+export const validRoles = ['customer', 'employee', 'admin', 'user', 'staff'] as const;
+export type ValidRole = typeof validRoles[number];
+
 export const adminUserUpdateSchema = z
   .object({
     email: z.string().email().optional(),
     first_name: z.string().min(1).max(100).optional(),
     last_name: z.string().min(1).max(100).optional(),
-    role: z.enum(['user', 'admin', 'staff']).optional(),
+    phone: z.string().max(50).optional(),
+    // Single role (legacy support) - gets converted to roles array
+    role: z.enum(validRoles).optional(),
+    // Multiple roles array
+    roles: z.array(z.enum(validRoles)).min(1).optional(),
     is_active: z.boolean().optional(),
   })
   .refine(data => Object.keys(data).length > 0, {

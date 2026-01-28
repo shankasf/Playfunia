@@ -54,7 +54,7 @@ const isParentAgeValid = (birthDate: string): boolean => {
 
 const isChildAgeValid = (birthDate: string): boolean => {
   const age = calculateAge(birthDate);
-  return age >= 0 && age <= 13;
+  return age >= 1 && age <= 13;
 };
 
 const createId = () =>
@@ -253,7 +253,7 @@ export function WaiverForm({
         }
 
         if (child.birthDate && !isChildAgeValid(child.birthDate)) {
-          childErr.birthDate = 'Child age must be between 0 and 13 years.';
+          childErr.birthDate = 'Child age must be between 1 and 13 years.';
         }
 
         if (childErr.name || childErr.birthDate) {
@@ -412,7 +412,7 @@ export function WaiverForm({
 
       <div className={styles.section}>
         <h2>Children covered by this waiver</h2>
-        <p className={styles.helper}>Add each child who will be playing at Playfunia. Children must be 0-13 years old.</p>
+        <p className={styles.helper}>Add each child who will be playing at Playfunia. Children must be 1-13 years old.</p>
         <div className={styles.childrenList}>
           {children.map((child) => (
             <div key={child.id} className={styles.childRow}>

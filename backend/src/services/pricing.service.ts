@@ -54,12 +54,20 @@ export interface MembershipPlanPricing {
   guestPassesPerMonth: number;
 }
 
+export interface StoreHours {
+  day: string;
+  dayIndex: number;
+  open: string;
+  close: string;
+}
+
 export interface PricingConfigValues {
   cleaningFee: number;
   gripSocksPrice: number;
   extraChildAdmission: number;
   depositPercentage: number;
   siblingDiscountRate: number;
+  storeHours: StoreHours[];
 }
 
 export interface AllPricing {
@@ -141,6 +149,42 @@ export async function getMembershipPlans(): Promise<MembershipPlanPricing[]> {
   }));
 }
 
+// Store operating hours (same as booking.service.ts)
+const STORE_HOURS_DATA: Record<number, { open: string; close: string }> = {
+  0: { open: '11:00', close: '18:00' }, // Sunday: 11am - 6pm
+  1: { open: '10:00', close: '19:00' }, // Monday: 10am - 7pm
+  2: { open: '10:00', close: '19:00' }, // Tuesday: 10am - 7pm
+  3: { open: '10:00', close: '19:00' }, // Wednesday: 10am - 7pm
+  4: { open: '10:00', close: '19:00' }, // Thursday: 10am - 7pm
+  5: { open: '10:00', close: '20:00' }, // Friday: 10am - 8pm
+  6: { open: '10:00', close: '20:00' }, // Saturday: 10am - 8pm
+};
+
+const DAY_NAMES: Record<number, string> = {
+  0: 'Sunday',
+  1: 'Monday',
+  2: 'Tuesday',
+  3: 'Wednesday',
+  4: 'Thursday',
+  5: 'Friday',
+  6: 'Saturday',
+};
+
+/**
+ * Get store hours as an array
+ */
+export function getStoreHours(): StoreHours[] {
+  return Object.entries(STORE_HOURS_DATA).map(([dayIndex, hours]) => {
+    const idx = Number(dayIndex);
+    return {
+      day: DAY_NAMES[idx] ?? 'Unknown',
+      dayIndex: idx,
+      open: hours.open,
+      close: hours.close,
+    };
+  });
+}
+
 /**
  * Get pricing configuration values
  */
@@ -154,6 +198,7 @@ export async function getPricingConfig(): Promise<PricingConfigValues> {
     extraChildAdmission: configMap.get('extra_child_admission') ?? 15,
     depositPercentage: configMap.get('deposit_percentage') ?? 50,
     siblingDiscountRate: configMap.get('sibling_discount_rate') ?? 5,
+    storeHours: getStoreHours(),
   };
 }
 

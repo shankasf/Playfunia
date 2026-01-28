@@ -107,20 +107,43 @@ export const UserRepository = {
     id: string;
     email: string;
     user_metadata?: {
+      // Standard fields
       first_name?: string;
       last_name?: string;
       phone?: string;
+      // Google OAuth fields
+      full_name?: string;
+      name?: string;
+      given_name?: string;
+      family_name?: string;
     };
   }) {
-    const firstName = authUser.user_metadata?.first_name ?? '';
-    const lastName = authUser.user_metadata?.last_name ?? '';
-    const phone = authUser.user_metadata?.phone;
+    const metadata = authUser.user_metadata ?? {};
+
+    // Extract first name: prioritize given_name (Google), then first_name (standard)
+    let firstName = metadata.given_name || metadata.first_name || '';
+
+    // Extract last name: prioritize family_name (Google), then last_name (standard)
+    let lastName = metadata.family_name || metadata.last_name || '';
+
+    // If no separate names, try to parse from full_name or name (Google)
+    if (!firstName && !lastName) {
+      const fullName = metadata.full_name || metadata.name || '';
+      if (fullName) {
+        const parts = fullName.trim().split(/\s+/);
+        firstName = parts[0] || '';
+        lastName = parts.slice(1).join(' ') || '';
+      }
+    }
+
+    const phone = metadata.phone;
+    const fullNameForCustomer = `${firstName} ${lastName}`.trim() || 'New User';
 
     // First create a customer record
     const { data: customer, error: customerError } = await supabase
       .from('customers')
       .insert({
-        full_name: `${firstName} ${lastName}`.trim() || 'New User',
+        full_name: fullNameForCustomer,
         email: authUser.email.toLowerCase(),
         phone,
       })
@@ -155,6 +178,7 @@ export const UserRepository = {
     last_name?: string;
     phone?: string;
     roles?: string[];
+    auth_user_id?: string;
   }) {
     // First create a customer record
     const { data: customer, error: customerError } = await supabase
@@ -180,6 +204,7 @@ export const UserRepository = {
         phone: userData.phone,
         roles: userData.roles ?? ['user'],
         customer_id: customer.customer_id,
+        auth_user_id: userData.auth_user_id,
       })
       .select()
       .single();
@@ -438,6 +463,59 @@ export const MembershipRepository = {
     if (error) throw error;
     return data ?? [];
   },
+
+  /**
+   * Atomically record a visit - increments visits_used_this_period only if within limit
+   * Returns the updated membership or null if visit limit was reached
+   */
+  async recordVisitAtomic(membershipId: number, visitsPerMonth: number | null): Promise<Membership | null> {
+    // If unlimited visits, just update last_visit_at
+    if (visitsPerMonth === null) {
+      const { data, error } = await supabase
+        .from('memberships')
+        .update({ last_visit_at: new Date().toISOString() })
+        .eq('membership_id', membershipId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    }
+
+    // Use RPC for atomic increment with condition check
+    // This prevents race conditions by doing the check and update in a single operation
+    const { data, error } = await supabase.rpc('record_membership_visit', {
+      p_membership_id: membershipId,
+      p_visits_per_month: visitsPerMonth,
+    });
+
+    if (error) {
+      // If RPC doesn't exist, fall back to optimistic update
+      if (error.code === '42883') { // function does not exist
+        const membership = await this.findById(membershipId);
+        if (!membership) return null;
+
+        const visitsUsed = membership.visits_used_this_period ?? 0;
+        if (visitsUsed >= visitsPerMonth) return null;
+
+        const { data: updated, error: updateError } = await supabase
+          .from('memberships')
+          .update({
+            visits_used_this_period: visitsUsed + 1,
+            last_visit_at: new Date().toISOString(),
+          })
+          .eq('membership_id', membershipId)
+          .eq('visits_used_this_period', visitsUsed) // Optimistic lock
+          .select()
+          .single();
+
+        if (updateError || !updated) return null;
+        return updated;
+      }
+      throw error;
+    }
+
+    return data;
+  },
 };
 
 // ============= Party Package Repository =============
@@ -596,11 +674,44 @@ export const PartyBookingRepository = {
     return data;
   },
 
-  async findAll(options?: { status?: string; limit?: number }) {
+  /**
+   * Update booking with a condition check to prevent race conditions.
+   * Returns the updated booking or null if the condition was not met.
+   */
+  async updateWithCondition(
+    bookingId: number,
+    updates: Partial<PartyBooking>,
+    conditions: { status?: { neq?: string; eq?: string } }
+  ) {
+    let query = supabase
+      .from('party_bookings')
+      .update(updates)
+      .eq('booking_id', bookingId);
+
+    if (conditions.status?.neq) {
+      query = query.neq('status', conditions.status.neq);
+    }
+    if (conditions.status?.eq) {
+      query = query.eq('status', conditions.status.eq);
+    }
+
+    const { data, error } = await query.select().single();
+
+    // PGRST116 = no rows returned (condition not met)
+    if (error && error.code === 'PGRST116') {
+      return null;
+    }
+    if (error) throw error;
+    return data;
+  },
+
+  async findAll(options?: { status?: string; limit?: number; paidOnly?: boolean }) {
     let query = supabase
       .from('party_bookings')
       .select('*, party_packages(*), customers(*)');
     if (options?.status) query = query.eq('status', options.status);
+    // Filter out unpaid bookings (still in cart) - only show confirmed/paid bookings
+    if (options?.paidOnly) query = query.not('deposit_paid_at', 'is', null);
     if (options?.limit) query = query.limit(options.limit);
     const { data, error } = await query.order('event_date', { ascending: false });
     if (error) throw error;
@@ -1685,12 +1796,26 @@ export const TicketPurchaseRepository = {
   async redeemCode(purchaseId: number, code: string) {
     const purchase = await this.findById(purchaseId);
     if (!purchase) throw new Error('Purchase not found');
-    
-    const codes = (purchase.codes ?? []).map((c: { code: string; status: string; redeemedAt?: string }) =>
+
+    // Parse codes if it's a string (from database)
+    const existingCodes = typeof purchase.codes === 'string'
+      ? JSON.parse(purchase.codes)
+      : (purchase.codes ?? []);
+
+    const updatedCodes = existingCodes.map((c: { code: string; status: string; redeemedAt?: string }) =>
       c.code === code ? { ...c, status: 'redeemed', redeemedAt: new Date().toISOString() } : c
     );
-    
-    return this.update(purchaseId, { codes });
+
+    // Update with the codes array - Supabase handles JSON serialization
+    const { data, error } = await supabase
+      .from('ticket_purchases')
+      .update({ codes: updatedCodes, updated_at: new Date().toISOString() })
+      .eq('purchase_id', purchaseId)
+      .select('*, customers(*)')
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
   async findAll(options?: { status?: string | undefined; limit?: number | undefined }) {
@@ -2006,6 +2131,336 @@ export const PartyAddOnRepository = {
       .single();
     if (error) throw error;
     return data as PartyAddOn;
+  },
+};
+
+// ============= Payment Log Repository =============
+export interface PaymentLog {
+  log_id: number;
+  idempotency_key: string;
+  payment_id: string | null;
+  order_id: string | null;
+  customer_id: number | null;
+  user_id: number | null;
+  booking_id: number | null;
+  provider: string;
+  payment_type: string;
+  amount_usd: number;
+  currency: string;
+  status: string;
+  previous_status: string | null;
+  source_type: string | null;
+  location_id: string | null;
+  reference_id: string | null;
+  response_code: string | null;
+  error_category: string | null;
+  error_code: string | null;
+  error_detail: string | null;
+  error_field: string | null;
+  square_receipt_number: string | null;
+  square_receipt_url: string | null;
+  card_brand: string | null;
+  card_last4: string | null;
+  card_exp_month: number | null;
+  card_exp_year: number | null;
+  entry_method: string | null;
+  cvv_status: string | null;
+  avs_status: string | null;
+  risk_level: string | null;
+  risk_score: number | null;
+  verification_method: string | null;
+  processing_time_ms: number | null;
+  request_payload: Record<string, unknown> | null;
+  response_payload: Record<string, unknown> | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  session_id: string | null;
+  metadata: Record<string, unknown>;
+  initiated_at: string;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export const PaymentLogRepository = {
+  async create(logData: {
+    idempotency_key: string;
+    payment_id?: string;
+    order_id?: string;
+    customer_id?: number | null;
+    user_id?: number | null;
+    booking_id?: number | null;
+    provider?: string;
+    payment_type: string;
+    amount_usd: number;
+    currency?: string;
+    status: string;
+    previous_status?: string;
+    source_type?: string;
+    location_id?: string;
+    reference_id?: string;
+    response_code?: string;
+    error_category?: string;
+    error_code?: string;
+    error_detail?: string;
+    error_field?: string;
+    square_receipt_number?: string;
+    square_receipt_url?: string;
+    card_brand?: string;
+    card_last4?: string;
+    card_exp_month?: number;
+    card_exp_year?: number;
+    entry_method?: string;
+    cvv_status?: string;
+    avs_status?: string;
+    risk_level?: string;
+    risk_score?: number;
+    verification_method?: string;
+    processing_time_ms?: number;
+    request_payload?: Record<string, unknown>;
+    response_payload?: Record<string, unknown>;
+    ip_address?: string;
+    user_agent?: string;
+    session_id?: string;
+    metadata?: Record<string, unknown>;
+    initiated_at?: string;
+    completed_at?: string;
+  }) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .insert({
+        idempotency_key: logData.idempotency_key,
+        payment_id: logData.payment_id ?? null,
+        order_id: logData.order_id ?? null,
+        customer_id: logData.customer_id ?? null,
+        user_id: logData.user_id ?? null,
+        booking_id: logData.booking_id ?? null,
+        provider: logData.provider ?? 'square',
+        payment_type: logData.payment_type,
+        amount_usd: logData.amount_usd,
+        currency: logData.currency ?? 'USD',
+        status: logData.status,
+        previous_status: logData.previous_status ?? null,
+        source_type: logData.source_type ?? null,
+        location_id: logData.location_id ?? null,
+        reference_id: logData.reference_id ?? null,
+        response_code: logData.response_code ?? null,
+        error_category: logData.error_category ?? null,
+        error_code: logData.error_code ?? null,
+        error_detail: logData.error_detail ?? null,
+        error_field: logData.error_field ?? null,
+        square_receipt_number: logData.square_receipt_number ?? null,
+        square_receipt_url: logData.square_receipt_url ?? null,
+        card_brand: logData.card_brand ?? null,
+        card_last4: logData.card_last4 ?? null,
+        card_exp_month: logData.card_exp_month ?? null,
+        card_exp_year: logData.card_exp_year ?? null,
+        entry_method: logData.entry_method ?? null,
+        cvv_status: logData.cvv_status ?? null,
+        avs_status: logData.avs_status ?? null,
+        risk_level: logData.risk_level ?? null,
+        risk_score: logData.risk_score ?? null,
+        verification_method: logData.verification_method ?? null,
+        processing_time_ms: logData.processing_time_ms ?? null,
+        request_payload: logData.request_payload ?? null,
+        response_payload: logData.response_payload ?? null,
+        ip_address: logData.ip_address ?? null,
+        user_agent: logData.user_agent ?? null,
+        session_id: logData.session_id ?? null,
+        metadata: logData.metadata ?? {},
+        initiated_at: logData.initiated_at ?? new Date().toISOString(),
+        completed_at: logData.completed_at ?? null,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as PaymentLog;
+  },
+
+  async update(logId: number, updates: Partial<Omit<PaymentLog, 'log_id' | 'created_at'>>) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .update(updates)
+      .eq('log_id', logId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as PaymentLog;
+  },
+
+  async findByIdempotencyKey(idempotencyKey: string) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .select('*')
+      .eq('idempotency_key', idempotencyKey)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data as PaymentLog | null;
+  },
+
+  async findByPaymentId(paymentId: string) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .select('*')
+      .eq('payment_id', paymentId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as PaymentLog[];
+  },
+
+  async findByBookingId(bookingId: number) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as PaymentLog[];
+  },
+
+  async findByCustomerId(customerId: number, limit = 50) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as PaymentLog[];
+  },
+
+  async findFailedPayments(limit = 100) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .select('*')
+      .eq('status', 'failed')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as PaymentLog[];
+  },
+
+  async findRecentLogs(limit = 100) {
+    // Use supabaseAny since 'payment_logs' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('payment_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as PaymentLog[];
+  },
+};
+
+// ============= Receipt Repository =============
+export interface Receipt {
+  receipt_id: number;
+  receipt_number: string;
+  customer_id: number | null;
+  purchase_type: 'membership' | 'ticket' | 'booking';
+  reference_id: number;
+  subtotal_usd: number;
+  discount_usd: number;
+  tax_usd: number;
+  total_usd: number;
+  payment_method: string | null;
+  payment_id: string | null;
+  verification_hash: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export const ReceiptRepository = {
+  async create(receiptData: {
+    receipt_number: string;
+    customer_id?: number | null;
+    purchase_type: 'membership' | 'ticket' | 'booking';
+    reference_id: number;
+    subtotal_usd: number;
+    discount_usd?: number;
+    tax_usd?: number;
+    total_usd: number;
+    payment_method?: string;
+    payment_id?: string;
+    verification_hash: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    // Use supabaseAny since 'receipts' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('receipts')
+      .insert({
+        receipt_number: receiptData.receipt_number,
+        customer_id: receiptData.customer_id ?? null,
+        purchase_type: receiptData.purchase_type,
+        reference_id: receiptData.reference_id,
+        subtotal_usd: receiptData.subtotal_usd,
+        discount_usd: receiptData.discount_usd ?? 0,
+        tax_usd: receiptData.tax_usd ?? 0,
+        total_usd: receiptData.total_usd,
+        payment_method: receiptData.payment_method ?? null,
+        payment_id: receiptData.payment_id ?? null,
+        verification_hash: receiptData.verification_hash,
+        metadata: receiptData.metadata ?? {},
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Receipt;
+  },
+
+  async findByReceiptNumber(receiptNumber: string) {
+    // Use supabaseAny since 'receipts' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('receipts')
+      .select('*, customers(*)')
+      .eq('receipt_number', receiptNumber)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data as (Receipt & { customers: Customer | null }) | null;
+  },
+
+  async findByCustomerId(customerId: number) {
+    // Use supabaseAny since 'receipts' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('receipts')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as Receipt[];
+  },
+
+  async findById(receiptId: number) {
+    // Use supabaseAny since 'receipts' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('receipts')
+      .select('*, customers(*)')
+      .eq('receipt_id', receiptId)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data as (Receipt & { customers: Customer | null }) | null;
+  },
+
+  async findByPurchase(purchaseType: 'membership' | 'ticket' | 'booking', referenceId: number) {
+    // Use supabaseAny since 'receipts' table isn't in the generated types yet
+    const { data, error } = await supabaseAny
+      .from('receipts')
+      .select('*')
+      .eq('purchase_type', purchaseType)
+      .eq('reference_id', referenceId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data as Receipt | null;
   },
 };
 
