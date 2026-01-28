@@ -8,6 +8,7 @@
   background: rgba(255, 255, 255, 0.95);
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: visible;
 }
 
 .inner {
@@ -17,6 +18,7 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  overflow: visible;
 }
 
 .primaryRow {
@@ -24,6 +26,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 2rem;
+  overflow: visible;
 }
 
 .brand {
