@@ -620,6 +620,10 @@ export interface OrderConfirmationEmailData {
   total: number;
   paymentMethod: string;
   receiptPdf?: Buffer;
+  // Additional fields for admin notification
+  customerPhone?: string;
+  customerId?: string;
+  paymentId?: string;
 }
 
 // Send order confirmation email
@@ -686,5 +690,290 @@ export async function sendOrderConfirmation(data: OrderConfirmationEmailData): P
       </div>
     `,
     text: `Order Confirmed!\n\nOrder #${data.orderNumber}\n\nHi ${data.customerName},\n\nThank you for your order!\n\n${data.items.map(i => `${i.label} x${i.quantity}: $${i.total.toFixed(2)}${i.codes ? `\nCodes: ${i.codes.join(', ')}` : ''}`).join('\n')}\n\nSubtotal: $${data.subtotal.toFixed(2)}\nTax (8%): $${data.taxAmount.toFixed(2)}\nTotal: $${data.total.toFixed(2)}\nPayment: ${data.paymentMethod}\nDate: ${data.orderDate}`,
+  });
+}
+
+// ============= Admin Notification Emails =============
+// These are sent to admins with internal/operational details
+
+// Admin notification for booking confirmation
+export interface AdminBookingNotificationData {
+  reference: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  customerId?: string;
+  eventDate: string;
+  startTime: string;
+  location: string;
+  packageName: string;
+  guestCount: number;
+  totalAmount: number;
+  paymentId?: string;
+  paymentMethod?: string;
+  addOns?: Array<{ name: string; quantity: number; price: number }>;
+  notes?: string;
+  childrenNames?: string[];
+  isGuestBooking: boolean;
+}
+
+// Send admin notification for new booking
+export async function sendAdminBookingNotification(data: AdminBookingNotificationData): Promise<boolean> {
+  const addOnsHtml = data.addOns?.length
+    ? `<tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Add-ons</td><td style="padding: 8px 0; color: #1e1b4b;">${data.addOns.map(a => `${a.name} x${a.quantity} ($${a.price})`).join(', ')}</td></tr>`
+    : '';
+
+  const childrenHtml = data.childrenNames?.length
+    ? `<tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Children</td><td style="padding: 8px 0; color: #1e1b4b;">${data.childrenNames.join(', ')}</td></tr>`
+    : '';
+
+  const notesHtml = data.notes
+    ? `<tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Special Requests</td><td style="padding: 8px 0; color: #1e1b4b;">${data.notes}</td></tr>`
+    : '';
+
+  return sendEmail({
+    to: ADMIN_EMAILS,
+    subject: `🎉 NEW BOOKING: ${data.packageName} - ${data.eventDate} - ${data.reference}`,
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">
+        <div style="background: #059669; padding: 15px 20px; border-radius: 12px 12px 0 0;">
+          <h2 style="color: white; margin: 0; font-size: 18px;">🎉 New Party Booking Received</h2>
+        </div>
+
+        <div style="background: #f0fdf4; padding: 20px; border: 1px solid #bbf7d0; border-top: none;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px 0; color: #166534; font-weight: bold; font-size: 16px;" colspan="2">Reference: ${data.reference}</td></tr>
+            <tr><td style="padding: 4px 0; color: #166534;" colspan="2">Amount: $${data.totalAmount.toFixed(2)} (PAID)</td></tr>
+          </table>
+        </div>
+
+        <div style="background: #fef3c7; padding: 15px 20px; border: 1px solid #fde68a; border-top: none;">
+          <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 14px;">📞 CUSTOMER CONTACT INFO</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600; width: 140px;">Name</td><td style="padding: 6px 0; color: #1e1b4b;">${data.customerName} ${data.isGuestBooking ? '<span style="background:#f97316;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:8px;">GUEST</span>' : ''}</td></tr>
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Email</td><td style="padding: 6px 0; color: #1e1b4b;"><a href="mailto:${data.customerEmail}" style="color: #7c3aed;">${data.customerEmail}</a></td></tr>
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Phone</td><td style="padding: 6px 0; color: #1e1b4b;">${data.customerPhone ? `<a href="tel:${data.customerPhone}" style="color: #7c3aed;">${data.customerPhone}</a>` : 'Not provided'}</td></tr>
+            ${data.customerId ? `<tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Customer ID</td><td style="padding: 6px 0; color: #6b7280; font-family: monospace; font-size: 12px;">${data.customerId}</td></tr>` : ''}
+          </table>
+        </div>
+
+        <div style="background: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-top: none;">
+          <h3 style="color: #1e1b4b; margin: 0 0 15px 0; font-size: 14px;">📅 BOOKING DETAILS</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600; width: 140px;">Package</td><td style="padding: 8px 0; color: #1e1b4b; font-weight: bold;">${data.packageName}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Date</td><td style="padding: 8px 0; color: #1e1b4b; font-weight: bold;">${data.eventDate}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Time</td><td style="padding: 8px 0; color: #1e1b4b; font-weight: bold;">${data.startTime}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Location</td><td style="padding: 8px 0; color: #1e1b4b;">${data.location}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Guests</td><td style="padding: 8px 0; color: #1e1b4b;">${data.guestCount}</td></tr>
+            ${childrenHtml}
+            ${addOnsHtml}
+            ${notesHtml}
+          </table>
+        </div>
+
+        <div style="background: #eff6ff; padding: 15px 20px; border: 1px solid #bfdbfe; border-top: none; border-radius: 0 0 12px 12px;">
+          <h3 style="color: #1e40af; margin: 0 0 10px 0; font-size: 14px;">💳 PAYMENT INFO</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600; width: 140px;">Amount</td><td style="padding: 6px 0; color: #1e1b4b; font-weight: bold;">$${data.totalAmount.toFixed(2)}</td></tr>
+            <tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600;">Method</td><td style="padding: 6px 0; color: #1e1b4b;">${data.paymentMethod || 'Square'}</td></tr>
+            ${data.paymentId ? `<tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600;">Payment ID</td><td style="padding: 6px 0; color: #6b7280; font-family: monospace; font-size: 12px;">${data.paymentId}</td></tr>` : ''}
+          </table>
+        </div>
+
+        <div style="margin-top: 20px; padding: 15px; background: #fef2f2; border-radius: 8px; border: 1px solid #fecaca;">
+          <p style="color: #991b1b; font-size: 13px; margin: 0; font-weight: 600;">⚡ ACTION REQUIRED</p>
+          <p style="color: #7f1d1d; font-size: 13px; margin: 8px 0 0 0;">Please confirm party room availability and prepare for this booking. Contact the customer if any clarification is needed.</p>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+        <p style="color: #9ca3af; font-size: 11px; text-align: center;">This is an automated admin notification from Playfunia booking system.</p>
+      </div>
+    `,
+    text: `NEW PARTY BOOKING\n\nReference: ${data.reference}\nAmount: $${data.totalAmount.toFixed(2)} (PAID)\n\nCUSTOMER CONTACT:\nName: ${data.customerName}${data.isGuestBooking ? ' (GUEST)' : ''}\nEmail: ${data.customerEmail}\nPhone: ${data.customerPhone || 'Not provided'}\n${data.customerId ? `Customer ID: ${data.customerId}\n` : ''}\nBOOKING DETAILS:\nPackage: ${data.packageName}\nDate: ${data.eventDate}\nTime: ${data.startTime}\nLocation: ${data.location}\nGuests: ${data.guestCount}\n${data.childrenNames?.length ? `Children: ${data.childrenNames.join(', ')}\n` : ''}${data.addOns?.length ? `Add-ons: ${data.addOns.map(a => `${a.name} x${a.quantity}`).join(', ')}\n` : ''}${data.notes ? `Notes: ${data.notes}\n` : ''}\nPAYMENT:\nAmount: $${data.totalAmount.toFixed(2)}\nMethod: ${data.paymentMethod || 'Square'}\n${data.paymentId ? `Payment ID: ${data.paymentId}\n` : ''}`,
+  });
+}
+
+// Admin notification for ticket purchase
+export interface AdminTicketNotificationData {
+  orderNumber: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  customerId?: string;
+  tickets: Array<{
+    label: string;
+    quantity: number;
+    unitPrice: number;
+    codes: string[];
+  }>;
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+  discounts?: Array<{ label: string; amount: number }>;
+  paymentId?: string;
+  paymentMethod?: string;
+  purchaseDate: string;
+  isGuestPurchase: boolean;
+}
+
+// Send admin notification for ticket purchase
+export async function sendAdminTicketNotification(data: AdminTicketNotificationData): Promise<boolean> {
+  const ticketsHtml = data.tickets
+    .map(t => `
+      <tr>
+        <td style="padding: 8px 0; color: #4b5563;">${t.label}</td>
+        <td style="padding: 8px 0; text-align: center; color: #1e1b4b;">${t.quantity}</td>
+        <td style="padding: 8px 0; text-align: right; color: #1e1b4b;">$${(t.unitPrice * t.quantity).toFixed(2)}</td>
+      </tr>
+      <tr><td colspan="3" style="padding: 4px 0 12px 20px; color: #7c3aed; font-family: monospace; font-size: 12px;">Codes: ${t.codes.join(', ')}</td></tr>
+    `)
+    .join('');
+
+  const discountsHtml = data.discounts?.length
+    ? data.discounts.map(d => `<tr><td colspan="2" style="padding: 4px 0; color: #059669;">${d.label}</td><td style="padding: 4px 0; text-align: right; color: #059669;">-$${d.amount.toFixed(2)}</td></tr>`).join('')
+    : '';
+
+  return sendEmail({
+    to: ADMIN_EMAILS,
+    subject: `🎟️ NEW TICKET ORDER: ${data.orderNumber} - $${data.totalAmount.toFixed(2)}`,
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">
+        <div style="background: #7c3aed; padding: 15px 20px; border-radius: 12px 12px 0 0;">
+          <h2 style="color: white; margin: 0; font-size: 18px;">🎟️ New Ticket Purchase</h2>
+        </div>
+
+        <div style="background: #f5f3ff; padding: 20px; border: 1px solid #ddd6fe; border-top: none;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px 0; color: #5b21b6; font-weight: bold; font-size: 16px;" colspan="2">Order: ${data.orderNumber}</td></tr>
+            <tr><td style="padding: 4px 0; color: #5b21b6;" colspan="2">Total: $${data.totalAmount.toFixed(2)} (PAID)</td></tr>
+            <tr><td style="padding: 4px 0; color: #6b7280;" colspan="2">Date: ${data.purchaseDate}</td></tr>
+          </table>
+        </div>
+
+        <div style="background: #fef3c7; padding: 15px 20px; border: 1px solid #fde68a; border-top: none;">
+          <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 14px;">📞 CUSTOMER CONTACT INFO</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600; width: 140px;">Name</td><td style="padding: 6px 0; color: #1e1b4b;">${data.customerName} ${data.isGuestPurchase ? '<span style="background:#f97316;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:8px;">GUEST</span>' : ''}</td></tr>
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Email</td><td style="padding: 6px 0; color: #1e1b4b;"><a href="mailto:${data.customerEmail}" style="color: #7c3aed;">${data.customerEmail}</a></td></tr>
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Phone</td><td style="padding: 6px 0; color: #1e1b4b;">${data.customerPhone ? `<a href="tel:${data.customerPhone}" style="color: #7c3aed;">${data.customerPhone}</a>` : 'Not provided'}</td></tr>
+            ${data.customerId ? `<tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Customer ID</td><td style="padding: 6px 0; color: #6b7280; font-family: monospace; font-size: 12px;">${data.customerId}</td></tr>` : ''}
+          </table>
+        </div>
+
+        <div style="background: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-top: none;">
+          <h3 style="color: #1e1b4b; margin: 0 0 15px 0; font-size: 14px;">🎟️ TICKETS PURCHASED</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid #e5e7eb;">
+              <th style="padding: 8px 0; text-align: left; color: #6b7280;">Ticket</th>
+              <th style="padding: 8px 0; text-align: center; color: #6b7280;">Qty</th>
+              <th style="padding: 8px 0; text-align: right; color: #6b7280;">Price</th>
+            </tr>
+            ${ticketsHtml}
+            ${discountsHtml}
+            <tr style="border-top: 1px solid #e5e7eb;">
+              <td colspan="2" style="padding: 8px 0; color: #4b5563;">Subtotal</td>
+              <td style="padding: 8px 0; text-align: right; color: #1e1b4b;">$${data.subtotal.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td colspan="2" style="padding: 8px 0; color: #4b5563;">Tax (8%)</td>
+              <td style="padding: 8px 0; text-align: right; color: #1e1b4b;">$${data.taxAmount.toFixed(2)}</td>
+            </tr>
+            <tr style="border-top: 2px solid #7c3aed;">
+              <td colspan="2" style="padding: 12px 0; color: #1e1b4b; font-weight: bold;">Total</td>
+              <td style="padding: 12px 0; text-align: right; color: #7c3aed; font-weight: bold; font-size: 18px;">$${data.totalAmount.toFixed(2)}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background: #eff6ff; padding: 15px 20px; border: 1px solid #bfdbfe; border-top: none; border-radius: 0 0 12px 12px;">
+          <h3 style="color: #1e40af; margin: 0 0 10px 0; font-size: 14px;">💳 PAYMENT INFO</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600; width: 140px;">Method</td><td style="padding: 6px 0; color: #1e1b4b;">${data.paymentMethod || 'Square'}</td></tr>
+            ${data.paymentId ? `<tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600;">Payment ID</td><td style="padding: 6px 0; color: #6b7280; font-family: monospace; font-size: 12px;">${data.paymentId}</td></tr>` : ''}
+          </table>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+        <p style="color: #9ca3af; font-size: 11px; text-align: center;">This is an automated admin notification from Playfunia booking system.</p>
+      </div>
+    `,
+    text: `NEW TICKET ORDER\n\nOrder: ${data.orderNumber}\nTotal: $${data.totalAmount.toFixed(2)} (PAID)\nDate: ${data.purchaseDate}\n\nCUSTOMER CONTACT:\nName: ${data.customerName}${data.isGuestPurchase ? ' (GUEST)' : ''}\nEmail: ${data.customerEmail}\nPhone: ${data.customerPhone || 'Not provided'}\n${data.customerId ? `Customer ID: ${data.customerId}\n` : ''}\nTICKETS:\n${data.tickets.map(t => `${t.label} x${t.quantity}: $${(t.unitPrice * t.quantity).toFixed(2)}\nCodes: ${t.codes.join(', ')}`).join('\n\n')}\n\nSubtotal: $${data.subtotal.toFixed(2)}\nTax: $${data.taxAmount.toFixed(2)}\nTotal: $${data.totalAmount.toFixed(2)}\n\nPayment: ${data.paymentMethod || 'Square'}\n${data.paymentId ? `Payment ID: ${data.paymentId}\n` : ''}`,
+  });
+}
+
+// Admin notification for membership purchase
+export interface AdminMembershipNotificationData {
+  customerName: string;
+  customerEmail: string;
+  customerPhone?: string;
+  customerId?: string;
+  tierName: string;
+  startDate: string;
+  expiryDate: string;
+  visitsPerMonth: number | null;
+  monthlyPrice: number;
+  totalPaid: number;
+  durationMonths: number;
+  autoRenew: boolean;
+  paymentId?: string;
+  paymentMethod?: string;
+  isGuestPurchase: boolean;
+}
+
+// Send admin notification for membership purchase
+export async function sendAdminMembershipNotification(data: AdminMembershipNotificationData): Promise<boolean> {
+  return sendEmail({
+    to: ADMIN_EMAILS,
+    subject: `⭐ NEW MEMBERSHIP: ${data.tierName} - ${data.customerName}`,
+    html: `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #7c3aed, #ff6b9d); padding: 15px 20px; border-radius: 12px 12px 0 0;">
+          <h2 style="color: white; margin: 0; font-size: 18px;">⭐ New Membership Activated</h2>
+        </div>
+
+        <div style="background: #faf5ff; padding: 20px; border: 1px solid #e9d5ff; border-top: none;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px 0; color: #7c3aed; font-weight: bold; font-size: 18px;" colspan="2">${data.tierName}</td></tr>
+            <tr><td style="padding: 4px 0; color: #6b21a8;" colspan="2">Total Paid: $${data.totalPaid.toFixed(2)}</td></tr>
+          </table>
+        </div>
+
+        <div style="background: #fef3c7; padding: 15px 20px; border: 1px solid #fde68a; border-top: none;">
+          <h3 style="color: #92400e; margin: 0 0 10px 0; font-size: 14px;">📞 CUSTOMER CONTACT INFO</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600; width: 140px;">Name</td><td style="padding: 6px 0; color: #1e1b4b;">${data.customerName} ${data.isGuestPurchase ? '<span style="background:#f97316;color:white;padding:2px 6px;border-radius:4px;font-size:11px;margin-left:8px;">GUEST</span>' : ''}</td></tr>
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Email</td><td style="padding: 6px 0; color: #1e1b4b;"><a href="mailto:${data.customerEmail}" style="color: #7c3aed;">${data.customerEmail}</a></td></tr>
+            <tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Phone</td><td style="padding: 6px 0; color: #1e1b4b;">${data.customerPhone ? `<a href="tel:${data.customerPhone}" style="color: #7c3aed;">${data.customerPhone}</a>` : 'Not provided'}</td></tr>
+            ${data.customerId ? `<tr><td style="padding: 6px 0; color: #78350f; font-weight: 600;">Customer ID</td><td style="padding: 6px 0; color: #6b7280; font-family: monospace; font-size: 12px;">${data.customerId}</td></tr>` : ''}
+          </table>
+        </div>
+
+        <div style="background: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-top: none;">
+          <h3 style="color: #1e1b4b; margin: 0 0 15px 0; font-size: 14px;">📋 MEMBERSHIP DETAILS</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600; width: 160px;">Tier</td><td style="padding: 8px 0; color: #7c3aed; font-weight: bold;">${data.tierName}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Start Date</td><td style="padding: 8px 0; color: #1e1b4b;">${data.startDate}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Expires</td><td style="padding: 8px 0; color: #1e1b4b;">${data.expiryDate}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Duration</td><td style="padding: 8px 0; color: #1e1b4b;">${data.durationMonths} month${data.durationMonths > 1 ? 's' : ''}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Visits Per Month</td><td style="padding: 8px 0; color: #1e1b4b; font-weight: bold;">${data.visitsPerMonth ?? 'Unlimited'}</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Monthly Rate</td><td style="padding: 8px 0; color: #1e1b4b;">$${data.monthlyPrice.toFixed(2)}/month</td></tr>
+            <tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600;">Auto-Renew</td><td style="padding: 8px 0; color: #1e1b4b;">${data.autoRenew ? '<span style="color:#059669;font-weight:bold;">Yes</span>' : 'No'}</td></tr>
+          </table>
+        </div>
+
+        <div style="background: #eff6ff; padding: 15px 20px; border: 1px solid #bfdbfe; border-top: none; border-radius: 0 0 12px 12px;">
+          <h3 style="color: #1e40af; margin: 0 0 10px 0; font-size: 14px;">💳 PAYMENT INFO</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600; width: 140px;">Amount Paid</td><td style="padding: 6px 0; color: #1e1b4b; font-weight: bold;">$${data.totalPaid.toFixed(2)}</td></tr>
+            <tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600;">Method</td><td style="padding: 6px 0; color: #1e1b4b;">${data.paymentMethod || 'Square'}</td></tr>
+            ${data.paymentId ? `<tr><td style="padding: 6px 0; color: #1e40af; font-weight: 600;">Payment ID</td><td style="padding: 6px 0; color: #6b7280; font-family: monospace; font-size: 12px;">${data.paymentId}</td></tr>` : ''}
+          </table>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+        <p style="color: #9ca3af; font-size: 11px; text-align: center;">This is an automated admin notification from Playfunia booking system.</p>
+      </div>
+    `,
+    text: `NEW MEMBERSHIP ACTIVATED\n\nTier: ${data.tierName}\nTotal Paid: $${data.totalPaid.toFixed(2)}\n\nCUSTOMER CONTACT:\nName: ${data.customerName}${data.isGuestPurchase ? ' (GUEST)' : ''}\nEmail: ${data.customerEmail}\nPhone: ${data.customerPhone || 'Not provided'}\n${data.customerId ? `Customer ID: ${data.customerId}\n` : ''}\nMEMBERSHIP DETAILS:\nTier: ${data.tierName}\nStart: ${data.startDate}\nExpires: ${data.expiryDate}\nDuration: ${data.durationMonths} month(s)\nVisits Per Month: ${data.visitsPerMonth ?? 'Unlimited'}\nMonthly Rate: $${data.monthlyPrice.toFixed(2)}\nAuto-Renew: ${data.autoRenew ? 'Yes' : 'No'}\n\nPAYMENT:\nAmount: $${data.totalPaid.toFixed(2)}\nMethod: ${data.paymentMethod || 'Square'}\n${data.paymentId ? `Payment ID: ${data.paymentId}\n` : ''}`,
   });
 }

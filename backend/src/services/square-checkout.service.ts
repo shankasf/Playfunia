@@ -8,7 +8,7 @@ import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlan
 import { AppError } from '../utils/app-error';
 import { reserveTickets } from './ticket.service';
 import { purchaseMembership } from './membership.service';
-import { sendOrderConfirmation, sendBookingConfirmation, type BookingEmailData } from './email.service';
+import { sendOrderConfirmation, sendBookingConfirmation, sendAdminBookingNotification, sendAdminTicketNotification, sendAdminMembershipNotification, type BookingEmailData } from './email.service';
 import { sendOrderConfirmationSms, sendTicketConfirmationSms, sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
 import { generateReceiptPDF, generateBookingReceiptPDF, createReceiptRecord } from './receipt.service';
 
@@ -715,6 +715,30 @@ async function sendNotifications(params: {
 
         await sendBookingConfirmation(emailData);
 
+        // Send admin notification for booking
+        try {
+          await sendAdminBookingNotification({
+            reference,
+            customerName: guestName,
+            customerEmail: user.email,
+            customerPhone: user.phone ?? undefined,
+            customerId: user.customer_id?.toString(),
+            eventDate,
+            startTime,
+            location,
+            packageName,
+            guestCount,
+            totalAmount,
+            paymentId,
+            paymentMethod: 'Credit Card (Square)',
+            addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
+            notes: (item as { notes?: string }).notes,
+            isGuestBooking: false,
+          });
+        } catch (adminEmailError) {
+          console.error('Failed to send admin booking notification:', adminEmailError);
+        }
+
         // Send SMS for booking
         if (user.phone) {
           try {
@@ -791,6 +815,78 @@ async function sendNotifications(params: {
           paymentMethod: 'Credit Card (Square)',
           receiptPdf,
         });
+
+        // Send admin notification for ticket orders
+        if (ticketResults.length > 0) {
+          try {
+            const adminTicketItems = ticketResults.map(t => {
+              const ticket = t.ticket as { codes?: Array<{ code: string }> };
+              const line = summary.lines[t.cartIndex];
+              return {
+                label: line?.label ?? 'Ticket',
+                quantity: line?.quantity ?? 1,
+                unitPrice: line?.unitPrice ?? 0,
+                codes: ticket?.codes?.map(c => c.code) ?? [],
+              };
+            });
+
+            await sendAdminTicketNotification({
+              orderNumber,
+              customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
+              customerEmail: user.email,
+              customerPhone: user.phone ?? undefined,
+              customerId: user.customer_id?.toString(),
+              tickets: adminTicketItems,
+              subtotal: nonBookingSubtotal,
+              taxAmount: summary.taxAmount,
+              totalAmount: nonBookingTotal,
+              discounts: summary.discounts,
+              paymentId,
+              paymentMethod: 'Credit Card (Square)',
+              purchaseDate: orderDate,
+              isGuestPurchase: false,
+            });
+          } catch (adminEmailError) {
+            console.error('Failed to send admin ticket notification:', adminEmailError);
+          }
+        }
+
+        // Send admin notification for membership purchases
+        if (membershipResults.length > 0) {
+          for (const membershipResult of membershipResults) {
+            try {
+              const membership = membershipResult.membership as {
+                tierName?: string;
+                startedAt?: string;
+                expiresAt?: string;
+                visitsPerMonth?: number | null;
+                monthlyPrice?: number;
+                autoRenew?: boolean;
+              };
+              const line = summary.lines[membershipResult.cartIndex];
+
+              await sendAdminMembershipNotification({
+                customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
+                customerEmail: user.email,
+                customerPhone: user.phone ?? undefined,
+                customerId: user.customer_id?.toString(),
+                tierName: membership.tierName ?? line?.label ?? 'Membership',
+                startDate: membership.startedAt ? new Date(membership.startedAt).toLocaleDateString() : orderDate,
+                expiryDate: membership.expiresAt ? new Date(membership.expiresAt).toLocaleDateString() : 'N/A',
+                visitsPerMonth: membership.visitsPerMonth ?? null,
+                monthlyPrice: membership.monthlyPrice ?? line?.unitPrice ?? 0,
+                totalPaid: line?.total ?? 0,
+                durationMonths: (line?.metadata as { durationMonths?: number })?.durationMonths ?? 1,
+                autoRenew: membership.autoRenew ?? false,
+                paymentId,
+                paymentMethod: 'Credit Card (Square)',
+                isGuestPurchase: false,
+              });
+            } catch (adminEmailError) {
+              console.error('Failed to send admin membership notification:', adminEmailError);
+            }
+          }
+        }
       } catch (emailError) {
         console.error('Failed to send order confirmation email:', emailError);
         // Don't fail the checkout if email fails
@@ -1280,6 +1376,30 @@ async function sendGuestNotifications(params: {
 
       await sendBookingConfirmation(emailData);
 
+      // Send admin notification for guest booking
+      try {
+        await sendAdminBookingNotification({
+          reference,
+          customerName: guestName,
+          customerEmail: input.guestEmail,
+          customerPhone: input.guestPhone ?? undefined,
+          customerId: guestCustomer?.customer_id?.toString(),
+          eventDate,
+          startTime,
+          location,
+          packageName,
+          guestCount,
+          totalAmount,
+          paymentId,
+          paymentMethod: 'Credit Card (Square)',
+          addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
+          notes: (item as { notes?: string }).notes,
+          isGuestBooking: true,
+        });
+      } catch (adminEmailError) {
+        console.error('Failed to send admin guest booking notification:', adminEmailError);
+      }
+
       // Send SMS for booking
       if (input.guestPhone) {
         try {
@@ -1355,6 +1475,43 @@ async function sendGuestNotifications(params: {
         paymentMethod: 'Credit Card (Square)',
         receiptPdf,
       });
+
+      // Send admin notification for guest ticket orders
+      if (ticketResults.length > 0) {
+        try {
+          const adminTicketItems = ticketResults.map(t => {
+            const ticket = t.ticket as { codes?: Array<{ code: string }> };
+            const line = summary.lines[t.cartIndex];
+            return {
+              label: line?.label ?? 'Ticket',
+              quantity: line?.quantity ?? 1,
+              unitPrice: line?.unitPrice ?? 0,
+              codes: ticket?.codes?.map(c => c.code) ?? [],
+            };
+          });
+
+          await sendAdminTicketNotification({
+            orderNumber,
+            customerName: `${input.guestFirstName} ${input.guestLastName}`,
+            customerEmail: input.guestEmail,
+            customerPhone: input.guestPhone ?? undefined,
+            customerId: guestCustomer?.customer_id?.toString(),
+            tickets: adminTicketItems,
+            subtotal: nonBookingSubtotal,
+            taxAmount: summary.taxAmount,
+            totalAmount: nonBookingTotal,
+            discounts: summary.discounts,
+            paymentId,
+            paymentMethod: 'Credit Card (Square)',
+            purchaseDate: orderDate,
+            isGuestPurchase: true,
+          });
+        } catch (adminEmailError) {
+          console.error('Failed to send admin guest ticket notification:', adminEmailError);
+        }
+      }
+
+      // Note: Memberships require user accounts, so no membership admin notifications for guests
     } catch (emailError) {
       console.error('Failed to send guest order confirmation email:', emailError);
       // Don't fail the checkout if email fails
