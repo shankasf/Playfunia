@@ -8,6 +8,7 @@
   border-radius: 8px;
   text-decoration: none;
   transition: all 0.2s ease;
+  overflow: visible;
 }
 
 .cartLink:hover {
@@ -22,8 +23,8 @@
 
 .badge {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  top: -2px;
+  right: -2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -31,8 +32,10 @@
   height: 18px;
   padding: 0 5px;
   border-radius: 9px;
-  background: #7c3aed;
+  background: #ef4444;
   color: white;
   font-size: 0.7rem;
   font-weight: 600;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
