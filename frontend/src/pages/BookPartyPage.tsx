@@ -663,7 +663,7 @@ export function BookPartyPage() {
     }
 
     // Standard e-commerce: Add to cart only (no database record until payment)
-    const totalAmount = (estimate?.total ?? cartTotal) + 50; // total + cleaning fee
+    const totalAmount = estimate?.total ?? cartTotal; // total already includes cleaning fee
     const guestCount = Math.max(packageQty * (selectedPackage?.maxGuests ?? 12) + extraChildQty, 1);
     const cartItemId = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -722,7 +722,10 @@ export function BookPartyPage() {
   };
 
   const hasCartItems = packageQty > 0 || extraChildQty > 0 || extraAdultQty > 0;
-  const cartTotal = estimate?.total ?? 0;
+  // Use subtotal (without cleaning fee) for display, cleaning fee shown separately
+  const cartSubtotal = estimate?.subtotal ?? 0;
+  const cleaningFee = estimate?.cleaningFee ?? 50;
+  const cartTotal = cartSubtotal + cleaningFee;
 
   return (
     <section className={styles.page}>
@@ -1389,15 +1392,15 @@ export function BookPartyPage() {
               <div className={styles.cartSummary}>
                 <div className={styles.cartLine}>
                   <span>Subtotal</span>
-                  <span>${cartTotal.toLocaleString()}</span>
+                  <span>${cartSubtotal.toLocaleString()}</span>
                 </div>
                 <div className={styles.cartLine}>
                   <span>Cleaning fee</span>
-                  <span>$50</span>
+                  <span>${cleaningFee}</span>
                 </div>
                 <div className={styles.cartTotal}>
                   <span>Total</span>
-                  <span>${(cartTotal + 50).toLocaleString()}</span>
+                  <span>${cartTotal.toLocaleString()}</span>
                 </div>
               </div>
 
@@ -1414,7 +1417,7 @@ export function BookPartyPage() {
                   />
                   <div className={styles.paymentOptionContent}>
                     <span className={styles.paymentOptionLabel}>Pay full amount online</span>
-                    <span className={styles.paymentOptionAmount}>${(cartTotal + 50).toLocaleString()}</span>
+                    <span className={styles.paymentOptionAmount}>${(cartTotal).toLocaleString()}</span>
                   </div>
                 </label>
 
@@ -1426,7 +1429,7 @@ export function BookPartyPage() {
                     onChange={() => {
                       setPaymentOption('split');
                       // Default to 50% online
-                      setOnlinePaymentAmount(Math.round((cartTotal + 50) / 2));
+                      setOnlinePaymentAmount(Math.round((cartTotal) / 2));
                     }}
                   />
                   <div className={styles.paymentOptionContent}>
@@ -1441,22 +1444,22 @@ export function BookPartyPage() {
                       <span className={styles.splitQuickLabel}>Quick select:</span>
                       <button
                         type="button"
-                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal + 50) * 0.25) ? styles.splitQuickBtnActive : ''}`}
-                        onClick={() => setOnlinePaymentAmount(Math.max(100, Math.round((cartTotal + 50) * 0.25)))}
+                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal) * 0.25) ? styles.splitQuickBtnActive : ''}`}
+                        onClick={() => setOnlinePaymentAmount(Math.max(100, Math.round((cartTotal) * 0.25)))}
                       >
                         25%
                       </button>
                       <button
                         type="button"
-                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal + 50) * 0.5) ? styles.splitQuickBtnActive : ''}`}
-                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal + 50) * 0.5))}
+                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal) * 0.5) ? styles.splitQuickBtnActive : ''}`}
+                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal) * 0.5))}
                       >
                         50%
                       </button>
                       <button
                         type="button"
-                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal + 50) * 0.75) ? styles.splitQuickBtnActive : ''}`}
-                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal + 50) * 0.75))}
+                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal) * 0.75) ? styles.splitQuickBtnActive : ''}`}
+                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal) * 0.75))}
                       >
                         75%
                       </button>
@@ -1468,10 +1471,10 @@ export function BookPartyPage() {
                         <input
                           type="number"
                           min={1}
-                          max={cartTotal + 50}
+                          max={cartTotal}
                           step={1}
                           value={onlinePaymentAmount}
-                          onChange={(e) => setOnlinePaymentAmount(Math.max(1, Math.min(cartTotal + 50, Number(e.target.value) || 0)))}
+                          onChange={(e) => setOnlinePaymentAmount(Math.max(1, Math.min(cartTotal, Number(e.target.value) || 0)))}
                           className={styles.splitAmountInput}
                         />
                       </div>
@@ -1483,7 +1486,7 @@ export function BookPartyPage() {
                       </div>
                       <div className={styles.splitRow}>
                         <span>Due at venue (cash/card)</span>
-                        <span className={styles.splitVenue}>${(cartTotal + 50 - onlinePaymentAmount).toLocaleString()}</span>
+                        <span className={styles.splitVenue}>${(cartTotal - onlinePaymentAmount).toLocaleString()}</span>
                       </div>
                     </div>
                     <p className={styles.splitNote}>Minimum online payment: $100</p>
@@ -1493,7 +1496,7 @@ export function BookPartyPage() {
                 <div className={styles.paymentDue}>
                   <span>Due now</span>
                   <span className={styles.paymentDueAmount}>
-                    ${paymentOption === 'full' ? (cartTotal + 50).toLocaleString() : onlinePaymentAmount.toLocaleString()}
+                    ${paymentOption === 'full' ? (cartTotal).toLocaleString() : onlinePaymentAmount.toLocaleString()}
                   </span>
                 </div>
               </div>
