@@ -1,6 +1,7 @@
 import { apiGet } from './client';
 
 export type WaiverChild = {
+  childId?: number;
   name?: string;
   first_name?: string;
   last_name?: string;

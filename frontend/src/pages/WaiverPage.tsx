@@ -87,7 +87,8 @@ export function WaiverPage() {
   const initialChildren = useMemo(() => {
     if (latestWaiver?.children?.length) {
       return latestWaiver.children.map((child, index) => ({
-        id: child.name ? `${child.name}-${index}` : undefined,
+        id: child.childId?.toString() ?? (child.name ? `${child.name}-${index}` : undefined),
+        childId: child.childId,
         name: child.name ?? '',
         birthDate: toDateInputValue(child.birthDate),
         gender: child.gender,
@@ -480,7 +481,8 @@ export function WaiverPage() {
                 initialMarketingOptIn={false}
                 initialSignature={''}
                 initialChildren={waiverUser?.children?.map((child, index) => ({
-                  id: child.id ?? `child-${index}`,
+                  id: child.childId?.toString() ?? child.id ?? `child-${index}`,
+                  childId: child.childId,
                   name: child.name ?? '',
                   birthDate: toDateInputValue(child.birthDate),
                   gender: child.gender,
@@ -505,7 +507,8 @@ export function WaiverPage() {
                 initialMarketingOptIn={latestWaiver?.marketingOptIn ?? false}
                 initialSignature={latestWaiver?.signature ?? ''}
                 initialChildren={waiverUser?.children?.map((child, index) => ({
-                  id: child.id ?? `child-${index}`,
+                  id: child.childId?.toString() ?? child.id ?? `child-${index}`,
+                  childId: child.childId,
                   name: child.name ?? '',
                   birthDate: toDateInputValue(child.birthDate),
                   gender: child.gender,
@@ -527,7 +530,8 @@ export function WaiverPage() {
               initialMarketingOptIn={false}
               initialSignature={''}
               initialChildren={waiverUser?.children?.map((child, index) => ({
-                id: child.id ?? `child-${index}`,
+                id: child.childId?.toString() ?? child.id ?? `child-${index}`,
+                childId: child.childId,
                 name: child.name ?? '',
                 birthDate: toDateInputValue(child.birthDate),
                 gender: child.gender,

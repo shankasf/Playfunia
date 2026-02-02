@@ -4,6 +4,7 @@
  */
 
 import { supabase, supabaseAny } from '../config/supabase';
+import { logDbOperation } from '../utils/logger';
 import type {
   User,
   Customer,
@@ -417,6 +418,40 @@ export const MembershipRepository = {
     return data;
   },
 
+  /**
+   * Find all memberships for a customer by tier, ordered by end_date descending.
+   * Used to check for existing active/queued memberships of the same tier.
+   */
+  async findByCustomerIdAndTier(customerId: number, tier: string) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*')
+      .eq('customer_id', customerId)
+      .eq('tier', tier)
+      .in('status', ['active', 'pending'])
+      .order('end_date', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  /**
+   * Find the latest membership for a customer by tier (active or pending).
+   * Returns the one with the furthest end_date.
+   */
+  async findLatestByCustomerIdAndTier(customerId: number, tier: string) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*')
+      .eq('customer_id', customerId)
+      .eq('tier', tier)
+      .in('status', ['active', 'pending'])
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
   async findById(membershipId: number) {
     const { data, error } = await supabase
       .from('memberships')
@@ -434,6 +469,7 @@ export const MembershipRepository = {
     end_date?: string;
     visits_per_month?: number;
     stripe_subscription_id?: string;
+    status?: string;
   }) {
     const { data, error } = await supabase
       .from('memberships')
@@ -770,6 +806,7 @@ function mapWaiverSubmission(data: WaiverSubmissionData): WaiverSubmissionData {
   const waiverUser = data.waiver_users as { waiver_user_children?: Array<Record<string, unknown>> } | null;
   const waiverUserChildren = waiverUser?.waiver_user_children || [];
   const children = waiverUserChildren.map((c: Record<string, unknown>) => ({
+    childId: c.waiver_user_child_id as number | undefined,
     name: `${c.minor_first_name || ''} ${c.minor_last_name || ''}`.trim(),
     first_name: c.minor_first_name as string || '',
     last_name: c.minor_last_name as string || '',
@@ -1050,6 +1087,7 @@ export const WaiverUserRepository = {
   },
 
   async updateChildren(waiverUserId: number, children: Array<{
+    childId?: number;
     name?: string;
     first_name?: string;
     last_name?: string;
@@ -1060,33 +1098,62 @@ export const WaiverUserRepository = {
     gender?: string;
     minor_gender?: string;
   }>) {
-    // Delete existing children
-    await supabaseAny.from('waiver_user_children').delete().eq('waiver_user_id', waiverUserId);
+    // Fetch existing children for this waiver user
+    const { data: existingChildren, error: fetchError } = await supabaseAny
+      .from('waiver_user_children')
+      .select('waiver_user_child_id')
+      .eq('waiver_user_id', waiverUserId);
+    if (fetchError) throw fetchError;
 
-    // Insert new children with new schema column names
-    if (children.length > 0) {
-      const mappedChildren = children.map((c) => {
-        // Parse name into first/last if using old format
-        let firstName = c.minor_first_name || c.first_name;
-        let lastName = c.minor_last_name || c.last_name;
+    const existingIds = new Set((existingChildren ?? []).map((c: { waiver_user_child_id: number }) => c.waiver_user_child_id));
+    const inputIds = new Set<number>();
 
-        if (!firstName && c.name) {
-          const parts = c.name.trim().split(' ');
-          firstName = parts[0] || 'Unknown';
-          lastName = parts.slice(1).join(' ') || '';
-        }
+    // Process each child: UPDATE existing, INSERT new
+    for (const c of children) {
+      // Parse name into first/last if using old format
+      let firstName = c.minor_first_name || c.first_name;
+      let lastName = c.minor_last_name || c.last_name;
 
-        return {
-          waiver_user_id: waiverUserId,
-          minor_first_name: firstName || 'Unknown',
-          minor_last_name: lastName || '',
-          minor_date_of_birth: c.minor_date_of_birth || c.birth_date,
-          minor_gender: c.minor_gender || c.gender,
-        };
-      });
+      if (!firstName && c.name) {
+        const parts = c.name.trim().split(' ');
+        firstName = parts[0] || 'Unknown';
+        lastName = parts.slice(1).join(' ') || '';
+      }
 
-      const { error } = await supabaseAny.from('waiver_user_children').insert(mappedChildren);
-      if (error) throw error;
+      const childData = {
+        waiver_user_id: waiverUserId,
+        minor_first_name: firstName || 'Unknown',
+        minor_last_name: lastName || '',
+        minor_date_of_birth: c.minor_date_of_birth || c.birth_date,
+        minor_gender: c.minor_gender || c.gender,
+      };
+
+      if (c.childId && existingIds.has(c.childId)) {
+        // UPDATE existing child
+        const { error: updateError } = await supabaseAny
+          .from('waiver_user_children')
+          .update(childData)
+          .eq('waiver_user_child_id', c.childId);
+        if (updateError) throw updateError;
+        inputIds.add(c.childId);
+      } else {
+        // INSERT new child
+        const { error: insertError } = await supabaseAny
+          .from('waiver_user_children')
+          .insert(childData);
+        if (insertError) throw insertError;
+      }
+    }
+
+    // DELETE children that are no longer in the list
+    for (const existingId of existingIds) {
+      if (!inputIds.has(existingId)) {
+        const { error: deleteError } = await supabaseAny
+          .from('waiver_user_children')
+          .delete()
+          .eq('waiver_user_child_id', existingId);
+        if (deleteError) throw deleteError;
+      }
     }
   },
 };
@@ -1668,11 +1735,13 @@ export const EventRepository = {
 // ============= Membership Plan Repository =============
 export const MembershipPlanRepository = {
   async findAll(activeOnly = true) {
-    let query = supabaseAny.from('membership_plans').select('*');
-    if (activeOnly) query = query.eq('is_active', true);
-    const { data, error } = await query.order('monthly_price', { ascending: true });
-    if (error) throw error;
-    return data ?? [];
+    return logDbOperation('findAll', 'membership_plans', async () => {
+      let query = supabaseAny.from('membership_plans').select('*');
+      if (activeOnly) query = query.eq('is_active', true);
+      const { data, error } = await query.order('monthly_price', { ascending: true });
+      if (error) throw error;
+      return data ?? [];
+    });
   },
 
   async findById(planId: number) {
@@ -2392,24 +2461,30 @@ export const ReceiptRepository = {
     payment_id?: string;
     verification_hash: string;
     metadata?: Record<string, unknown>;
+    created_at?: string;
   }) {
     // Use supabaseAny since 'receipts' table isn't in the generated types yet
+    const insertData: Record<string, unknown> = {
+      receipt_number: receiptData.receipt_number,
+      customer_id: receiptData.customer_id ?? null,
+      purchase_type: receiptData.purchase_type,
+      reference_id: receiptData.reference_id,
+      subtotal_usd: receiptData.subtotal_usd,
+      discount_usd: receiptData.discount_usd ?? 0,
+      tax_usd: receiptData.tax_usd ?? 0,
+      total_usd: receiptData.total_usd,
+      payment_method: receiptData.payment_method ?? null,
+      payment_id: receiptData.payment_id ?? null,
+      verification_hash: receiptData.verification_hash,
+      metadata: receiptData.metadata ?? {},
+    };
+    // Explicitly set created_at to match the verification hash
+    if (receiptData.created_at) {
+      insertData.created_at = receiptData.created_at;
+    }
     const { data, error } = await supabaseAny
       .from('receipts')
-      .insert({
-        receipt_number: receiptData.receipt_number,
-        customer_id: receiptData.customer_id ?? null,
-        purchase_type: receiptData.purchase_type,
-        reference_id: receiptData.reference_id,
-        subtotal_usd: receiptData.subtotal_usd,
-        discount_usd: receiptData.discount_usd ?? 0,
-        tax_usd: receiptData.tax_usd ?? 0,
-        total_usd: receiptData.total_usd,
-        payment_method: receiptData.payment_method ?? null,
-        payment_id: receiptData.payment_id ?? null,
-        verification_hash: receiptData.verification_hash,
-        metadata: receiptData.metadata ?? {},
-      })
+      .insert(insertData)
       .select()
       .single();
     if (error) throw error;
@@ -2461,6 +2536,17 @@ export const ReceiptRepository = {
       .single();
     if (error && error.code !== 'PGRST116') throw error;
     return data as Receipt | null;
+  },
+
+  async findByPaymentId(paymentId: string) {
+    // Find all receipts associated with a payment ID
+    const { data, error } = await supabaseAny
+      .from('receipts')
+      .select('*')
+      .eq('payment_id', paymentId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as Receipt[];
   },
 };
 

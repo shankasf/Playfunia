@@ -8,6 +8,7 @@ export type WaiverLookupResult = {
 
 export type WaiverChild = {
   id?: string;
+  childId?: number;
   name: string;
   birthDate: string;
   gender?: string;

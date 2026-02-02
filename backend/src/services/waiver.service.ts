@@ -13,6 +13,7 @@ import type { SignWaiverInput } from '../schemas/waiver.schema';
 
 /**
  * Compare waiver data to check if anything has changed
+ * Uses ID-based comparison for children to handle reordering correctly
  */
 function hasWaiverDataChanged(
   latestWaiver: {
@@ -22,7 +23,7 @@ function hasWaiverDataChanged(
     guardian_date_of_birth?: string;
     relationship_to_children?: string;
   },
-  existingChildren: Array<{ name: string; birth_date: string; gender?: string }>,
+  existingChildren: Array<{ childId?: number; name: string; birth_date: string; gender?: string }>,
   input: SignWaiverInput
 ): boolean {
   // Compare guardian info
@@ -36,20 +37,35 @@ function hasWaiverDataChanged(
 
   if ((latestWaiver.relationship_to_children || '') !== (input.relationshipToChildren || '')) return true;
 
-  // Compare children from waiver_user_children table
+  // Compare children using ID-based matching
   const inputChildren = input.children || [];
 
+  // Different count = data changed
   if (existingChildren.length !== inputChildren.length) return true;
 
-  for (let i = 0; i < existingChildren.length; i++) {
-    const latest = existingChildren[i];
-    const current = inputChildren[i];
-    if (!latest || !current) return true;
-    if (latest.name !== current.name) return true;
-    const latestBirthDate = latest.birth_date?.split('T')[0] || '';
-    const currentBirthDate = current.birthDate?.toISOString().split('T')[0] || '';
-    if (latestBirthDate !== currentBirthDate) return true;
-    if ((latest.gender || '') !== (current.gender || '')) return true;
+  // Build a map of existing children by childId for O(1) lookup
+  const existingByChildId = new Map<number, { name: string; birth_date: string; gender?: string }>();
+  for (const child of existingChildren) {
+    if (child.childId) {
+      existingByChildId.set(child.childId, child);
+    }
+  }
+
+  // Check each input child
+  for (const inputChild of inputChildren) {
+    // If input child has no childId, it's new (data changed)
+    if (!inputChild.childId) return true;
+
+    const existing = existingByChildId.get(inputChild.childId);
+    // If childId not found in existing, data changed
+    if (!existing) return true;
+
+    // Compare child data
+    if (existing.name !== inputChild.name) return true;
+    const existingBirthDate = existing.birth_date?.split('T')[0] || '';
+    const inputBirthDate = inputChild.birthDate?.toISOString().split('T')[0] || '';
+    if (existingBirthDate !== inputBirthDate) return true;
+    if ((existing.gender || '') !== (inputChild.gender || '')) return true;
   }
 
   return false;
@@ -105,6 +121,11 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput) {
   const childIds: number[] = [];
 
   try {
+    // Get all existing children for this customer
+    const existingChildren = await ChildRepository.findByCustomerId(customerId);
+    const processedChildIds: number[] = [];
+
+    // Process each child from input
     for (const child of input.children) {
       const { firstName, lastName } = splitName(child.name);
       if (!firstName || !firstName.trim()) {
@@ -116,35 +137,33 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput) {
         throw new AppError('Each child must have a valid birth date.', 400);
       }
 
-      // Check for existing child with same first name and birth date
-      const existingChildren = await ChildRepository.findByCustomerId(customerId);
       const birthDateStr = child.birthDate.toISOString().split('T')[0];
-      
-      const existing = existingChildren.find(
-        (c) =>
-          c.first_name?.toLowerCase() === firstName.toLowerCase() &&
-          c.birth_date?.startsWith(birthDateStr)
-      );
 
       let childRecord;
 
-      if (existing) {
-        // Update existing child if needed
-        const updates: Record<string, unknown> = {};
-        if (lastName && !existing.last_name) {
-          updates.last_name = lastName;
-        }
-        if (child.gender && !existing.gender) {
-          updates.gender = child.gender;
-        }
-        
-        if (Object.keys(updates).length > 0) {
-          childRecord = await ChildRepository.update(existing.child_id, updates);
+      if (child.childId) {
+        // Update existing child by ID
+        const existing = existingChildren.find(c => c.child_id === child.childId);
+        if (existing) {
+          childRecord = await ChildRepository.update(existing.child_id, {
+            first_name: firstName,
+            last_name: lastName,
+            birth_date: birthDateStr,
+            gender: child.gender,
+          });
+          processedChildIds.push(existing.child_id);
         } else {
-          childRecord = existing;
+          // Child ID provided but not found - create new
+          childRecord = await ChildRepository.create({
+            customer_id: customerId,
+            first_name: firstName,
+            last_name: lastName,
+            birth_date: birthDateStr,
+            gender: child.gender,
+          });
         }
       } else {
-        // Create new child
+        // No childId - create new child
         childRecord = await ChildRepository.create({
           customer_id: customerId,
           first_name: firstName,
@@ -154,14 +173,19 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput) {
         });
       }
 
-      if (!childIds.includes(childRecord.child_id)) {
-        childIds.push(childRecord.child_id);
+      childIds.push(childRecord.child_id);
+    }
+
+    // Delete children that are no longer in the waiver
+    for (const existingChild of existingChildren) {
+      if (!processedChildIds.includes(existingChild.child_id)) {
+        await ChildRepository.delete(existingChild.child_id);
       }
     }
 
     const archiveUntil = DateTime.now().plus({ years: 5 }).toISO();
 
-    // Create waiver submission (no JSONB children - use child_ids instead)
+    // Create waiver submission with child_ids
     const waiver = await WaiverRepository.create({
       customer_id: customerId,
       guardian_name: input.guardianName,
@@ -169,6 +193,7 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput) {
       guardian_phone: input.guardianPhone,
       guardian_date_of_birth: input.guardianDob?.toISOString().split('T')[0],
       relationship_to_children: input.relationshipToChildren,
+      child_ids: childIds,
       signature: input.signature,
       accepted_policies: input.acceptedPolicies,
       marketing_opt_in: input.marketingOptIn ?? false,
@@ -322,9 +347,10 @@ export async function signWaiverForWaiverUser(waiverUserId: string, input: SignW
   }
 
   try {
-    // Fetch existing children from waiver_user_children for comparison
+    // Fetch existing children from waiver_user_children for comparison (with childId)
     const existingChildrenRaw = waiverUser.waiver_user_children || [];
     const existingChildren = existingChildrenRaw.map((c: Record<string, unknown>) => ({
+      childId: c.waiver_user_child_id as number | undefined,
       name: `${c.minor_first_name || ''} ${c.minor_last_name || ''}`.trim(),
       birth_date: c.minor_date_of_birth as string || '',
       gender: c.minor_gender as string | undefined,
@@ -410,10 +436,11 @@ export async function signWaiverForWaiverUser(waiverUserId: string, input: SignW
       throw new AppError('At least one child with name and birth date is required', 400);
     }
 
-    // Update children
+    // Update children (with childId for proper CRUD operations)
     await WaiverUserRepository.updateChildren(
       waiverUserIdNum,
       validChildren.map((child) => ({
+        childId: child.childId,
         name: child.name,
         birth_date: child.birthDate?.toISOString().split('T')[0] ?? '',
         gender: child.gender,
