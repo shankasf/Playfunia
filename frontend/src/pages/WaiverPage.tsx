@@ -96,6 +96,7 @@ export function WaiverPage() {
     }
     return existingChildren.map((child) => ({
       id: child.id,
+      childId: typeof child.id === 'string' ? parseInt(child.id, 10) : child.id,
       name: [child.firstName, child.lastName].filter(Boolean).join(' ').trim(),
       birthDate: toDateInputValue(child.birthDate),
     }));

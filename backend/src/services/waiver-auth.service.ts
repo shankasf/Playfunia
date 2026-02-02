@@ -63,6 +63,7 @@ export async function lookupWaiverAuth(input: WaiverAuthLookupInput): Promise<Lo
 
 export type WaiverChild = {
   id?: string;
+  childId?: number;
   name: string;
   birthDate: string;
   gender?: string;
@@ -198,6 +199,7 @@ export async function loginOrRegisterWaiverUser(
       const name = `${child.minor_first_name || ''} ${child.minor_last_name || ''}`.trim();
       children.push({
         id: String(child.waiver_user_child_id),
+        childId: child.waiver_user_child_id,
         name: name || 'Unknown',
         birthDate: child.minor_date_of_birth || '',
         gender: child.minor_gender || undefined,
