@@ -922,6 +922,7 @@ export const WaiverRepository = {
     guardian_date_of_birth?: string;
     relationship_to_children?: string;
     relationship_to_minor?: string;
+    child_ids?: number[];
     signature?: string;
     digital_signature?: string;
     accepted_policies: string[];
@@ -941,7 +942,7 @@ export const WaiverRepository = {
       lastName = parts.slice(1).join(' ') || '';
     }
 
-    const insertData = {
+    const insertData: Record<string, unknown> = {
       customer_id: waiverData.customer_id,
       waiver_user_id: waiverData.waiver_user_id,
       guardian_first_name: firstName || 'Unknown',
@@ -958,6 +959,11 @@ export const WaiverRepository = {
       archive_until: waiverData.archive_until,
       ip_address: waiverData.ip_address,
     };
+
+    // Only include child_ids if provided (for main users)
+    if (waiverData.child_ids && waiverData.child_ids.length > 0) {
+      insertData.child_ids = waiverData.child_ids;
+    }
 
     const { data, error } = await supabase
       .from('waiver_submissions')
