@@ -14,14 +14,24 @@ const toDateInputValue = (value?: string) => {
   if (!value) {
     return '';
   }
+  // If already in YYYY-MM-DD format, return as-is
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return value;
   }
+  // Extract just the date portion (YYYY-MM-DD) from ISO strings to avoid timezone shifts
+  const dateMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch) {
+    return dateMatch[1];
+  }
+  // Fallback: parse and extract date in local timezone
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
     return '';
   }
-  return parsed.toISOString().slice(0, 10);
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const formatChildBirthDate = (value?: string) => {

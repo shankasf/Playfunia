@@ -91,16 +91,32 @@ export function formatDateTime(value?: string | Date | null): string {
 }
 
 /**
- * Format birth date (month, day, year) in ET
+ * Format birth date (month, day, year) without timezone conversion.
+ * Birth dates are date-only values and should not shift based on timezone.
  */
 export function formatBirthDate(value?: string | null): string {
   if (!value) return 'Birth date not provided';
+
+  // Extract just the date portion to avoid timezone shifts
+  // e.g., "2026-01-10T00:00:00.000Z" -> "2026-01-10"
+  const dateMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateMatch) {
+    const [, year, month, day] = dateMatch;
+    // Create date using local time (noon to avoid any edge cases)
+    const date = new Date(Number(year), Number(month) - 1, Number(day), 12, 0, 0);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
+  // Fallback for other formats
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return 'Birth date not provided';
   }
   return date.toLocaleDateString('en-US', {
-    timeZone: ET_TIMEZONE,
     month: 'short',
     day: 'numeric',
     year: 'numeric',
