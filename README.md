@@ -91,8 +91,8 @@ FastAPI Chatbot (Python) runs alongside frontend/backend, enriches answers with 
 │   │   ├── models/             # Database models (User, Child, Booking, Membership, etc.)
 │   │   ├── routes/             # Route composition modules
 │   │   ├── schemas/            # Zod validation definitions
-│   │   ├── services/           # Business logic (auth, booking, content, party packages)
-│   │   └── utils/              # Async handler, password hashing, JWT helpers, logging
+│   │   ├── services/           # Business logic (auth, booking, content, party packages, refunds, reconciliation)
+│   │   └── utils/              # Async handler, password hashing, JWT helpers, logging, currency, retry
 │   ├── scripts/seed.ts         # Database seed script for demo data
 │   ├── Dockerfile              # Development Dockerfile
 │   ├── package.json, tsconfig  # Backend configuration
@@ -321,6 +321,12 @@ Authentication is handled by **Supabase Auth** with the following features:
 | PUT    | `/api/admin/users/:id`            | Admin update user                                      |
 | DELETE | `/api/admin/users/:id`            | Admin delete user                                      |
 | POST   | `/api/chatbot/message`            | Send message to AI chatbot                             |
+| POST   | `/api/refunds`                    | Admin: Create refund for a payment                     |
+| GET    | `/api/refunds/:id`                | Admin: Get refund status                               |
+| GET    | `/api/refunds/payment/:paymentId` | Admin: List refunds for a payment                      |
+| GET    | `/api/refunds`                    | Admin: List all refunds with pagination                |
+| POST   | `/api/admin/reconciliation/run`   | Admin: Manually trigger event reconciliation           |
+| GET    | `/api/admin/reconciliation/status`| Admin: Check reconciliation scheduler status           |
 
 ---
 
@@ -452,6 +458,59 @@ Receipts are:
 
 ---
 
+## Square Payment Production Features
+
+The platform includes production-ready Square payment features for reliability and security:
+
+### Refund Processing API
+
+Full refund flow via Square Refunds API:
+
+| Feature | Description |
+|---------|-------------|
+| **Validation** | Checks payment is COMPLETED, within 1 year, under 20 refund limit |
+| **Idempotency** | Deterministic keys prevent duplicate refunds |
+| **Partial Refunds** | Support for partial amount refunds |
+| **Status Tracking** | pending → processing → completed/failed/rejected |
+| **External Sync** | Refunds made via Square Dashboard are synced via webhooks |
+
+**API Endpoints (Admin only):**
+```
+POST   /api/refunds                    - Create refund
+GET    /api/refunds/:id                - Get refund by ID
+GET    /api/refunds/payment/:paymentId - List refunds for a payment
+GET    /api/refunds?status=completed   - List with filters
+```
+
+### Duplicate Payment Prevention
+
+Frontend protections against double-charging:
+
+- **Ref-based blocking**: Synchronous guard prevents concurrent submissions
+- **Double-guard pattern**: Both React state and ref for reliability
+- **Error recovery**: Re-enables button on payment errors for retry
+- **Accessibility**: `aria-busy` and `aria-disabled` attributes
+
+### Webhook Event Reconciliation
+
+Automated recovery of missed webhook events:
+
+| Feature | Description |
+|---------|-------------|
+| **Square Events API** | Fetches events within 28-day window |
+| **Deduplication** | Compares against webhook_events table |
+| **Auto-processing** | Missed events processed through normal flow |
+| **Hourly scheduler** | Runs automatically in production |
+| **Manual trigger** | Admin endpoint for on-demand reconciliation |
+
+**Admin Endpoints:**
+```
+POST /api/admin/reconciliation/run?hours=24  - Manual trigger
+GET  /api/admin/reconciliation/status        - Scheduler status
+```
+
+---
+
 ## Roadmap & Next Steps
 **Completed:**
 - ✅ Chatbot FastAPI service integrated with enhanced UI (markdown support, typing indicators)
@@ -469,6 +528,9 @@ Receipts are:
 - ✅ **Cart-based checkout (database records created only after payment)**
 - ✅ **Idempotent payment processing to prevent duplicates**
 - ✅ **Graceful partial fulfillment handling**
+- ✅ **Refund Processing API** - Full refund flow via Square Refunds API with validation and idempotency
+- ✅ **Duplicate Payment Prevention** - Ref-based frontend guards against double-submit
+- ✅ **Webhook Event Reconciliation** - Automated recovery of missed webhook events
 
 **In Progress:**
 - Implement guardian portal features (child management, waiver uploads, loyalty points)

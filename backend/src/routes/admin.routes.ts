@@ -5,6 +5,7 @@ import { appConfig } from '../config/env';
 import { supabaseAuthGuard, requireRoles, ROLES, type SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 import { UserRepository } from '../repositories';
 import { recalculateBookingPricingHandler } from '../controllers/booking.controller';
+import { runReconciliation, isReconciliationRunning, isSchedulerActive } from '../services/event-reconciliation.service';
 import {
   // Dashboard
   getAdminSummaryHandler,
@@ -296,6 +297,49 @@ adminRouter.get('/resources/:id', getResourceHandler);
 adminRouter.post('/resources', createResourceHandler);
 adminRouter.patch('/resources/:id', updateResourceHandler);
 adminRouter.delete('/resources/:id', deleteResourceHandler);
+
+// Event Reconciliation (admin only)
+// POST /api/admin/reconciliation/run?hours=24
+adminRouter.post('/reconciliation/run', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const hours = parseInt(req.query.hours as string, 10) || 24;
+
+    // Validate hours (max 672 = 28 days, Square's limit)
+    if (hours < 1 || hours > 672) {
+      return res.status(400).json({
+        success: false,
+        error: 'hours must be between 1 and 672 (28 days)',
+      });
+    }
+
+    if (isReconciliationRunning()) {
+      return res.status(409).json({
+        success: false,
+        error: 'Reconciliation is already in progress',
+      });
+    }
+
+    const result = await runReconciliation(hours);
+
+    return res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/admin/reconciliation/status
+adminRouter.get('/reconciliation/status', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: {
+      isRunning: isReconciliationRunning(),
+      schedulerActive: isSchedulerActive(),
+    },
+  });
+});
 
 // ============= Guards =============
 interface SupabaseJWTPayload {

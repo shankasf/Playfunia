@@ -4,6 +4,7 @@ import { createApp } from './app';
 import { connectDatabase } from './config/database';
 import { appConfig } from './config/env';
 import { ensureDefaultAdminUser } from './services/auth.service';
+import { startReconciliationScheduler, stopReconciliationScheduler } from './services/event-reconciliation.service';
 
 async function bootstrap() {
   await connectDatabase();
@@ -24,7 +25,27 @@ async function bootstrap() {
 
   server.listen(appConfig.port, () => {
     console.info(`Backend server listening on port ${appConfig.port}`);
+
+    // Start event reconciliation scheduler in production
+    // This runs hourly to recover any missed webhook events
+    if (appConfig.nodeEnv === 'production') {
+      startReconciliationScheduler(1); // Run every hour
+      console.info('Event reconciliation scheduler started (hourly)');
+    }
   });
+
+  // Graceful shutdown
+  const shutdown = () => {
+    console.info('Shutting down...');
+    stopReconciliationScheduler();
+    server.close(() => {
+      console.info('Server closed');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 bootstrap().catch(error => {

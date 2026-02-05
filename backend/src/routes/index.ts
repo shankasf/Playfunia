@@ -18,6 +18,9 @@ import { checkoutRouter } from './checkout.routes';
 import { squareRouter } from './square.routes';
 import { pricingRouter } from './pricing.routes';
 import { receiptRouter } from './receipt.routes';
+import { reservationRouter } from './reservation.routes';
+import { webhookRouter } from './webhook.routes';
+import { refundRouter } from './refund.routes';
 
 export const apiRouter = Router();
 
@@ -39,3 +42,6 @@ apiRouter.use('/checkout', checkoutRouter);
 apiRouter.use('/square', squareRouter);
 apiRouter.use('/pricing', pricingRouter);
 apiRouter.use('/receipts', receiptRouter);
+apiRouter.use('/reservations', reservationRouter);
+apiRouter.use('/webhooks', webhookRouter);
+apiRouter.use('/refunds', refundRouter);

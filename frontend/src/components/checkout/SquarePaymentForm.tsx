@@ -5,6 +5,48 @@ import { initializeSquare } from "../../lib/square";
 import { PrimaryButton } from "../common/PrimaryButton";
 import styles from "./PaymentForm.module.css";
 
+// User-friendly error messages for Square error codes (Fix #17)
+const SQUARE_ERROR_MESSAGES: Record<string, string> = {
+  'CVV_FAILURE': 'The security code (CVV) is incorrect. Please check and try again.',
+  'INVALID_EXPIRATION': 'The card expiration date is invalid.',
+  'INVALID_CARD': 'This card number is invalid. Please check and try again.',
+  'CARD_DECLINED': 'Your card was declined. Please try a different card.',
+  'INSUFFICIENT_FUNDS': 'Insufficient funds. Please try a different card.',
+  'CARD_EXPIRED': 'This card has expired. Please use a different card.',
+  'INVALID_CARD_DATA': 'Invalid card information. Please check and try again.',
+  'GENERIC_DECLINE': 'Your card was declined. Please try a different payment method.',
+  'NETWORK_ERROR': 'Connection error. Please check your internet and try again.',
+  'TIMEOUT': 'Request timed out. Please try again.',
+  'VERIFY_CVV_FAILURE': 'The security code (CVV) could not be verified. Please check and try again.',
+  'VERIFY_AVS_FAILURE': 'Address verification failed. Please check your billing address.',
+  'CARD_TOKEN_EXPIRED': 'Payment session expired. Please refresh and try again.',
+  'CARD_TOKEN_USED': 'Payment was already processed. Please refresh to continue.',
+  'BAD_EXPIRATION': 'Invalid expiration date. Please check and try again.',
+  'CHIP_INSERTION_REQUIRED': 'Please insert your card chip instead of swiping.',
+  'PAN_FAILURE': 'Card number validation failed. Please check and try again.',
+  'EXPIRATION_FAILURE': 'Card expiration validation failed. Please check and try again.',
+  'CARD_NOT_SUPPORTED': 'This card type is not supported. Please try a different card.',
+  'INVALID_PIN': 'Invalid PIN. Please try again.',
+  'INVALID_POSTAL_CODE': 'Invalid postal code. Please check your billing address.',
+  'INVALID_ACCOUNT': 'Invalid account. Please try a different card.',
+  'CARDHOLDER_INSUFFICIENT_PERMISSIONS': 'Your card does not have permission for this transaction.',
+  'AMOUNT_TOO_HIGH': 'The payment amount exceeds your card limit.',
+  'AMOUNT_TOO_LOW': 'The payment amount is below the minimum.',
+};
+
+/**
+ * Get a user-friendly error message from Square error codes
+ */
+function getErrorMessage(errors: Array<{ code?: string; message: string }>): string {
+  for (const error of errors) {
+    if (error.code && SQUARE_ERROR_MESSAGES[error.code]) {
+      return SQUARE_ERROR_MESSAGES[error.code];
+    }
+  }
+  // Fall back to the first error message or a generic one
+  return errors[0]?.message || 'Payment failed. Please try again.';
+}
+
 // Billing contact info for SCA/3DS verification
 export type BillingContact = {
   givenName?: string;
@@ -24,12 +66,13 @@ type SquarePaymentFormProps = {
   description?: string;
   submitLabel?: string;
   processingLabel?: string;
+  disabled?: boolean;
   billingContact?: BillingContact;
   onSuccess: (sourceId: string, verificationToken?: string) => Promise<void> | void;
 };
 
 export function SquarePaymentForm(props: SquarePaymentFormProps) {
-  const { amount, currency, description, submitLabel, processingLabel, billingContact, onSuccess } = props;
+  const { amount, currency, description, submitLabel, processingLabel, disabled, billingContact, onSuccess } = props;
 
   const [, setPayments] = useState<Payments | null>(null);
   const [card, setCard] = useState<Card | null>(null);
@@ -39,6 +82,10 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
 
   const cardContainerRef = useRef<HTMLDivElement>(null);
   const cardAttachedRef = useRef(false);
+  // Track if tokenization is in progress to prevent card.destroy() during payment (Fix #14)
+  const isTokenizingRef = useRef(false);
+  // Ref for immediate submission blocking to prevent double-submit (more reliable than state alone)
+  const submissionInProgressRef = useRef(false);
 
   const formattedAmount = useMemo(() => formatCurrency(amount, currency), [amount, currency]);
 
@@ -118,7 +165,9 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
     }
 
     return () => {
-      if (card && cardAttachedRef.current) {
+      // Only destroy if not in the middle of tokenization (Fix #14)
+      // Destroying during tokenization can interrupt the payment
+      if (card && cardAttachedRef.current && !isTokenizingRef.current) {
         card.destroy().catch(console.error);
         cardAttachedRef.current = false;
       }
@@ -128,13 +177,25 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    // Double-guard: ref + state for reliable duplicate prevention
+    // The ref provides immediate blocking even before React state updates
+    if (submissionInProgressRef.current || isSubmitting) {
+      console.log('[Square] Submission already in progress, ignoring duplicate');
+      return;
+    }
+
     if (!card) {
       setErrorMessage("Payment form is not ready. Please wait.");
       return;
     }
 
+    // Set ref immediately for synchronous blocking
+    submissionInProgressRef.current = true;
     setIsSubmitting(true);
     setErrorMessage(null);
+
+    // Mark tokenization as in progress (Fix #14)
+    isTokenizingRef.current = true;
 
     try {
       // Build verification details for SCA/3DS (per Square standard)
@@ -166,23 +227,36 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
       console.log('[Square] Token result:', tokenResult);
 
       if (tokenResult.status !== 'OK' || !tokenResult.token) {
-        const errorResult = tokenResult as { errors?: Array<{ message: string }> };
+        const errorResult = tokenResult as { errors?: Array<{ code?: string; message: string }> };
         console.error('[Square] Tokenization failed:', errorResult);
-        const errors = errorResult.errors?.map((e: { message: string }) => e.message).join(', ') || 'Card tokenization failed';
-        setErrorMessage(errors);
+        // Use user-friendly error messages (Fix #17)
+        const errorMsg = errorResult.errors
+          ? getErrorMessage(errorResult.errors)
+          : 'Card tokenization failed. Please try again.';
+        setErrorMessage(errorMsg);
         setIsSubmitting(false);
         return;
       }
 
       console.log('[Square] Tokenization successful, calling onSuccess...');
       // Call the success handler with the token
+      // Note: When tokenize() is called with verificationDetails, SCA/3DS verification
+      // is performed inline by Square, and the resulting token already contains
+      // the verification. The verificationToken parameter is kept for backwards
+      // compatibility but is undefined when using inline verification.
       await onSuccess(tokenResult.token);
     } catch (error) {
       console.error('[Square] Submit error:', error);
       const message = error instanceof Error ? error.message : "Payment failed. Please try again.";
       setErrorMessage(message);
+      // Re-enable submission on error so user can retry
+      submissionInProgressRef.current = false;
     } finally {
       setIsSubmitting(false);
+      isTokenizingRef.current = false; // Reset tokenization flag (Fix #14)
+      // Note: We intentionally do NOT reset submissionInProgressRef on success
+      // This prevents any race conditions from allowing a second submission
+      // The component will remount or user will navigate away after successful payment
     }
   };
 
@@ -216,7 +290,12 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
 
       {errorMessage ? <p className={styles.error}>{errorMessage}</p> : null}
 
-      <PrimaryButton type="submit" disabled={isSubmitting || !card}>
+      <PrimaryButton
+        type="submit"
+        disabled={isSubmitting || !card || disabled}
+        aria-busy={isSubmitting}
+        aria-disabled={isSubmitting || !card || disabled}
+      >
         {isSubmitting ? processingLabel ?? "Processing..." : submitLabel ?? "Pay now"}
       </PrimaryButton>
     </form>
