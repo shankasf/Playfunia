@@ -336,6 +336,19 @@
   white-space: nowrap;
 }
 
+.hoursLoading,
+.hoursError {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+}
+
+.hoursError {
+  color: rgba(255, 107, 157, 0.8);
+}
+
 /* Bottom Bar */
 .bottomBar {
   padding: 1rem 0;
@@ -356,6 +369,16 @@
   font-size: 0.8rem;
   margin: 0;
   text-align: center;
+}
+
+.privacyLink {
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.privacyLink:hover {
+  color: #ff6b9d;
 }
 
 .legalLinks {

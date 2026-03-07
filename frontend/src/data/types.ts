@@ -23,9 +23,15 @@ export interface EventItem {
   description?: string;
   startDate: string;
   endDate: string;
-  location: string;
-  price: number;
-  tags?: string[];
+  imageUrl?: string;
+  hasMedia?: boolean;
+}
+
+export interface EventPhoto {
+  id: number;
+  url: string;
+  caption: string | null;
+  mediaType: 'image' | 'video';
 }
 
 export interface Testimonial {

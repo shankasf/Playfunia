@@ -167,20 +167,39 @@ export async function loginOrRegisterWaiverUser(
     if (mainUserEmail) {
       const existingWaiver = await WaiverRepository.findValidByEmail(mainUserEmail);
       if (existingWaiver) {
-        // Build guardian name from first/last name columns
         const waiverGuardianName = `${existingWaiver.guardian_first_name || ''} ${existingWaiver.guardian_last_name || ''}`.trim();
         guardianNameFromMainUser = waiverGuardianName || guardianNameFromMainUser;
       }
     }
 
-    // Create new waiver user with guardian name if available
-    waiverUser = await WaiverUserRepository.create({
+    // Don't create DB record yet — defer until waiver is actually submitted.
+    // Return a "pending" token so the frontend can still show the form.
+    isNewUser = true;
+
+    const token = signJwt({
+      sub: 'pending',
       email: email?.toLowerCase(),
       phone,
-      guardian_name: guardianNameFromMainUser ?? undefined,
-      marketing_opt_in: false,
+      type: 'waiver_user',
+      roles: ['waiver_only'],
     });
-    isNewUser = true;
+
+    return {
+      token,
+      isNewUser,
+      waiverUser: buildWaiverUserResponse({
+        id: 'pending',
+        email: email?.toLowerCase() ?? null,
+        phone: phone ?? null,
+        guardianName: guardianNameFromMainUser,
+        guardianFirstName: null,
+        guardianLastName: null,
+        guardianDateOfBirth: null,
+        relationshipToMinor: null,
+        lastWaiverSignedAt: null,
+        children: [],
+      }),
+    };
   }
 
   // Generate JWT with waiver-only scope
@@ -200,7 +219,7 @@ export async function loginOrRegisterWaiverUser(
       children.push({
         id: String(child.waiver_user_child_id),
         childId: child.waiver_user_child_id,
-        name: name || 'Unknown',
+        name: name || '',
         birthDate: child.minor_date_of_birth || '',
         gender: child.minor_gender || undefined,
       });
@@ -214,12 +233,12 @@ export async function loginOrRegisterWaiverUser(
       for (const child of latestWaiver.children as Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>) {
         const name = child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim();
         children.push({
-          name: name || 'Unknown',
+          name: name || '',
           birthDate: child.birthDate || child.birth_date || '',
           gender: child.gender || undefined,
         });
       }
-    } else if (!isNewUser && waiverUser.email) {
+    } else if (waiverUser.email) {
       // Also try to find waivers by email for main account users using waiver auth
       const emailWaivers = await WaiverRepository.findByEmail(waiverUser.email);
       const emailWaiver = emailWaivers[0];
@@ -227,7 +246,7 @@ export async function loginOrRegisterWaiverUser(
         for (const child of emailWaiver.children as Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>) {
           const name = child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim();
           children.push({
-            name: name || 'Unknown',
+            name: name || '',
             birthDate: child.birthDate || child.birth_date || '',
             gender: child.gender || undefined,
           });
@@ -242,7 +261,7 @@ export async function loginOrRegisterWaiverUser(
   let guardianDateOfBirth = waiverUser.guardian_date_of_birth;
   let relationshipToMinor = waiverUser.relationship_to_minor;
 
-  if (!guardianFirstName && !isNewUser) {
+  if (!guardianFirstName) {
     // Try to get details from waiver submissions
     const waivers = await WaiverRepository.findByWaiverUserId(waiverUser.waiver_user_id);
     let latestWaiver = waivers[0];

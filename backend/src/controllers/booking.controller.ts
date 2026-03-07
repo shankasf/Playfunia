@@ -1,15 +1,13 @@
 import type { Response } from "express";
 import { ZodError } from "zod";
 
-import type { AuthenticatedRequest } from "../middleware/auth.middleware";
+import type { SupabaseAuthenticatedRequest as AuthenticatedRequest } from "../middleware/supabase-auth.middleware";
 import {
   cancelBooking,
   checkBookingAvailability,
   createBooking,
   createGuestBooking,
   estimateBookingPrice,
-  completeBookingDepositPayment,
-  initiateBookingDepositPayment,
   listAllBookings,
   listAvailableSlots,
   listBookingsForGuardian,
@@ -25,7 +23,6 @@ import {
   bookingSlotsQuerySchema,
   createBookingSchema,
   createGuestBookingSchema,
-  bookingDepositConfirmSchema,
   updateBookingStatusSchema,
   rescheduleBookingSchema,
 } from "../schemas/booking.schema";
@@ -93,6 +90,7 @@ export const listBookingSlotsHandler = asyncHandler(async (req: AuthenticatedReq
   const query = parseWithSchema(bookingSlotsQuerySchema, {
     location: req.query.location,
     eventDate: req.query.eventDate,
+    packageId: req.query.packageId,
   });
   const result = await listAvailableSlots(query);
   return res.status(200).json(result);
@@ -121,27 +119,6 @@ export const updateBookingStatusHandler = asyncHandler(
     return res.status(200).json(updated);
   },
 );
-
-export const createBookingDepositIntentHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  if (!req.user) {
-    throw new AppError("Unauthorized", 401);
-  }
-
-  const { bookingId } = parseWithSchema(bookingIdParamSchema, req.params);
-  const intent = await initiateBookingDepositPayment(req.user.id, bookingId);
-  return res.status(200).json(intent);
-});
-
-export const confirmBookingDepositHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  if (!req.user) {
-    throw new AppError("Unauthorized", 401);
-  }
-
-  const { bookingId } = parseWithSchema(bookingIdParamSchema, req.params);
-  const { paymentIntentId } = parseWithSchema(bookingDepositConfirmSchema, req.body);
-  const result = await completeBookingDepositPayment(req.user.id, bookingId, paymentIntentId);
-  return res.status(200).json(result);
-});
 
 // Square payment handler for booking deposits
 export const processSquareDepositHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

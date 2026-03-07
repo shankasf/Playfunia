@@ -47,6 +47,19 @@ async function addAdminUsers() {
       lastName: 'USA',
       fullName: 'Playfunia USA',
     },
+    {
+      email: 'Isa@realinternational.tech',
+      firstName: 'Isa',
+      lastName: 'Real International',
+      fullName: 'Isa Real International',
+      password: 'Isa@realinternational.tech',
+    },
+    {
+      email: 'ibelgesay@gmail.com',
+      firstName: 'Isa',
+      lastName: '',
+      fullName: 'Isa',
+    },
   ];
 
   for (const admin of adminUsers) {
@@ -109,6 +122,23 @@ async function addAdminUsers() {
         console.log(`  User ${admin.email} already has admin role`);
       }
     } else {
+      // If password is specified, create Supabase Auth user first
+      let authUserId: string | null = null;
+      if ('password' in admin && admin.password) {
+        const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+          email: admin.email,
+          password: admin.password,
+          email_confirm: true,
+        });
+
+        if (authError) {
+          console.error(`Error creating auth user ${admin.email}:`, authError);
+        } else {
+          authUserId = authUser.user?.id || null;
+          console.log(`  Created auth user with ID: ${authUserId}`);
+        }
+      }
+
       // Create user with admin role
       const { error: userError } = await supabase.from('users').insert({
         email: admin.email,
@@ -116,6 +146,7 @@ async function addAdminUsers() {
         last_name: admin.lastName,
         customer_id: customerId,
         roles: ['user', 'admin'],
+        auth_user_id: authUserId,
       });
 
       if (userError) {

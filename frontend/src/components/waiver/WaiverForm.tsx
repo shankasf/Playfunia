@@ -3,11 +3,15 @@ import { useNavigate } from 'react-router-dom';
 
 import { apiPost } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
+import { isValidPhone } from '../../utils/validation';
+import { toDateInputValue } from '../../lib/dateUtils';
 import { PrimaryButton } from '../common/PrimaryButton';
+import { SignaturePadModal } from './SignaturePadModal';
 import styles from './WaiverForm.module.css';
 
 interface ChildForm {
-  id: string;
+  id: string; // Frontend ID for React key
+  childId?: number; // Database child_id for updates
   name: string;
   birthDate: string;
   gender: string;
@@ -31,18 +35,29 @@ const isLettersOnly = (value: string): boolean => {
   return /^[A-Za-zÀ-ÿ\s'-]+$/.test(value);
 };
 
-const isValidPhone = (value: string): boolean => {
-  // Extract only digits from the phone number
-  const digitsOnly = value.replace(/\D/g, '');
-  return digitsOnly.length === 10;
+// Get current date in New York timezone
+const getNewYorkDate = (): { year: number; month: number; day: number } => {
+  const nyDate = new Date().toLocaleDateString('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const [month, day, year] = nyDate.split('/').map(Number);
+  return { year, month: month - 1, day }; // month is 0-indexed for consistency
+};
+
+const getNewYorkDateIso = (): string => {
+  const { year, month, day } = getNewYorkDate();
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
 const calculateAge = (birthDate: string): number => {
-  const today = new Date();
-  const birth = new Date(birthDate);
-  let age = today.getFullYear() - birth.getFullYear();
-  const monthDiff = today.getMonth() - birth.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+  const today = getNewYorkDate();
+  const [birthYear, birthMonth, birthDay] = birthDate.split('-').map(Number);
+  let age = today.year - birthYear;
+  const monthDiff = today.month - (birthMonth - 1);
+  if (monthDiff < 0 || (monthDiff === 0 && today.day < birthDay)) {
     age--;
   }
   return age;
@@ -54,7 +69,7 @@ const isParentAgeValid = (birthDate: string): boolean => {
 
 const isChildAgeValid = (birthDate: string): boolean => {
   const age = calculateAge(birthDate);
-  return age >= 1 && age <= 13;
+  return age >= 0 && age <= 13;
 };
 
 const createId = () =>
@@ -63,10 +78,24 @@ const createId = () =>
     : Math.random().toString(36).slice(2, 10);
 
 interface InitialChild {
-  id?: string;
+  id?: string; // Can be database child_id as string
+  childId?: number; // Database child_id as number
   name?: string;
   birthDate?: string;
   gender?: string;
+}
+
+export interface WaiverResult {
+  waiverCode: string;
+  childCount: number;
+  signedAt: string;
+  id: number;
+  guardianName: string;
+  guardianEmail: string;
+  guardianPhone: string;
+  guardianDob: string;
+  relationship: string;
+  children: Array<{ name: string; birthDate: string; gender?: string }>;
 }
 
 interface WaiverFormProps {
@@ -79,23 +108,9 @@ interface WaiverFormProps {
   initialMarketingOptIn?: boolean;
   initialSignature?: string;
   initialChildren?: InitialChild[];
-  onSubmitted?: () => void;
+  onSubmitted?: (data: WaiverResult) => void;
   onGoBack?: () => void;
 }
-
-const toDateInputValue = (value?: string) => {
-  if (!value) {
-    return '';
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return value;
-  }
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return '';
-  }
-  return parsed.toISOString().slice(0, 10);
-};
 
 export function WaiverForm({
   returnUrl,
@@ -117,18 +132,24 @@ export function WaiverForm({
   const defaultGuardianEmail = initialGuardianEmail ?? user?.email ?? '';
   const defaultGuardianPhone = user?.phone ?? '';
   const defaultSignature = ((initialSignature ?? defaultGuardianName) || fallbackName).trim();
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = getNewYorkDateIso();
 
   const initialChildrenRef = useRef<ChildForm[]>(
     (initialChildren && initialChildren.length > 0
       ? initialChildren
       : [{ id: undefined, name: '', birthDate: '', gender: '' }]
-    ).map((child) => ({
-      id: child.id ?? createId(),
-      name: (child.name ?? '').trim(),
-      birthDate: toDateInputValue(child.birthDate),
-      gender: child.gender ?? '',
-    }))
+    ).map((child) => {
+      // Parse childId from either childId field or id field (if numeric)
+      const parsedChildId = child.childId ?? (child.id ? parseInt(child.id, 10) : undefined);
+      const childId = parsedChildId && !isNaN(parsedChildId) ? parsedChildId : undefined;
+      return {
+        id: child.id ?? createId(),
+        childId,
+        name: (child.name ?? '').trim(),
+        birthDate: toDateInputValue(child.birthDate),
+        gender: child.gender ?? '',
+      };
+    })
   );
 
   const initialValuesRef = useRef({
@@ -143,7 +164,6 @@ export function WaiverForm({
 
   const [guardianName, setGuardianName] = useState(initialValuesRef.current.guardianName);
   const [guardianEmail, setGuardianEmail] = useState(initialValuesRef.current.guardianEmail);
-  const [signature, setSignature] = useState(initialValuesRef.current.signature);
   const [guardianPhone, setGuardianPhone] = useState(initialValuesRef.current.guardianPhone);
   const [guardianDob, setGuardianDob] = useState(initialValuesRef.current.guardianDob);
   const [relationship, setRelationship] = useState(initialValuesRef.current.relationship);
@@ -152,6 +172,8 @@ export function WaiverForm({
     initialChildrenRef.current.map((child) => ({ ...child }))
   );
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [signatureImage, setSignatureImage] = useState<string | null>(null);
+  const [signaturePadOpen, setSignaturePadOpen] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'success' | 'error'; message?: string }>({
     type: 'idle',
   });
@@ -159,7 +181,7 @@ export function WaiverForm({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const addChild = () => {
-    setChildren((prev) => [...prev, { id: createId(), name: '', birthDate: '', gender: '' }]);
+    setChildren((prev) => [...prev, { id: createId(), childId: undefined, name: '', birthDate: '', gender: '' }]);
   };
 
   const removeChild = (id: string) => {
@@ -175,13 +197,13 @@ export function WaiverForm({
   const resetForm = () => {
     setGuardianName(initialValuesRef.current.guardianName);
     setGuardianEmail(initialValuesRef.current.guardianEmail);
-    setSignature(initialValuesRef.current.signature);
     setGuardianPhone(initialValuesRef.current.guardianPhone);
     setGuardianDob(initialValuesRef.current.guardianDob);
     setRelationship(initialValuesRef.current.relationship);
     setMarketingOptIn(initialValuesRef.current.marketingOptIn);
     setChildren(initialChildrenRef.current.map((child) => ({ ...child })));
     setAcceptTerms(false);
+    setSignatureImage(null);
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -198,6 +220,15 @@ export function WaiverForm({
       errors.guardianName = 'Name must contain only letters, spaces, hyphens, or apostrophes.';
     }
 
+    // Validate email
+    if (!guardianEmail.trim()) {
+      setStatus({ type: 'error', message: 'Email address is required.' });
+      return;
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(guardianEmail.trim())) {
+      setStatus({ type: 'error', message: 'Please enter a valid email address.' });
+      return;
+    }
+
     // Validate phone (exactly 10 digits)
     if (!guardianPhone.trim()) {
       errors.guardianPhone = 'Phone number is required.';
@@ -212,11 +243,14 @@ export function WaiverForm({
       errors.guardianDob = 'Parent/Guardian must be at least 18 years old.';
     }
 
-    // Validate relationship
+    // Validate relationship (select dropdown, so only check presence)
     if (!relationship.trim()) {
       errors.relationship = 'Relationship is required.';
-    } else if (!isLettersOnly(relationship.trim())) {
-      errors.relationship = 'Relationship must contain only letters.';
+    }
+
+    if (!signatureImage) {
+      setStatus({ type: 'error', message: 'Please provide your signature using the signature pad.' });
+      return;
     }
 
     if (!acceptTerms) {
@@ -253,7 +287,7 @@ export function WaiverForm({
         }
 
         if (child.birthDate && !isChildAgeValid(child.birthDate)) {
-          childErr.birthDate = 'Child age must be between 1 and 13 years.';
+          childErr.birthDate = 'Child age must be between 0 and 13 years.';
         }
 
         if (childErr.name || childErr.birthDate) {
@@ -281,17 +315,24 @@ export function WaiverForm({
         guardianPhone: guardianPhone.trim(),
         guardianDob,
         relationshipToChildren: relationship.trim(),
-        signature: signature.trim(),
+        signature: guardianName.trim(),
+        signatureImage,
         acceptedPolicies: [TERMS_POLICY],
         marketingOptIn,
         children: validChildren.map((child) => ({
+          childId: child.childId,
           name: child.name.trim(),
           birthDate: child.birthDate,
           gender: child.gender || undefined,
         })),
       };
 
-      await apiPost('/waivers', payload);
+      const response = await apiPost<{
+        id: number;
+        waiverCode?: string;
+        signedAt?: string;
+        children?: Array<{ name: string }>;
+      }, typeof payload>('/waivers', payload);
       await refreshProfile();
       initialValuesRef.current = {
         guardianName,
@@ -299,16 +340,31 @@ export function WaiverForm({
         guardianPhone,
         guardianDob,
         relationship,
-        signature,
+        signature: guardianName,
         marketingOptIn,
       };
       initialChildrenRef.current = children.map((child) => ({ ...child }));
       setStatus({ type: 'success', message: 'Waiver submitted successfully!' });
-      resetForm();
       if (onSubmitted) {
+        const waiverResult: WaiverResult = {
+          waiverCode: response.waiverCode ?? '',
+          childCount: validChildren.length,
+          signedAt: response.signedAt ?? new Date().toISOString(),
+          id: response.id ?? 0,
+          guardianName: guardianName.trim(),
+          guardianEmail: guardianEmail.trim(),
+          guardianPhone: guardianPhone.trim(),
+          guardianDob,
+          relationship: relationship.trim(),
+          children: validChildren.map((c) => ({
+            name: c.name.trim(),
+            birthDate: c.birthDate,
+            gender: c.gender || undefined,
+          })),
+        };
         // Let parent handle navigation
         setTimeout(() => {
-          onSubmitted();
+          onSubmitted(waiverResult);
         }, 1500);
       } else {
         // Redirect after a short delay to show success message
@@ -338,12 +394,16 @@ export function WaiverForm({
         <h2>Parent / Guardian information</h2>
         <div className={styles.grid}>
           <label>
-            Full name
+            Full name <span className={styles.required}>*</span>
             <input
               type="text"
               value={guardianName}
-              onChange={(event) => setGuardianName(event.target.value)}
+              onChange={(event) => setGuardianName(event.target.value.replace(/[^A-Za-zÀ-ÿ\s'-]/g, ''))}
               required
+              maxLength={200}
+              pattern="[A-Za-zÀ-ÿ\s'\-]+"
+              title="Letters, spaces, hyphens, and apostrophes only"
+              autoComplete="name"
               className={fieldErrors.guardianName ? styles.inputError : ''}
             />
             {fieldErrors.guardianName && (
@@ -351,23 +411,29 @@ export function WaiverForm({
             )}
           </label>
           <label>
-            Email address
+            Email address <span className={styles.required}>*</span>
             <input
               type="email"
               value={guardianEmail}
               onChange={(event) => setGuardianEmail(event.target.value)}
               required
+              maxLength={255}
+              autoComplete="email"
             />
           </label>
           <label>
-            Mobile phone (10 digits)
+            Mobile phone (10 digits) <span className={styles.required}>*</span>
             <input
               type="tel"
-              inputMode="tel"
+              inputMode="numeric"
               value={guardianPhone}
-              onChange={(event) => setGuardianPhone(event.target.value)}
+              onChange={(event) => setGuardianPhone(event.target.value.replace(/\D/g, '').slice(0, 10))}
               required
+              maxLength={10}
+              pattern="\d{10}"
+              title="10-digit phone number"
               placeholder="e.g., 5551234567"
+              autoComplete="tel"
               className={fieldErrors.guardianPhone ? styles.inputError : ''}
             />
             {fieldErrors.guardianPhone && (
@@ -375,7 +441,7 @@ export function WaiverForm({
             )}
           </label>
           <label>
-            Date of birth
+            Date of birth <span className={styles.required}>*</span>
             <input
               type="date"
               max={todayIso}
@@ -389,7 +455,7 @@ export function WaiverForm({
             )}
           </label>
           <label>
-            Relationship to child(ren)
+            Relationship to child(ren) <span className={styles.required}>*</span>
             <select
               value={relationship}
               onChange={(event) => setRelationship(event.target.value)}
@@ -412,17 +478,20 @@ export function WaiverForm({
 
       <div className={styles.section}>
         <h2>Children covered by this waiver</h2>
-        <p className={styles.helper}>Add each child who will be playing at Playfunia. Children must be 1-13 years old.</p>
+        <p className={styles.helper}>Add each child who will be playing at Playfunia. Children must be 0-13 years old.</p>
         <div className={styles.childrenList}>
           {children.map((child) => (
             <div key={child.id} className={styles.childRow}>
               <label>
-                Child name
+                Child name <span className={styles.required}>*</span>
                 <input
                   type="text"
                   value={child.name}
-                  onChange={(event) => updateChild(child.id, 'name', event.target.value)}
+                  onChange={(event) => updateChild(child.id, 'name', event.target.value.replace(/[^A-Za-zÀ-ÿ\s'-]/g, ''))}
                   required
+                  maxLength={100}
+                  pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                  title="Letters, spaces, hyphens, and apostrophes only"
                   className={fieldErrors.childErrors?.[child.id]?.name ? styles.inputError : ''}
                 />
                 {fieldErrors.childErrors?.[child.id]?.name && (
@@ -430,9 +499,10 @@ export function WaiverForm({
                 )}
               </label>
               <label>
-                Birth date
+                Birth date <span className={styles.required}>*</span>
                 <input
                   type="date"
+                  max={todayIso}
                   value={child.birthDate}
                   onChange={(event) => updateChild(child.id, 'birthDate', event.target.value)}
                   required
@@ -455,13 +525,15 @@ export function WaiverForm({
                   <option value="Other">Other</option>
                 </select>
               </label>
-              <button
-                type="button"
-                className={styles.removeButton}
-                onClick={() => removeChild(child.id)}
-              >
-                Remove
-              </button>
+              {children.length > 1 && (
+                <button
+                  type="button"
+                  className={styles.removeButton}
+                  onClick={() => removeChild(child.id)}
+                >
+                  Remove
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -491,18 +563,44 @@ export function WaiverForm({
       </div>
 
       <div className={styles.section}>
-        <h2>Signature</h2>
-        <label>
-          Type your full name
-          <input
-            type="text"
-            value={signature}
-            onChange={(event) => setSignature(event.target.value)}
-            required
-          />
-        </label>
-        <p className={styles.helperSmall}>Typing your name serves as your digital signature.</p>
+        <h2>Signature <span className={styles.required}>*</span></h2>
+        {signatureImage ? (
+          <div className={styles.signaturePreview}>
+            <img
+              src={signatureImage}
+              alt="Your signature"
+              className={styles.signaturePreviewImage}
+            />
+            <button
+              type="button"
+              className={styles.resignButton}
+              onClick={() => setSignaturePadOpen(true)}
+            >
+              Re-sign
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className={styles.signButton}
+            onClick={() => setSignaturePadOpen(true)}
+          >
+            Tap to Sign
+          </button>
+        )}
+        <p className={styles.helperSmall}>
+          Your handwritten signature will be captured and included in the waiver document.
+        </p>
       </div>
+
+      <SignaturePadModal
+        open={signaturePadOpen}
+        onClose={() => setSignaturePadOpen(false)}
+        onAccept={(dataUrl) => {
+          setSignatureImage(dataUrl);
+          setSignaturePadOpen(false);
+        }}
+      />
 
       {status.type === 'error' ? <p className={styles.error}>{status.message}</p> : null}
       {status.type === 'success' ? <p className={styles.success}>{status.message}</p> : null}

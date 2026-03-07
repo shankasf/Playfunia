@@ -1,5 +1,14 @@
 import { z } from 'zod';
 
+const nameRegex = /^[A-Za-zÀ-ÿ\s'-]+$/;
+
+// Phone: strip non-digits, require exactly 10
+const phoneSchema = z
+  .string()
+  .trim()
+  .transform(val => val.replace(/\D/g, ''))
+  .refine(val => val.length === 0 || val.length === 10, 'Phone must be empty or exactly 10 digits');
+
 // ============= Booking Schemas =============
 export const adminBookingFilterSchema = z
   .object({
@@ -39,10 +48,10 @@ export type ValidRole = typeof validRoles[number];
 
 export const adminUserUpdateSchema = z
   .object({
-    email: z.string().email().optional(),
-    first_name: z.string().min(1).max(100).optional(),
-    last_name: z.string().min(1).max(100).optional(),
-    phone: z.string().max(50).optional(),
+    email: z.string().trim().email().toLowerCase().optional(),
+    first_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    last_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    phone: phoneSchema.optional(),
     // Single role (legacy support) - gets converted to roles array
     role: z.enum(validRoles).optional(),
     // Multiple roles array
@@ -59,9 +68,9 @@ export type AdminUserUpdateInput = z.infer<typeof adminUserUpdateSchema>;
 // ============= Customer Schemas =============
 export const adminCustomerUpdateSchema = z
   .object({
-    full_name: z.string().min(1).max(200).optional(),
-    email: z.string().email().optional(),
-    phone: z.string().max(20).optional(),
+    full_name: z.string().trim().min(1).max(200).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    email: z.string().trim().email().toLowerCase().optional(),
+    phone: phoneSchema.optional(),
   })
   .refine(data => Object.keys(data).length > 0, {
     message: 'At least one field must be provided to update a customer.',
@@ -74,8 +83,8 @@ export type AdminCustomerUpdateInput = z.infer<typeof adminCustomerUpdateSchema>
 export const adminChildCreateSchema = z
   .object({
     customer_id: z.number().int().positive(),
-    first_name: z.string().min(1).max(100),
-    last_name: z.string().min(1).max(100).optional(),
+    first_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes'),
+    last_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
     birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     gender: z.enum(['male', 'female', 'other']).optional(),
   })
@@ -85,9 +94,9 @@ export type AdminChildCreateInput = z.infer<typeof adminChildCreateSchema>;
 
 export const adminChildUpdateSchema = z
   .object({
-    first_name: z.string().min(1).max(100).optional(),
-    last_name: z.string().min(1).max(100).optional(),
-    birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    first_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    last_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    birth_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
     gender: z.enum(['male', 'female', 'other']).optional(),
   })
   .refine(data => Object.keys(data).length > 0, {
@@ -98,23 +107,14 @@ export const adminChildUpdateSchema = z
 export type AdminChildUpdateInput = z.infer<typeof adminChildUpdateSchema>;
 
 // ============= Event Schemas =============
-// Media type for event posts (image, video, gif)
-const eventMediaTypeSchema = z.enum(['image', 'video', 'gif']).optional();
-
 export const adminEventCreateSchema = z
   .object({
     title: z.string().min(1).max(200),
     description: z.string().max(2000).optional(),
     start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/),
     end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/).optional(),
-    location: z.string().max(200).optional(),
-    capacity: z.number().int().positive().optional(),
     is_published: z.boolean().optional(),
-    // Media support - image/video/gif
     image_url: z.string().url().optional(),
-    video_url: z.string().url().optional(),
-    media_type: eventMediaTypeSchema,
-    tags: z.array(z.string()).optional(),
   })
   .strip();
 
@@ -126,14 +126,8 @@ export const adminEventUpdateSchema = z
     description: z.string().max(2000).optional(),
     start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/).optional(),
     end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/).optional(),
-    location: z.string().max(200).optional(),
-    capacity: z.number().int().positive().optional(),
     is_published: z.boolean().optional(),
-    // Media support - image/video/gif
-    image_url: z.string().url().optional(),
-    video_url: z.string().url().optional(),
-    media_type: eventMediaTypeSchema,
-    tags: z.array(z.string()).optional(),
+    image_url: z.string().url().nullable().optional(),
   })
   .refine(data => Object.keys(data).length > 0, {
     message: 'At least one field must be provided to update an event.',
@@ -183,11 +177,11 @@ export type AdminWaiverListQuery = z.infer<typeof adminWaiverListQuerySchema>;
 
 export const adminWaiverUpdateSchema = z
   .object({
-    guardian_name: z.string().min(1).max(200).optional(),
-    guardian_email: z.string().email().optional(),
-    guardian_phone: z.string().max(20).optional(),
-    emergency_contact_name: z.string().max(200).optional(),
-    emergency_contact_phone: z.string().max(20).optional(),
+    guardian_name: z.string().trim().min(1).max(200).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    guardian_email: z.string().trim().email().toLowerCase().optional(),
+    guardian_phone: phoneSchema.optional(),
+    emergency_contact_name: z.string().trim().max(200).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    emergency_contact_phone: phoneSchema.optional(),
     marketing_opt_in: z.boolean().optional(),
   })
   .refine(data => Object.keys(data).length > 0, {
@@ -219,3 +213,13 @@ export const adminMembershipLookupSchema = z
   .strip();
 
 export type AdminMembershipLookupInput = z.infer<typeof adminMembershipLookupSchema>;
+
+// ============= Job Application Schemas =============
+export const adminJobApplicationStatusUpdateSchema = z
+  .object({
+    status: z.enum(['new', 'reviewed', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn']),
+    admin_notes: z.string().max(2000).optional(),
+  })
+  .strip();
+
+export type AdminJobApplicationStatusUpdateInput = z.infer<typeof adminJobApplicationStatusUpdateSchema>;

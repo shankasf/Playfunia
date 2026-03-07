@@ -99,6 +99,9 @@ export function ContactSection() {
               onChange={(e) => setName(formatNameInput(e.target.value))}
               required
               maxLength={100}
+              pattern="[A-Za-zÀ-ÿ\s'\-]+"
+              title="Letters, spaces, hyphens, and apostrophes only"
+              autoComplete="name"
             />
           </label>
           <label>
@@ -107,8 +110,10 @@ export function ContactSection() {
               type="email"
               placeholder="you@email.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value.trim())}
               required
+              maxLength={255}
+              autoComplete="email"
             />
           </label>
           <label>
@@ -117,6 +122,7 @@ export function ContactSection() {
               type="date"
               value={preferredDate}
               onChange={(e) => setPreferredDate(e.target.value)}
+              min={new Date().toISOString().slice(0, 10)}
             />
           </label>
           <label>

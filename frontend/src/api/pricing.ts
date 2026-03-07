@@ -51,9 +51,12 @@ export interface StoreHours {
 }
 
 export interface PricingConfig {
+  taxRate: number;
   cleaningFee: number;
   gripSocksPrice: number;
   extraChildAdmission: number;
+  extraAdultAdmission: number;
+  singleAdmissionPrice: number;
   depositPercentage: number;
   siblingDiscountRate: number;
   storeHours: StoreHours[];

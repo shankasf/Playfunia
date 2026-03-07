@@ -3,7 +3,7 @@
 Use this list before each release to ensure compliance with the Kidz 4 Fun business rules and legal obligations introduced in Phase 5.
 
 ## 1. Waiver Retention & Export
-- [ ] Confirm `archiveUntil` is set to >= 5 years out for new waivers (check Mongo sample record).
+- [ ] Confirm `archiveUntil` is set to >= 7 years out for new waivers (check DB sample record).
 - [ ] Trigger `GET /api/waivers/export` and verify CSV contains guardian, children, accepted policies, marketing opt-in, timestamps.
 - [ ] Ensure documentation (`docs/data-retention.md`) matches actual implementation and backup workflow is scheduled or planned.
 

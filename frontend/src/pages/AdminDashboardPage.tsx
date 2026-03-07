@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
@@ -749,29 +750,53 @@ export function AdminDashboardPage() {
       <section className={styles.summaryGrid}>
         {renderSummaryCard(
           'Bookings',
-          summary?.bookings.upcoming.length ?? 0,
-          `${summary?.bookings.pendingDepositCount ?? 0} deposits pending`
+          summary?.bookings.total ?? 0,
+          'Total',
+          `${summary?.bookings.today ?? 0} today`,
+          'section-bookings'
         )}
         {renderSummaryCard(
           'Waivers',
           summary?.waivers.total ?? 0,
-          `${summary?.waivers.recent.length ?? 0} recent`
+          'Total',
+          `${summary?.waivers.today ?? 0} today`,
+          'section-waivers'
         )}
         {renderSummaryCard(
-          'Ticket revenue',
-          formatCurrency(summary?.tickets.salesWeek ?? 0),
-          `${summary?.tickets.salesToday ?? 0} today`
+          'Ticket Revenue',
+          formatCurrency(summary?.tickets.totalRevenue ?? 0),
+          'Total',
+          `${formatCurrency(summary?.tickets.todayRevenue ?? 0)} today`,
+          'section-tickets'
         )}
         {renderSummaryCard(
           'Memberships',
-          summary?.memberships.activeMembers ?? 0,
-          `${summary?.memberships.visitsToday ?? 0} check-ins today`
+          summary?.memberships.total ?? 0,
+          'Total',
+          `${summary?.memberships.activeMembers ?? 0} active`,
+          'section-memberships'
         )}
+        <Link to="/admin/applicants" style={{ textDecoration: 'none', display: 'contents' }}>
+          {renderSummaryCard(
+            'Applicants',
+            summary?.applicants?.total ?? 0,
+            'Total',
+            `${summary?.applicants?.pendingCount ?? 0} pending review`
+          )}
+        </Link>
+        <Link to="/admin/events" style={{ textDecoration: 'none', display: 'contents' }}>
+          {renderSummaryCard(
+            'Events',
+            summary?.events?.total ?? 0,
+            'Total',
+            `${summary?.events?.today ?? 0} today`
+          )}
+        </Link>
       </section>
 
       <div className={styles.layout}>
         <div className={styles.columnPrimary}>
-          <section className={styles.panel}>
+          <section id="section-bookings" className={styles.panel}>
             <header className={styles.panelHeader}>
               <div className={styles.panelTitleRow}>
                 <h2>Upcoming bookings</h2>
@@ -828,7 +853,7 @@ export function AdminDashboardPage() {
           </section>
 
 
-          <section className={styles.panel}>
+          <section id="section-tickets" className={styles.panel}>
             <header className={styles.panelHeader}>
               <h2>Ticket redemption</h2>
               <span>{filteredTickets.length} of {ticketState.data.length}</span>
@@ -877,7 +902,7 @@ export function AdminDashboardPage() {
         </div>
 
         <aside className={styles.columnAside}>
-          <section className={styles.panel}>
+          <section id="section-memberships" className={styles.panel}>
             <header className={styles.panelHeader}>
               <h2>Membership roster</h2>
               <span>{filteredMemberships.length} of {membershipState.data.length}</span>
@@ -989,7 +1014,7 @@ export function AdminDashboardPage() {
             )}
           </section>
 
-          <section className={styles.panel}>
+          <section id="section-waivers" className={styles.panel}>
             <header className={styles.panelHeader}>
               <h2>Waiver intake</h2>
               <div className={styles.panelActions}>
@@ -1802,11 +1827,26 @@ export function AdminDashboardPage() {
   );
 }
 
-function renderSummaryCard(title: string, value: string | number, subtitle: string) {
+function renderSummaryCard(title: string, value: string | number, valueLabel: string, subtitle: string, scrollTo?: string) {
+  const handleClick = scrollTo
+    ? () => {
+        const el = document.getElementById(scrollTo);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    : undefined;
+
   return (
-    <div className={styles.summaryCard} key={title}>
+    <div
+      className={`${styles.summaryCard}${scrollTo ? ` ${styles.summaryCardClickable}` : ''}`}
+      key={title}
+      onClick={handleClick}
+      role={scrollTo ? 'button' : undefined}
+      tabIndex={scrollTo ? 0 : undefined}
+      onKeyDown={scrollTo ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleClick?.(); } } : undefined}
+    >
       <span>{title}</span>
       <strong>{value}</strong>
+      <small className={styles.valueLabel}>{valueLabel}</small>
       <p>{subtitle}</p>
     </div>
   );
@@ -2306,6 +2346,9 @@ function shouldRefreshForEvent(type?: string) {
     'ticket.redeemed',
     'waiver.updated',
     'membership.visitRecorded',
+    'event.created',
+    'event.updated',
+    'event.deleted',
   ].includes(type);
 }
 

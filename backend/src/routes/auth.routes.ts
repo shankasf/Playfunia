@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 
 import {
   loginHandler,
@@ -14,6 +15,14 @@ import { getUserProfile, checkEmailExists } from '../services/auth.service';
 import { UserRepository } from '../repositories';
 
 export const authRouter = Router();
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts. Please try again later.' },
+});
 
 // ============= Supabase Auth Endpoints =============
 
@@ -81,12 +90,12 @@ authRouter.post('/sync-profile-signup', supabaseAuthGuardAllowCreate, asyncHandl
 // but new users should use Supabase Auth directly
 
 // Registration and login (legacy - still functional for transition)
-authRouter.post('/register', registerHandler);
-authRouter.post('/login', loginHandler);
+authRouter.post('/register', authLimiter, registerHandler);
+authRouter.post('/login', authLimiter, loginHandler);
 
 // OTP verification (legacy - Supabase handles this now)
-authRouter.post('/send-otp', sendOTPHandler);
-authRouter.post('/verify-otp', verifyOTPHandler);
+authRouter.post('/send-otp', authLimiter, sendOTPHandler);
+authRouter.post('/verify-otp', authLimiter, verifyOTPHandler);
 
 // Password reset (legacy - Supabase handles this now)
-authRouter.post('/reset-password', resetPasswordHandler);
+authRouter.post('/reset-password', authLimiter, resetPasswordHandler);

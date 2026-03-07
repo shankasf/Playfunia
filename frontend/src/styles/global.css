@@ -35,7 +35,7 @@
 
   /* Responsive spacing */
   --spacing-page: 1.5rem;
-  --spacing-section: 4rem;
+  --spacing-section: 5rem;
 
   /* Fun gradients */
   --gradient-rainbow: linear-gradient(135deg, #ff6b9d 0%, #fbbf24 25%, #4ade80 50%, #06b6d4 75%, #7c3aed 100%);

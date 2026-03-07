@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { lookupWaiverAuth, loginWaiverUser, type WaiverAuthResult, type WaiverChild } from '../api/waiver-auth';
 import { setWaiverAuthToken } from '../api/client';
 
@@ -161,17 +161,17 @@ export function WaiverAuthProvider({ children }: { children: ReactNode }) {
         }
     }, [waiverUser, waiverToken, saveToStorage]);
 
-    const value: WaiverAuthContextValue = {
+    const value = useMemo<WaiverAuthContextValue>(() => ({
         waiverUser,
         waiverToken,
-        isWaiverAuthenticated: Boolean(waiverToken && waiverUser),
+        isWaiverAuthenticated: Boolean(waiverToken && waiverUser && !isTokenExpired(waiverToken)),
         isLoading,
         error,
         lookup,
         loginOrRegister,
         logout,
         markWaiverCompleted,
-    };
+    }), [waiverUser, waiverToken, isLoading, error, lookup, loginOrRegister, logout, markWaiverCompleted]);
 
     return <WaiverAuthContext.Provider value={value}>{children}</WaiverAuthContext.Provider>;
 }

@@ -1,0 +1,24 @@
+.wrapper {
+  width: 100%;
+  display: block;
+  margin: -2px 0;
+  pointer-events: none;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.flip {
+  transform: scaleY(-1);
+}
+
+.svg {
+  display: block;
+  width: 100%;
+  height: 60px;
+}
+
+@media (max-width: 768px) {
+  .svg {
+    height: 40px;
+  }
+}

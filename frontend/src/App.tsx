@@ -1,15 +1,16 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Layout } from "./components/layout/Layout";
 import { PageLoader } from "./components/common/PageLoader";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
+import { useAuth } from "./context/AuthContext";
 
 // Eager load HomePage for fastest initial render
 import { HomePage } from "./pages/HomePage";
 
 // Lazy load other pages for code splitting
 const MembershipPage = lazy(() => import("./pages/MembershipPage").then(m => ({ default: m.MembershipPage })));
-const PartiesPage = lazy(() => import("./pages/PartiesPage").then(m => ({ default: m.PartiesPage })));
 const BookPartyPage = lazy(() => import("./pages/BookPartyPage").then(m => ({ default: m.BookPartyPage })));
 const BuyTicketPage = lazy(() => import("./pages/BuyTicketPage").then(m => ({ default: m.BuyTicketPage })));
 const CheckoutPage = lazy(() => import("./pages/CheckoutPage").then(m => ({ default: m.CheckoutPage })));
@@ -20,12 +21,29 @@ const ContactPage = lazy(() => import("./pages/ContactPage").then(m => ({ defaul
 const WaiverPage = lazy(() => import("./pages/WaiverPage").then(m => ({ default: m.WaiverPage })));
 const AccountPage = lazy(() => import("./pages/AccountPage").then(m => ({ default: m.AccountPage })));
 const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage").then(m => ({ default: m.AdminDashboardPage })));
+const AdminApplicantsPage = lazy(() => import("./pages/AdminApplicantsPage").then(m => ({ default: m.AdminApplicantsPage })));
+const AdminApplicantDetailPage = lazy(() => import("./pages/AdminApplicantDetailPage").then(m => ({ default: m.AdminApplicantDetailPage })));
+const AdminEventsPage = lazy(() => import("./pages/AdminEventsPanel").then(m => ({ default: m.AdminEventsPanel })));
 const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage").then(m => ({ default: m.AuthCallbackPage })));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
 const CartPage = lazy(() => import("./pages/CartPage").then(m => ({ default: m.CartPage })));
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage").then(m => ({ default: m.PrivacyPage })));
+const GuestPolicyPage = lazy(() => import("./pages/GuestPolicyPage").then(m => ({ default: m.GuestPolicyPage })));
+const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage").then(m => ({ default: m.RefundPolicyPage })));
+const WaiverPolicyPage = lazy(() => import("./pages/WaiverPolicyPage").then(m => ({ default: m.WaiverPolicyPage })));
+const CareersPage = lazy(() => import("./pages/CareersPage").then(m => ({ default: m.CareersPage })));
+const CareerApplyPage = lazy(() => import("./pages/CareerApplyPage").then(m => ({ default: m.CareerApplyPage })));
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { isTeamMember, isLoading } = useAuth();
+  if (isLoading) return <PageLoader />;
+  if (!isTeamMember) return <Navigate to="/account" replace />;
+  return <>{children}</>;
+}
 
 function App() {
   return (
+    <ErrorBoundary>
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
@@ -34,14 +52,6 @@ function App() {
           element={
             <Suspense fallback={<PageLoader />}>
               <MembershipPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="parties"
-          element={
-            <Suspense fallback={<PageLoader />}>
-              <PartiesPage />
             </Suspense>
           }
         />
@@ -128,9 +138,41 @@ function App() {
         <Route
           path="admin"
           element={
-            <Suspense fallback={<PageLoader />}>
-              <AdminDashboardPage />
-            </Suspense>
+            <AdminRoute>
+              <Suspense fallback={<PageLoader />}>
+                <AdminDashboardPage />
+              </Suspense>
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/applicants"
+          element={
+            <AdminRoute>
+              <Suspense fallback={<PageLoader />}>
+                <AdminApplicantsPage />
+              </Suspense>
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/applicants/:id"
+          element={
+            <AdminRoute>
+              <Suspense fallback={<PageLoader />}>
+                <AdminApplicantDetailPage />
+              </Suspense>
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="admin/events"
+          element={
+            <AdminRoute>
+              <Suspense fallback={<PageLoader />}>
+                <AdminEventsPage />
+              </Suspense>
+            </AdminRoute>
           }
         />
         <Route
@@ -149,8 +191,78 @@ function App() {
             </Suspense>
           }
         />
+        <Route
+          path="privacy"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <PrivacyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="guest-policy"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <GuestPolicyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="refund-policy"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <RefundPolicyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="waiver-policy"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <WaiverPolicyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="careers"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <CareersPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="careers/:slug"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <CareersPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="careers/apply/:listingId"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <CareerApplyPage />
+            </Suspense>
+          }
+        />
+        {/* Redirect /terms to waiver-policy */}
+        <Route path="terms" element={<Navigate to="/waiver-policy" replace />} />
+        {/* Catch-all 404 route */}
+        <Route
+          path="*"
+          element={
+            <div style={{ textAlign: 'center', padding: '4rem 1rem' }}>
+              <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Page Not Found</h1>
+              <p style={{ color: '#666', marginBottom: '2rem' }}>The page you're looking for doesn't exist.</p>
+              <a href="/" style={{ color: '#6C63FF', textDecoration: 'underline' }}>Go back home</a>
+            </div>
+          }
+        />
       </Route>
     </Routes>
+    </ErrorBoundary>
   );
 }
 

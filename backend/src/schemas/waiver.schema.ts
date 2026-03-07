@@ -78,7 +78,10 @@ const waiverChildSchema = z.object({
   childId: z.number().optional(), // Database child_id for updates
   name: nameSchema.refine(val => val.length > 0, 'Child name is required'),
   birthDate: childBirthDateSchema,
-  gender: z.string().trim().optional(),
+  gender: z.preprocess(
+    (val) => (val == null ? '' : val),
+    z.enum(['Male', 'Female', 'Non-binary', 'Other', ''])
+  ).optional(),
 });
 
 export const signWaiverSchema = z.object({
@@ -90,7 +93,8 @@ export const signWaiverSchema = z.object({
   relationshipToChildren: z.enum(relationshipOptions, {
     message: 'Relationship must be Father, Mother, or Other',
   }),
-  signature: z.string().trim().min(1, 'Signature is required'),
+  signature: z.string().trim().min(1, 'Signature is required').max(200, 'Signature is too long'),
+  signatureImage: z.string().optional(),
   acceptedPolicies: z.array(z.string().min(1)).nonempty('Must accept policies'),
   expiresAt: z.coerce.date().optional(),
   marketingOptIn: z.boolean(),

@@ -1,6 +1,7 @@
 import {
   AnnouncementRepository,
   FAQRepository,
+  StoreHoursRepository,
   TestimonialRepository,
 } from '../repositories';
 import { AppError } from '../utils/app-error';
@@ -178,4 +179,45 @@ export async function updateAnnouncement(announcementId: string, input: UpsertAn
     expiresAt: announcement.expires_at,
     createdAt: announcement.created_at,
   };
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function formatTime(time: string): string {
+  // Convert "HH:MM" or "HH:MM:SS" to "10AM" format
+  const timeStr = time.slice(0, 5);
+  const parts = timeStr.split(':');
+  const hourStr = parts[0] ?? '0';
+  const minuteStr = parts[1] ?? '00';
+  const hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+
+  if (minute === 0) {
+    return `${displayHour}${period}`;
+  }
+  return `${displayHour}:${minuteStr}${period}`;
+}
+
+export async function listStoreHours(location: string = 'Albany') {
+  const hours = await StoreHoursRepository.findByLocation(location);
+
+  // Sort by day of week and format for frontend
+  return hours
+    .sort((a, b) => {
+      // Sort Sun-Sat (0-6), but display Mon-Sun order
+      const orderA = a.day_of_week === 0 ? 7 : a.day_of_week;
+      const orderB = b.day_of_week === 0 ? 7 : b.day_of_week;
+      return orderA - orderB;
+    })
+    .map(h => ({
+      day: DAY_NAMES[h.day_of_week],
+      dayOfWeek: h.day_of_week,
+      hours: h.is_closed ? 'Closed' : `${formatTime(h.open_time)} - ${formatTime(h.close_time)}`,
+      openTime: h.open_time.slice(0, 5),
+      closeTime: h.close_time.slice(0, 5),
+      isClosed: h.is_closed,
+    }));
 }

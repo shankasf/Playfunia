@@ -1,130 +1,116 @@
-import { useState, useRef, memo, useCallback } from "react";
+import { memo } from "react";
+import { useScrollReveal } from "../../hooks/useScrollReveal";
 import styles from "./VideoGallery.module.css";
 
 const videos = [
   {
     id: 1,
-    src: "/videos/playground/ball-pit-play.mov",
-    thumbnail: "/videos/thumbnails/ball-pit-play-thumb.jpg",
+    mp4: "/videos/optimized/playground/ball-pit-play.mp4",
+    webm: "/videos/optimized/playground/ball-pit-play.webm",
+    poster: "/videos/optimized/playground/ball-pit-play-poster.jpg",
+    fallbackSrc: "/videos/playground/ball-pit-play.mov",
+    fallbackPoster: "/videos/thumbnails/ball-pit-play-thumb.jpg",
     title: "Ball Pit Fun",
     description: "Kids having a blast in our colorful ball pit",
   },
   {
     id: 2,
-    src: "/videos/playground/slide-fun.mov",
-    thumbnail: "/videos/thumbnails/slide-fun-thumb.jpg",
+    mp4: "/videos/optimized/playground/slide-fun.mp4",
+    webm: "/videos/optimized/playground/slide-fun.webm",
+    poster: "/videos/optimized/playground/slide-fun-poster.jpg",
+    fallbackSrc: "/videos/playground/slide-fun.mov",
+    fallbackPoster: "/videos/thumbnails/slide-fun-thumb.jpg",
     title: "Slide Adventures",
     description: "Exciting slides for all ages",
   },
   {
     id: 3,
-    src: "/videos/playground/carousel-ride.mov",
-    thumbnail: "/videos/thumbnails/carousel-ride-thumb.jpg",
+    mp4: "/videos/optimized/playground/carousel-ride.mp4",
+    webm: "/videos/optimized/playground/carousel-ride.webm",
+    poster: "/videos/optimized/playground/carousel-ride-poster.jpg",
+    fallbackSrc: "/videos/playground/carousel-ride.mov",
+    fallbackPoster: "/videos/thumbnails/carousel-ride-thumb.jpg",
     title: "Carousel Ride",
     description: "Fun carousel for the little ones",
   },
   {
     id: 4,
-    src: "/videos/playground/neon-slides.mov",
-    thumbnail: "/videos/thumbnails/neon-slides-thumb.jpg",
+    mp4: "/videos/optimized/playground/neon-slides.mp4",
+    webm: "/videos/optimized/playground/neon-slides.webm",
+    poster: "/videos/optimized/playground/neon-slides-poster.jpg",
+    fallbackSrc: "/videos/playground/neon-slides.mov",
+    fallbackPoster: "/videos/thumbnails/neon-slides-thumb.jpg",
     title: "Neon Playground",
     description: "Colorful neon-lit slides and ball pit",
   },
   {
     id: 5,
-    src: "/videos/playground/spinning-wheel.mov",
-    thumbnail: "/videos/thumbnails/spinning-wheel-thumb.jpg",
+    mp4: "/videos/optimized/playground/spinning-wheel.mp4",
+    webm: "/videos/optimized/playground/spinning-wheel.webm",
+    poster: "/videos/optimized/playground/spinning-wheel-poster.jpg",
+    fallbackSrc: "/videos/playground/spinning-wheel.mov",
+    fallbackPoster: "/videos/thumbnails/spinning-wheel-thumb.jpg",
     title: "Spinning Wheel",
     description: "Giant spinning wheel above the ball pit",
   },
   {
     id: 6,
-    src: "/videos/playground/toddler-climbing.mov",
-    thumbnail: "/videos/thumbnails/toddler-climbing-thumb.jpg",
+    mp4: "/videos/optimized/playground/toddler-climbing.mp4",
+    webm: "/videos/optimized/playground/toddler-climbing.webm",
+    poster: "/videos/optimized/playground/toddler-climbing-poster.jpg",
+    fallbackSrc: "/videos/playground/toddler-climbing.mov",
+    fallbackPoster: "/videos/thumbnails/toddler-climbing-thumb.jpg",
     title: "Toddler Zone",
     description: "Safe climbing fun for toddlers",
   },
 ];
 
 export const VideoGallery = memo(function VideoGallery() {
-  const [playingId, setPlayingId] = useState<number | null>(null);
-  const videoRefs = useRef<{ [key: number]: HTMLVideoElement | null }>({});
-
-  const handlePlay = useCallback((id: number) => {
-    // Pause any currently playing video
-    Object.entries(videoRefs.current).forEach(([key, video]) => {
-      if (Number(key) !== id && video) {
-        video.pause();
-      }
-    });
-
-    const video = videoRefs.current[id];
-    if (video) {
-      video.play();
-      setPlayingId(id);
-    }
-  }, []);
-
-  const handleVideoEnd = useCallback((id: number) => {
-    setPlayingId((current) => (current === id ? null : current));
-  }, []);
-
-  const handleVideoPause = useCallback((id: number) => {
-    setPlayingId((current) => (current === id ? null : current));
-  }, []);
+  const { ref: revealRef, isVisible } = useScrollReveal();
 
   return (
-    <section className={styles.section}>
+    <section
+      ref={revealRef}
+      className={styles.section}
+      style={{ opacity: isVisible ? 1 : 0, transform: isVisible ? 'none' : 'translateY(30px)', transition: 'opacity 0.6s ease, transform 0.6s ease' }}
+    >
       <div className={styles.header}>
         <span className={styles.tag}>See the fun in action</span>
         <h2>Watch Kids Playing at Playfunia</h2>
         <p>Real moments of joy and laughter from our indoor playground</p>
       </div>
       <div className={styles.grid}>
-        {videos.map((video) => {
-          const isPlaying = playingId === video.id;
-          return (
-            <div key={video.id} className={styles.card}>
-              <div className={styles.videoWrapper}>
-                <video
-                  ref={(el) => { videoRefs.current[video.id] = el; }}
-                  className={`${styles.video} ${isPlaying ? styles.videoPlaying : ''}`}
-                  playsInline
-                  preload="none"
-                  poster={video.thumbnail}
-                  onEnded={() => handleVideoEnd(video.id)}
-                  onPause={() => handleVideoPause(video.id)}
-                  controls={isPlaying}
-                >
-                  <source src={video.src} type="video/quicktime" />
-                  <source src={video.src} type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
-                <button
-                  className={`${styles.playOverlay} ${isPlaying ? styles.playOverlayHidden : ''}`}
-                  onClick={() => handlePlay(video.id)}
-                  aria-label={`Play ${video.title}`}
-                  aria-hidden={isPlaying}
-                  tabIndex={isPlaying ? -1 : 0}
-                >
-                  <span className={styles.playButton}>
-                    <svg viewBox="0 0 68 48" className={styles.playIcon}>
-                      <path
-                        className={styles.playBg}
-                        d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,.13,34,0,34,0S12.21,.13,6.9,1.55 C3.97,2.33,2.27,4.81,1.48,7.74C0.06,13.05,0,24,0,24s0.06,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,47.87,34,48,34,48s21.79-0.13,27.1-1.55c2.93-0.78,4.64-3.26,5.42-6.19C67.94,34.95,68,24,68,24S67.94,13.05,66.52,7.74z"
-                      />
-                      <path className={styles.playArrow} d="M 45,24 27,14 27,34" />
-                    </svg>
-                  </span>
-                </button>
-              </div>
-              <div className={styles.cardContent}>
-                <h3>{video.title}</h3>
-                <p>{video.description}</p>
-              </div>
+        {videos.map((video) => (
+          <div key={video.id} className={styles.card}>
+            <div className={styles.videoWrapper}>
+              <video
+                className={styles.video}
+                autoPlay
+                muted
+                loop
+                playsInline
+                poster={video.poster}
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.dataset.fallback) {
+                    target.dataset.fallback = "true";
+                    target.poster = video.fallbackPoster;
+                    target.innerHTML = `<source src="${video.fallbackSrc}" type="video/quicktime" />`;
+                    target.load();
+                  }
+                }}
+              >
+                <source src={video.webm} type="video/webm" />
+                <source src={video.mp4} type="video/mp4" />
+                <source src={video.fallbackSrc} type="video/quicktime" />
+              </video>
             </div>
-          );
-        })}
+            <div className={styles.cardContent}>
+              <h3>{video.title}</h3>
+              <p>{video.description}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );

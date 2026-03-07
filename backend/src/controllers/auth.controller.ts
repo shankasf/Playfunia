@@ -16,6 +16,7 @@ import {
   verifyEmailOTP,
   sendPasswordResetOTPEmail,
   verifyPasswordResetOTP,
+  checkPasswordResetOTPVerified,
 } from '../services/otp.service';
 import { AppError } from '../utils/app-error';
 import { asyncHandler } from '../utils/async-handler';
@@ -111,10 +112,15 @@ export const verifyOTPHandler = asyncHandler(async (req: Request, res: Response)
 export const resetPasswordHandler = asyncHandler(async (req: Request, res: Response) => {
   const { email, otp, newPassword } = parseWithSchema(resetPasswordSchema, req.body);
 
-  // Verify OTP first
-  const otpResult = await verifyPasswordResetOTP(email, otp);
-  if (!otpResult.success) {
-    throw new AppError(otpResult.message, 400);
+  // Check if OTP was recently verified (two-step flow: verify first, then reset)
+  const verifiedResult = await checkPasswordResetOTPVerified(email, otp);
+
+  if (!verifiedResult.valid) {
+    // Try to verify OTP now (one-step flow: verify and reset at once)
+    const otpResult = await verifyPasswordResetOTP(email, otp);
+    if (!otpResult.success) {
+      throw new AppError(otpResult.message, 400);
+    }
   }
 
   // Reset password

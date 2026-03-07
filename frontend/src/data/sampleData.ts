@@ -115,9 +115,6 @@ export const sampleEvents: EventItem[] = [
       0
     ).toISOString(),
     endDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 11, 0, 0).toISOString(),
-    location: 'PlayFunia - Albany, NY',
-    price: 20,
-    tags: ['sensory', 'inclusive'],
   },
   {
     id: 'glow-party',
@@ -132,9 +129,6 @@ export const sampleEvents: EventItem[] = [
       0
     ).toISOString(),
     endDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() + 5, 20, 0, 0).toISOString(),
-    location: 'PlayFunia - Albany, NY',
-    price: 25,
-    tags: ['party', 'family'],
   },
   {
     id: 'character-day',
@@ -142,9 +136,6 @@ export const sampleEvents: EventItem[] = [
     description: 'Snap photos in the party room and enjoy themed crafts with surprise guests.',
     startDate: new Date(now.getFullYear(), now.getMonth() + 1, 3, 13, 0, 0).toISOString(),
     endDate: new Date(now.getFullYear(), now.getMonth() + 1, 3, 15, 0, 0).toISOString(),
-    location: 'PlayFunia - Albany, NY',
-    price: 18,
-    tags: ['character', 'photo-op'],
   },
 ];
 

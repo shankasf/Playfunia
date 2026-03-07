@@ -2,10 +2,12 @@ import { DateTime } from 'luxon';
 
 import { MembershipRepository, MembershipPlanRepository, UserRepository, CustomerRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
+import { logger } from '../utils/logger';
 import { publishAdminEvent } from './admin-events.service';
-import { sendMembershipConfirmation } from './email.service';
-import { sendMembershipConfirmationSms } from './sms.service';
+import { sendMembershipConfirmation, sendQueuedMembershipConfirmation } from './email.service';
+import { sendMembershipConfirmationSms, sendQueuedMembershipConfirmationSms } from './sms.service';
 import { createReceiptRecord, generateMembershipReceiptPDF } from './receipt.service';
+import { getTaxRate as getCentralizedTaxRate, getTaxRateSync as getCentralizedTaxRateSync } from './pricing-config.service';
 
 import type {
   PurchaseMembershipInput,
@@ -27,6 +29,14 @@ const REVERSE_TIER_MAP: Record<string, string[]> = {
   'champion': ['Platinum', 'VIP Platinum'],
 };
 
+// Use centralized pricing-config.service for tax rates (single source of truth)
+const getTaxRate = getCentralizedTaxRate;
+const getTaxRateSync = getCentralizedTaxRateSync;
+
+function getTaxRatePercentSync(): number {
+  return getCentralizedTaxRateSync() * 100;
+}
+
 // Helper to get plan info by tier
 async function getPlanByTier(tier: string) {
   const plans = await MembershipPlanRepository.findAll(true);
@@ -35,22 +45,53 @@ async function getPlanByTier(tier: string) {
 }
 
 export async function listMemberships() {
-  // Fetch membership plans from database
-  const plans = await MembershipPlanRepository.findAll(true);
+  const startTime = Date.now();
+  try {
+    // Fetch membership plans from database
+    const plans = await MembershipPlanRepository.findAll(true);
 
-  return plans.map(plan => ({
-    id: String(plan.plan_id),
-    name: plan.name,
-    tier: TIER_MAP[plan.name] ?? 'explorer',
-    description: plan.description,
-    monthlyPrice: plan.monthly_price,
-    benefits: plan.benefits ?? [],
-    maxChildren: plan.max_children ?? 1,
-    visitsPerMonth: plan.visits_per_month,
-    discountPercent: plan.discount_percent ?? 0,
-    guestPassesPerMonth: plan.guest_passes_per_month ?? 0,
-    isActive: plan.is_active ?? true,
-  }));
+    const duration = Date.now() - startTime;
+    if (duration > 500) {
+      // Log slow requests
+      logger.warn({
+        service: 'membership',
+        action: 'listMemberships',
+        durationMs: duration,
+        planCount: plans.length,
+      });
+    }
+
+    return plans.map(plan => ({
+      id: String(plan.plan_id),
+      name: plan.name,
+      tier: TIER_MAP[plan.name] ?? 'explorer',
+      description: plan.description,
+      monthlyPrice: plan.monthly_price,
+      benefits: plan.benefits ?? [],
+      maxChildren: plan.max_children ?? 1,
+      visitsPerMonth: plan.visits_per_month,
+      discountPercent: plan.discount_percent ?? 0,
+      guestPassesPerMonth: plan.guest_passes_per_month ?? 0,
+      isActive: plan.is_active ?? true,
+    }));
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    const dbError = error as Error & { code?: string; details?: string; hint?: string };
+    logger.error({
+      service: 'membership',
+      action: 'listMemberships',
+      status: 'error',
+      durationMs: duration,
+      error: {
+        message: dbError.message,
+        code: dbError.code,
+        details: dbError.details,
+        hint: dbError.hint,
+        stack: dbError.stack,
+      },
+    });
+    throw error;
+  }
 }
 
 export async function purchaseMembership(userId: string, input: PurchaseMembershipInput) {
@@ -87,20 +128,44 @@ export async function purchaseMembership(userId: string, input: PurchaseMembersh
   }
 
   const tier = TIER_MAP[plan.name] ?? 'explorer';
-  const startedAt = DateTime.now();
+
+  // Check if user already has an active/pending membership of the same tier
+  const existingMembership = await MembershipRepository.findLatestByCustomerIdAndTier(customerId, tier);
+
+  let startedAt: DateTime;
+  let isQueued = false;
+  let existingExpiryDate: string | null = null;
+
+  if (existingMembership && existingMembership.end_date) {
+    // User already has an active membership of this tier - queue the new one
+    const existingEndDate = DateTime.fromISO(existingMembership.end_date);
+    // Start the new membership the day after the existing one ends
+    startedAt = existingEndDate.plus({ days: 1 });
+    isQueued = true;
+    existingExpiryDate = existingEndDate.toLocaleString(DateTime.DATE_FULL);
+    console.log(`[MembershipService] Queueing membership for customer ${customerId}, tier ${tier}. Existing ends: ${existingMembership.end_date}, new starts: ${startedAt.toISODate()}`);
+  } else {
+    // No existing membership - start immediately
+    startedAt = DateTime.now();
+  }
+
   const expiresAt = startedAt.plus({ months: input.durationMonths });
 
-  // Create membership record
+  // Create membership record with appropriate status
   const membership = await MembershipRepository.create({
     customer_id: customerId,
     tier,
     start_date: startedAt.toISODate() as string,
     end_date: expiresAt.toISODate() ?? undefined,
     visits_per_month: plan.visits_per_month ?? undefined,
+    status: isQueued ? 'pending' : 'active',
   });
 
-  // Calculate total for receipt
-  const totalAmount = plan.monthly_price * input.durationMonths;
+  // Calculate total for receipt with tax from database
+  const taxRate = await getTaxRate();
+  const subtotalAmount = plan.monthly_price * input.durationMonths;
+  const taxAmount = Math.round(subtotalAmount * taxRate * 100) / 100;
+  const totalAmount = Math.round((subtotalAmount + taxAmount) * 100) / 100;
 
   // Generate receipt record and PDF
   let receiptNumber: string | undefined;
@@ -112,9 +177,9 @@ export async function purchaseMembership(userId: string, input: PurchaseMembersh
       purchaseType: 'membership',
       referenceId: membership.membership_id,
       customerId,
-      subtotal: totalAmount,
+      subtotal: subtotalAmount,
       discount: 0,
-      tax: 0,
+      tax: taxAmount,
       total: totalAmount,
       paymentMethod: 'Credit Card',
       paymentId: `membership_${membership.membership_id}`,
@@ -140,7 +205,9 @@ export async function purchaseMembership(userId: string, input: PurchaseMembersh
       planName: plan.name,
       monthlyPrice: plan.monthly_price,
       durationMonths: input.durationMonths,
-      subtotal: totalAmount,
+      subtotal: subtotalAmount,
+      taxAmount,
+      taxRate: getTaxRatePercentSync(), // Tax rate as percentage
       total: totalAmount,
       paymentMethod: 'Credit Card',
       paymentId: `membership_${membership.membership_id}`,
@@ -162,42 +229,85 @@ export async function purchaseMembership(userId: string, input: PurchaseMembersh
     // Don't fail the purchase if receipt generation fails
   }
 
-  // Send membership confirmation email
+  // Send membership confirmation email (different email for queued vs active)
   if (user.email) {
     try {
-      await sendMembershipConfirmation({
-        email: user.email,
-        customerName: user.first_name ?? 'Customer',
-        tierName: plan.name,
-        startDate: startedAt.toLocaleString(DateTime.DATE_FULL),
-        expiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
-        visitsPerMonth: plan.visits_per_month ?? null,
-        guestPassesPerMonth: plan.guest_passes_per_month ?? null,
-        discountPercent: plan.discount_percent ?? null,
-        benefits: plan.benefits ?? null,
-        autoRenew: true,
-        monthlyPrice: plan.monthly_price,
-        receiptPdf,
-        receiptNumber,
-      });
+      if (isQueued && existingExpiryDate) {
+        // Send queued membership notification
+        await sendQueuedMembershipConfirmation({
+          email: user.email,
+          customerName: user.first_name ?? 'Customer',
+          tierName: plan.name,
+          queuedStartDate: startedAt.toLocaleString(DateTime.DATE_FULL),
+          queuedExpiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
+          currentExpiryDate: existingExpiryDate,
+          visitsPerMonth: plan.visits_per_month ?? null,
+          guestPassesPerMonth: plan.guest_passes_per_month ?? null,
+          discountPercent: plan.discount_percent ?? null,
+          benefits: plan.benefits ?? null,
+          monthlyPrice: plan.monthly_price,
+          durationMonths: input.durationMonths,
+          subtotal: subtotalAmount,
+          taxAmount,
+          taxRate: getTaxRatePercentSync(), // Tax rate as percentage
+          total: totalAmount,
+          receiptPdf,
+          receiptNumber,
+        });
+      } else {
+        // Send regular membership confirmation
+        await sendMembershipConfirmation({
+          email: user.email,
+          customerName: user.first_name ?? 'Customer',
+          tierName: plan.name,
+          startDate: startedAt.toLocaleString(DateTime.DATE_FULL),
+          expiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
+          visitsPerMonth: plan.visits_per_month ?? null,
+          guestPassesPerMonth: plan.guest_passes_per_month ?? null,
+          discountPercent: plan.discount_percent ?? null,
+          benefits: plan.benefits ?? null,
+          autoRenew: true,
+          monthlyPrice: plan.monthly_price,
+          durationMonths: input.durationMonths,
+          subtotal: subtotalAmount,
+          taxAmount,
+          taxRate: getTaxRatePercentSync(), // Tax rate as percentage
+          total: totalAmount,
+          receiptPdf,
+          receiptNumber,
+        });
+      }
     } catch (emailError) {
       console.error('Failed to send membership confirmation email:', emailError);
       // Don't fail the purchase if email fails
     }
   }
 
-  // Send membership confirmation SMS
+  // Send membership confirmation SMS (different SMS for queued vs active)
   if (user.phone) {
     try {
-      await sendMembershipConfirmationSms({
-        phone: user.phone,
-        customerName: user.first_name ?? 'Customer',
-        tierName: plan.name,
-        startDate: startedAt.toLocaleString(DateTime.DATE_FULL),
-        expiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
-        visitsPerMonth: plan.visits_per_month ?? null,
-        monthlyPrice: plan.monthly_price,
-      });
+      if (isQueued && existingExpiryDate) {
+        // Send queued membership SMS
+        await sendQueuedMembershipConfirmationSms({
+          phone: user.phone,
+          customerName: user.first_name ?? 'Customer',
+          tierName: plan.name,
+          queuedStartDate: startedAt.toLocaleString(DateTime.DATE_FULL),
+          currentExpiryDate: existingExpiryDate,
+          monthlyPrice: plan.monthly_price,
+        });
+      } else {
+        // Send regular membership SMS
+        await sendMembershipConfirmationSms({
+          phone: user.phone,
+          customerName: user.first_name ?? 'Customer',
+          tierName: plan.name,
+          startDate: startedAt.toLocaleString(DateTime.DATE_FULL),
+          expiryDate: expiresAt.toLocaleString(DateTime.DATE_FULL),
+          visitsPerMonth: plan.visits_per_month ?? null,
+          monthlyPrice: plan.monthly_price,
+        });
+      }
     } catch (smsError) {
       console.error('Failed to send membership confirmation SMS:', smsError);
       // Don't fail the purchase if SMS fails
@@ -213,6 +323,8 @@ export async function purchaseMembership(userId: string, input: PurchaseMembersh
     autoRenew: true,
     visitsPerMonth: plan.visits_per_month,
     receiptNumber,
+    isQueued,
+    status: isQueued ? 'pending' : 'active',
   };
 }
 

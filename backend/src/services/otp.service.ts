@@ -11,7 +11,7 @@ export interface PendingRegistrationData {
   lastName: string;
   email: string;
   passwordHash: string;
-  password: string; // Raw password for Supabase Auth (stored temporarily until verified)
+  password: string; // Required for Supabase Auth user creation after OTP verification
   phone?: string;
 }
 
@@ -47,6 +47,21 @@ async function storeOTP(
     console.error('Failed to store OTP:', error);
     throw new AppError('Failed to generate verification code', 500);
   }
+}
+
+// Delete a specific OTP (used when email delivery fails)
+async function deleteOTP(
+  email: string,
+  otp: string,
+  type: 'email_verification' | 'password_reset'
+): Promise<void> {
+  const normalizedEmail = email.toLowerCase();
+  await supabase
+    .from('email_otps')
+    .delete()
+    .eq('email', normalizedEmail)
+    .eq('otp_code', otp)
+    .eq('otp_type', type);
 }
 
 // Verify OTP and return registration data if present
@@ -94,21 +109,23 @@ export async function sendEmailVerificationOTP(email: string, firstName?: string
   // Send email
   const emailSent = await sendVerificationOTP(email, otp, firstName);
 
+  if (!emailSent) {
+    // Delete the stored OTP since user will never receive it
+    await deleteOTP(email, otp, 'email_verification');
+    return {
+      success: false,
+      message: 'Failed to send verification email. Please try again.',
+    };
+  }
+
   // Send SMS if phone number is provided
   if (phone) {
     try {
       await sendVerificationOtpSms(phone, otp, firstName);
     } catch (smsError) {
       console.error('Failed to send verification OTP SMS:', smsError);
-      // Don't fail the operation if SMS fails
+      // Don't fail the operation if SMS fails - email was sent
     }
-  }
-
-  if (!emailSent) {
-    return {
-      success: false,
-      message: 'Failed to send verification email. Please try again.',
-    };
   }
 
   return {
@@ -130,21 +147,23 @@ export async function sendRegistrationOTP(
   // Send email
   const emailSent = await sendVerificationOTP(email, otp, registrationData.firstName);
 
+  if (!emailSent) {
+    // Delete the stored OTP since user will never receive it
+    await deleteOTP(email, otp, 'email_verification');
+    return {
+      success: false,
+      message: 'Failed to send verification email. Please try again.',
+    };
+  }
+
   // Send SMS if phone number is provided
   if (registrationData.phone) {
     try {
       await sendVerificationOtpSms(registrationData.phone, otp, registrationData.firstName);
     } catch (smsError) {
       console.error('Failed to send registration OTP SMS:', smsError);
-      // Don't fail the operation if SMS fails
+      // Don't fail the operation if SMS fails - email was sent
     }
-  }
-
-  if (!emailSent) {
-    return {
-      success: false,
-      message: 'Failed to send verification email. Please try again.',
-    };
   }
 
   return {
@@ -184,21 +203,23 @@ export async function sendPasswordResetOTPEmail(email: string, firstName?: strin
   // Send email
   const emailSent = await sendPasswordResetOTP(email, otp, firstName);
 
+  if (!emailSent) {
+    // Delete the stored OTP since user will never receive it
+    await deleteOTP(email, otp, 'password_reset');
+    return {
+      success: false,
+      message: 'Failed to send reset email. Please try again.',
+    };
+  }
+
   // Send SMS if phone number is provided
   if (phone) {
     try {
       await sendPasswordResetOtpSms(phone, otp, firstName);
     } catch (smsError) {
       console.error('Failed to send password reset OTP SMS:', smsError);
-      // Don't fail the operation if SMS fails
+      // Don't fail the operation if SMS fails - email was sent
     }
-  }
-
-  if (!emailSent) {
-    return {
-      success: false,
-      message: 'Failed to send reset email. Please try again.',
-    };
   }
 
   return {
@@ -222,6 +243,37 @@ export async function verifyPasswordResetOTP(email: string, otp: string): Promis
     success: true,
     message: 'Code verified. You can now reset your password.',
   };
+}
+
+// Check if password reset OTP was recently verified (for two-step password reset flow)
+// This allows: 1) verify OTP, 2) submit new password with same OTP
+const PASSWORD_RESET_WINDOW_MINUTES = 15;
+
+export async function checkPasswordResetOTPVerified(email: string, otp: string): Promise<{ valid: boolean }> {
+  const normalizedEmail = email.toLowerCase();
+  const windowStart = new Date(Date.now() - PASSWORD_RESET_WINDOW_MINUTES * 60 * 1000).toISOString();
+
+  // Find OTP that was verified within the time window
+  const { data, error } = await supabase
+    .from('email_otps')
+    .select('id')
+    .eq('email', normalizedEmail)
+    .eq('otp_code', otp)
+    .eq('otp_type', 'password_reset')
+    .gt('verified_at', windowStart)
+    .single();
+
+  if (error || !data) {
+    return { valid: false };
+  }
+
+  // Delete the OTP after successful password reset
+  await supabase
+    .from('email_otps')
+    .delete()
+    .eq('id', data.id);
+
+  return { valid: true };
 }
 
 // Check if email is verified using RPC

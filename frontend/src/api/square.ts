@@ -43,6 +43,7 @@ export interface SquareCheckoutIntentResponse {
 export interface SquareCheckoutFinalizePayload extends SquareCheckoutIntentPayload {
   sourceId: string; // Payment token from Square Web Payments SDK
   verificationToken?: string; // SCA verification token if required
+  reservationId?: string; // Existing slot reservation from frontend (prevents double-reservation)
 }
 
 // Square checkout finalize response
@@ -84,6 +85,7 @@ export interface SquareGuestCheckoutIntentPayload extends SquareCheckoutIntentPa
 export interface SquareGuestCheckoutFinalizePayload extends SquareGuestCheckoutIntentPayload {
   sourceId: string;
   verificationToken?: string;
+  reservationId?: string; // Existing slot reservation from frontend (prevents double-reservation)
 }
 
 // API functions

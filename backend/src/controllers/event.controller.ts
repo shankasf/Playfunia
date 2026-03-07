@@ -1,12 +1,11 @@
 import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 
-import type { AuthenticatedRequest } from '../middleware/auth.middleware';
-import { getEventById, listEvents, rsvpToEvent } from '../services/event.service';
+import { getEventById, listEvents } from '../services/event.service';
+import { EventPhotoRepository } from '../repositories';
 import {
   eventFilterSchema,
   eventIdParamSchema,
-  rsvpEventSchema,
   type EventFilterInput,
 } from '../schemas/event.schema';
 import { AppError } from '../utils/app-error';
@@ -14,9 +13,26 @@ import { asyncHandler } from '../utils/async-handler';
 
 export const listEventsHandler = asyncHandler(async (req: Request, res: Response) => {
   const filter = parseQuery(eventFilterSchema, req.query);
-  const events = await listEvents(filter);
+  const rawEvents = await listEvents(filter);
+  const eventIdsWithMedia = await EventPhotoRepository.getEventIdsWithMedia();
+  const mediaSet = new Set(eventIdsWithMedia);
+  const events = rawEvents.map(e => ({
+    ...mapEventToCamelCase(e),
+    hasMedia: mediaSet.has(Number(e.event_id)),
+  }));
   return res.status(200).json({ events });
 });
+
+function mapEventToCamelCase(e: Record<string, unknown>) {
+  return {
+    id: String(e.event_id),
+    title: e.title,
+    description: e.description ?? null,
+    startDate: e.start_date,
+    endDate: e.end_date,
+    imageUrl: e.image_url ?? null,
+  };
+}
 
 export const getEventHandler = asyncHandler(async (req: Request, res: Response) => {
   const { eventId } = parseWithSchema(eventIdParamSchema, req.params);
@@ -24,16 +40,20 @@ export const getEventHandler = asyncHandler(async (req: Request, res: Response) 
   return res.status(200).json({ event });
 });
 
-export const rsvpEventHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  if (!req.user) {
-    throw new AppError('Unauthorized', 401);
+export const getEventPhotosPublicHandler = asyncHandler(async (req: Request, res: Response) => {
+  const eventIdRaw = parseInt(req.params.eventId || '', 10);
+  if (isNaN(eventIdRaw)) {
+    throw new AppError('Invalid event ID', 400);
   }
-
-  const { eventId } = parseWithSchema(eventIdParamSchema, req.params);
-  const payload = parseWithSchema(rsvpEventSchema, req.body);
-  const ticket = await rsvpToEvent(req.user.id, eventId, payload);
-
-  return res.status(200).json({ ticket });
+  const photos = await EventPhotoRepository.findByEventId(eventIdRaw);
+  return res.status(200).json({
+    photos: photos.map((p: Record<string, unknown>) => ({
+      id: p.photo_id,
+      url: p.photo_url,
+      caption: p.caption,
+      mediaType: (p.media_type as string) ?? 'image',
+    })),
+  });
 });
 
 function parseWithSchema<T>(schema: { parse: (data: unknown) => T }, data: unknown): T {

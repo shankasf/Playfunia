@@ -1,6 +1,9 @@
 /**
- * Generated TypeScript types for Supabase database schema
- * Based on playfunia_schema.sql
+ * TypeScript types for Supabase database schema
+ * Synced with playfunia_schema.sql + add_refunds_table.sql
+ * Last updated: 2026-02-07
+ *
+ * Tables: 37 (all public schema tables in the live DB)
  */
 
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
@@ -8,27 +11,80 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export interface Database {
   public: {
     Tables: {
-      company: {
+      locations: {
         Row: {
-          company_id: number;
+          location_id: number;
           name: string;
-          mission: string | null;
-          values_text: string | null;
+          address: string | null;
+          city: string | null;
+          state: string | null;
+          postal_code: string | null;
+          phone: string | null;
+          email: string | null;
+          is_active: boolean | null;
           created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
-          company_id?: number;
+          location_id?: number;
           name: string;
-          mission?: string | null;
-          values_text?: string | null;
+          address?: string | null;
+          city?: string | null;
+          state?: string | null;
+          postal_code?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          is_active?: boolean | null;
           created_at?: string | null;
+          updated_at?: string | null;
         };
         Update: {
-          company_id?: number;
+          location_id?: number;
           name?: string;
-          mission?: string | null;
-          values_text?: string | null;
+          address?: string | null;
+          city?: string | null;
+          state?: string | null;
+          postal_code?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          is_active?: boolean | null;
           created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      store_hours: {
+        Row: {
+          id: number;
+          location_name: string;
+          day_of_week: number;
+          open_time: string;
+          close_time: string;
+          is_closed: boolean | null;
+          is_active: boolean | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          location_name: string;
+          day_of_week: number;
+          open_time: string;
+          close_time: string;
+          is_closed?: boolean | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: number;
+          location_name?: string;
+          day_of_week?: number;
+          open_time?: string;
+          close_time?: string;
+          is_closed?: boolean | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
       };
       customers: {
@@ -37,150 +93,33 @@ export interface Database {
           full_name: string;
           email: string | null;
           phone: string | null;
-          guardian_name: string | null;
-          child_name: string | null;
-          child_birthdate: string | null;
+          address: string | null;
           notes: string | null;
           is_guest: boolean | null;
           created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
           customer_id?: number;
           full_name: string;
           email?: string | null;
           phone?: string | null;
-          guardian_name?: string | null;
-          child_name?: string | null;
-          child_birthdate?: string | null;
+          address?: string | null;
           notes?: string | null;
           is_guest?: boolean | null;
           created_at?: string | null;
+          updated_at?: string | null;
         };
         Update: {
           customer_id?: number;
           full_name?: string;
           email?: string | null;
           phone?: string | null;
-          guardian_name?: string | null;
-          child_name?: string | null;
-          child_birthdate?: string | null;
+          address?: string | null;
           notes?: string | null;
           is_guest?: boolean | null;
           created_at?: string | null;
-        };
-      };
-      faqs: {
-        Row: {
-          faq_id: number;
-          question: string;
-          answer: string;
-          is_active: boolean | null;
-        };
-        Insert: {
-          faq_id?: number;
-          question: string;
-          answer: string;
-          is_active?: boolean | null;
-        };
-        Update: {
-          faq_id?: number;
-          question?: string;
-          answer?: string;
-          is_active?: boolean | null;
-        };
-      };
-      locations: {
-        Row: {
-          location_id: number;
-          company_id: number;
-          name: string;
-          address_line: string | null;
-          city: string | null;
-          state: string | null;
-          postal_code: string | null;
-          country: string | null;
-          phone: string | null;
-          email: string | null;
-          is_active: boolean | null;
-        };
-        Insert: {
-          location_id?: number;
-          company_id: number;
-          name: string;
-          address_line?: string | null;
-          city?: string | null;
-          state?: string | null;
-          postal_code?: string | null;
-          country?: string | null;
-          phone?: string | null;
-          email?: string | null;
-          is_active?: boolean | null;
-        };
-        Update: {
-          location_id?: number;
-          company_id?: number;
-          name?: string;
-          address_line?: string | null;
-          city?: string | null;
-          state?: string | null;
-          postal_code?: string | null;
-          country?: string | null;
-          phone?: string | null;
-          email?: string | null;
-          is_active?: boolean | null;
-        };
-      };
-      products: {
-        Row: {
-          product_id: number;
-          sku: string | null;
-          product_name: string;
-          brand: string | null;
-          category: string | null;
-          age_group: string | null;
-          material: string | null;
-          color: string | null;
-          price_usd: number;
-          stock_qty: number | null;
-          rating: number | null;
-          description: string | null;
-          features: string | null;
-          country: string | null;
-          is_active: boolean | null;
-        };
-        Insert: {
-          product_id?: number;
-          sku?: string | null;
-          product_name: string;
-          brand?: string | null;
-          category?: string | null;
-          age_group?: string | null;
-          material?: string | null;
-          color?: string | null;
-          price_usd: number;
-          stock_qty?: number | null;
-          rating?: number | null;
-          description?: string | null;
-          features?: string | null;
-          country?: string | null;
-          is_active?: boolean | null;
-        };
-        Update: {
-          product_id?: number;
-          sku?: string | null;
-          product_name?: string;
-          brand?: string | null;
-          category?: string | null;
-          age_group?: string | null;
-          material?: string | null;
-          color?: string | null;
-          price_usd?: number;
-          stock_qty?: number | null;
-          rating?: number | null;
-          description?: string | null;
-          features?: string | null;
-          country?: string | null;
-          is_active?: boolean | null;
+          updated_at?: string | null;
         };
       };
       ticket_types: {
@@ -189,30 +128,162 @@ export interface Database {
           name: string;
           description: string | null;
           base_price_usd: number;
+          child_count: number | null;
           requires_waiver: boolean | null;
           requires_grip_socks: boolean | null;
-          location_id: number | null;
           is_active: boolean | null;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
           ticket_type_id?: number;
           name: string;
           description?: string | null;
           base_price_usd: number;
+          child_count?: number | null;
           requires_waiver?: boolean | null;
           requires_grip_socks?: boolean | null;
-          location_id?: number | null;
           is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
         Update: {
           ticket_type_id?: number;
           name?: string;
           description?: string | null;
           base_price_usd?: number;
+          child_count?: number | null;
           requires_waiver?: boolean | null;
           requires_grip_socks?: boolean | null;
-          location_id?: number | null;
           is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      party_packages: {
+        Row: {
+          package_id: number;
+          name: string;
+          description: string | null;
+          price_usd: number;
+          base_children: number;
+          base_room_hours: number;
+          includes_food: boolean | null;
+          includes_drinks: boolean | null;
+          includes_decor: boolean | null;
+          features: Json | null;
+          additional_terms: Json | null;
+          extra_child_price: number | null;
+          extra_adult_price: number | null;
+          cleaning_fee: number | null;
+          is_active: boolean | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          package_id?: number;
+          name: string;
+          description?: string | null;
+          price_usd: number;
+          base_children?: number;
+          base_room_hours?: number;
+          includes_food?: boolean | null;
+          includes_drinks?: boolean | null;
+          includes_decor?: boolean | null;
+          features?: Json | null;
+          additional_terms?: Json | null;
+          extra_child_price?: number | null;
+          extra_adult_price?: number | null;
+          cleaning_fee?: number | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          package_id?: number;
+          name?: string;
+          description?: string | null;
+          price_usd?: number;
+          base_children?: number;
+          base_room_hours?: number;
+          includes_food?: boolean | null;
+          includes_drinks?: boolean | null;
+          includes_decor?: boolean | null;
+          features?: Json | null;
+          additional_terms?: Json | null;
+          extra_child_price?: number | null;
+          extra_adult_price?: number | null;
+          cleaning_fee?: number | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      party_add_ons: {
+        Row: {
+          add_on_id: number;
+          code: string;
+          label: string;
+          description: string | null;
+          price: number;
+          price_type: string;
+          is_active: boolean | null;
+          display_order: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          add_on_id?: number;
+          code: string;
+          label: string;
+          description?: string | null;
+          price: number;
+          price_type?: string;
+          is_active?: boolean | null;
+          display_order?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          add_on_id?: number;
+          code?: string;
+          label?: string;
+          description?: string | null;
+          price?: number;
+          price_type?: string;
+          is_active?: boolean | null;
+          display_order?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      pricing_config: {
+        Row: {
+          config_id: number;
+          config_key: string;
+          config_value: number;
+          description: string | null;
+          is_active: boolean | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          config_id?: number;
+          config_key: string;
+          config_value: number;
+          description?: string | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          config_id?: number;
+          config_key?: string;
+          config_value?: number;
+          description?: string | null;
+          is_active?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
       };
       resources: {
@@ -223,6 +294,7 @@ export interface Database {
           type: string;
           capacity: number | null;
           is_active: boolean | null;
+          created_at: string | null;
         };
         Insert: {
           resource_id?: number;
@@ -231,6 +303,7 @@ export interface Database {
           type?: string;
           capacity?: number | null;
           is_active?: boolean | null;
+          created_at?: string | null;
         };
         Update: {
           resource_id?: number;
@@ -239,317 +312,100 @@ export interface Database {
           type?: string;
           capacity?: number | null;
           is_active?: boolean | null;
+          created_at?: string | null;
         };
       };
-      party_packages: {
+      faqs: {
         Row: {
-          package_id: number;
-          location_id: number | null;
-          name: string;
-          price_usd: number;
-          base_children: number;
-          base_room_hours: number;
-          includes_food: boolean | null;
-          includes_drinks: boolean | null;
-          includes_decor: boolean | null;
-          notes: string | null;
+          faq_id: number;
+          question: string;
+          answer: string;
           is_active: boolean | null;
+          category: string | null;
+          display_order: number | null;
+          created_at: string | null;
+          updated_at: string | null;
         };
         Insert: {
-          package_id?: number;
-          location_id?: number | null;
+          faq_id?: number;
+          question: string;
+          answer: string;
+          is_active?: boolean | null;
+          category?: string | null;
+          display_order?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          faq_id?: number;
+          question?: string;
+          answer?: string;
+          is_active?: boolean | null;
+          category?: string | null;
+          display_order?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      testimonials: {
+        Row: {
+          testimonial_id: number;
           name: string;
-          price_usd: number;
-          base_children?: number;
-          base_room_hours?: number;
-          includes_food?: boolean | null;
-          includes_drinks?: boolean | null;
-          includes_decor?: boolean | null;
-          notes?: string | null;
-          is_active?: boolean | null;
+          quote: string;
+          rating: number | null;
+          is_featured: boolean | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          testimonial_id?: number;
+          name: string;
+          quote: string;
+          rating?: number | null;
+          is_featured?: boolean | null;
+          created_at?: string | null;
+          updated_at?: string | null;
         };
         Update: {
-          package_id?: number;
-          location_id?: number | null;
+          testimonial_id?: number;
           name?: string;
-          price_usd?: number;
-          base_children?: number;
-          base_room_hours?: number;
-          includes_food?: boolean | null;
-          includes_drinks?: boolean | null;
-          includes_decor?: boolean | null;
-          notes?: string | null;
-          is_active?: boolean | null;
-        };
-      };
-      waivers: {
-        Row: {
-          waiver_id: number;
-          customer_id: number;
-          signed_at: string;
-          ip_address: string | null;
-          document_url: string | null;
-          version: string | null;
-          is_valid: boolean | null;
-        };
-        Insert: {
-          waiver_id?: number;
-          customer_id: number;
-          signed_at?: string;
-          ip_address?: string | null;
-          document_url?: string | null;
-          version?: string | null;
-          is_valid?: boolean | null;
-        };
-        Update: {
-          waiver_id?: number;
-          customer_id?: number;
-          signed_at?: string;
-          ip_address?: string | null;
-          document_url?: string | null;
-          version?: string | null;
-          is_valid?: boolean | null;
-        };
-      };
-      admissions: {
-        Row: {
-          admission_id: number;
-          ticket_type_id: number;
-          customer_id: number | null;
-          location_id: number;
-          visit_date: string;
-          price_usd: number;
-          waiver_id: number | null;
-          checked_in_at: string | null;
-          status: string;
-        };
-        Insert: {
-          admission_id?: number;
-          ticket_type_id: number;
-          customer_id?: number | null;
-          location_id: number;
-          visit_date: string;
-          price_usd: number;
-          waiver_id?: number | null;
-          checked_in_at?: string | null;
-          status?: string;
-        };
-        Update: {
-          admission_id?: number;
-          ticket_type_id?: number;
-          customer_id?: number | null;
-          location_id?: number;
-          visit_date?: string;
-          price_usd?: number;
-          waiver_id?: number | null;
-          checked_in_at?: string | null;
-          status?: string;
-        };
-      };
-      inventory_movements: {
-        Row: {
-          movement_id: number;
-          product_id: number;
-          quantity_change: number;
-          reason: string | null;
-          ref_order_id: number | null;
-          created_at: string | null;
-        };
-        Insert: {
-          movement_id?: number;
-          product_id: number;
-          quantity_change: number;
-          reason?: string | null;
-          ref_order_id?: number | null;
+          quote?: string;
+          rating?: number | null;
+          is_featured?: boolean | null;
           created_at?: string | null;
-        };
-        Update: {
-          movement_id?: number;
-          product_id?: number;
-          quantity_change?: number;
-          reason?: string | null;
-          ref_order_id?: number | null;
-          created_at?: string | null;
+          updated_at?: string | null;
         };
       };
-      orders: {
+      announcements: {
         Row: {
-          order_id: number;
-          customer_id: number | null;
-          location_id: number | null;
-          order_type: string;
-          status: string;
-          subtotal_usd: number;
-          discount_usd: number;
-          tax_usd: number;
-          total_usd: number;
-          notes: string | null;
+          announcement_id: number;
+          title: string;
+          body: string;
+          publish_date: string | null;
+          expires_at: string | null;
+          is_active: boolean;
           created_at: string | null;
           updated_at: string | null;
         };
         Insert: {
-          order_id?: number;
-          customer_id?: number | null;
-          location_id?: number | null;
-          order_type?: string;
-          status?: string;
-          subtotal_usd?: number;
-          discount_usd?: number;
-          tax_usd?: number;
-          total_usd?: number;
-          notes?: string | null;
+          announcement_id?: number;
+          title: string;
+          body: string;
+          publish_date?: string | null;
+          expires_at?: string | null;
+          is_active?: boolean;
           created_at?: string | null;
           updated_at?: string | null;
         };
         Update: {
-          order_id?: number;
-          customer_id?: number | null;
-          location_id?: number | null;
-          order_type?: string;
-          status?: string;
-          subtotal_usd?: number;
-          discount_usd?: number;
-          tax_usd?: number;
-          total_usd?: number;
-          notes?: string | null;
+          announcement_id?: number;
+          title?: string;
+          body?: string;
+          publish_date?: string | null;
+          expires_at?: string | null;
+          is_active?: boolean;
           created_at?: string | null;
           updated_at?: string | null;
-        };
-      };
-      party_bookings: {
-        Row: {
-          booking_id: number;
-          package_id: number;
-          resource_id: number;
-          customer_id: number;
-          scheduled_start: string;
-          scheduled_end: string;
-          status: string;
-          additional_kids: number | null;
-          additional_guests: number | null;
-          special_requests: string | null;
-          created_at: string | null;
-          updated_at: string | null;
-          // Extended fields from app migration
-          reference: string | null;
-          event_date: string | null;
-          start_time: string | null;
-          end_time: string | null;
-          location_name: string | null;
-          guests: number | null;
-          notes: string | null;
-          add_ons: { id?: string; label: string; price: number; quantity: number }[] | null;
-          subtotal: number | null;
-          cleaning_fee: number | null;
-          total: number | null;
-          deposit_amount: number | null;
-          balance_remaining: number | null;
-          payment_status: string | null;
-          deposit_paid_at: string | null;
-          latest_payment_intent_id: string | null;
-          child_ids: number[] | null;
-        };
-        Insert: {
-          booking_id?: number;
-          package_id: number;
-          resource_id: number;
-          customer_id: number;
-          scheduled_start: string;
-          scheduled_end: string;
-          status?: string;
-          additional_kids?: number | null;
-          additional_guests?: number | null;
-          special_requests?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-          // Extended fields
-          reference?: string | null;
-          event_date?: string | null;
-          start_time?: string | null;
-          end_time?: string | null;
-          location_name?: string | null;
-          guests?: number | null;
-          notes?: string | null;
-          add_ons?: { id?: string; label: string; price: number; quantity: number }[] | null;
-          subtotal?: number | null;
-          cleaning_fee?: number | null;
-          total?: number | null;
-          deposit_amount?: number | null;
-          balance_remaining?: number | null;
-          payment_status?: string | null;
-          deposit_paid_at?: string | null;
-          latest_payment_intent_id?: string | null;
-          child_ids?: number[] | null;
-        };
-        Update: {
-          booking_id?: number;
-          package_id?: number;
-          resource_id?: number;
-          customer_id?: number;
-          scheduled_start?: string;
-          scheduled_end?: string;
-          status?: string;
-          additional_kids?: number | null;
-          additional_guests?: number | null;
-          special_requests?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-          // Extended fields
-          reference?: string | null;
-          event_date?: string | null;
-          start_time?: string | null;
-          end_time?: string | null;
-          location_name?: string | null;
-          guests?: number | null;
-          notes?: string | null;
-          add_ons?: { id?: string; label: string; price: number; quantity: number }[] | null;
-          subtotal?: number | null;
-          cleaning_fee?: number | null;
-          total?: number | null;
-          deposit_amount?: number | null;
-          balance_remaining?: number | null;
-          payment_status?: string | null;
-          deposit_paid_at?: string | null;
-          latest_payment_intent_id?: string | null;
-          child_ids?: number[] | null;
-        };
-      };
-      order_items: {
-        Row: {
-          order_item_id: number;
-          order_id: number;
-          item_type: string;
-          product_id: number | null;
-          ticket_type_id: number | null;
-          booking_id: number | null;
-          name_override: string | null;
-          quantity: number;
-          unit_price_usd: number;
-          line_total_usd: number;
-        };
-        Insert: {
-          order_item_id?: number;
-          order_id: number;
-          item_type: string;
-          product_id?: number | null;
-          ticket_type_id?: number | null;
-          booking_id?: number | null;
-          name_override?: string | null;
-          quantity: number;
-          unit_price_usd: number;
-          line_total_usd: number;
-        };
-        Update: {
-          order_item_id?: number;
-          order_id?: number;
-          item_type?: string;
-          product_id?: number | null;
-          ticket_type_id?: number | null;
-          booking_id?: number | null;
-          name_override?: string | null;
-          quantity?: number;
-          unit_price_usd?: number;
-          line_total_usd?: number;
         };
       };
       promotions: {
@@ -564,6 +420,7 @@ export interface Database {
           max_redemptions: number | null;
           redemptions: number | null;
           is_active: boolean | null;
+          created_at: string | null;
         };
         Insert: {
           promotion_id?: number;
@@ -576,6 +433,7 @@ export interface Database {
           max_redemptions?: number | null;
           redemptions?: number | null;
           is_active?: boolean | null;
+          created_at?: string | null;
         };
         Update: {
           promotion_id?: number;
@@ -588,272 +446,20 @@ export interface Database {
           max_redemptions?: number | null;
           redemptions?: number | null;
           is_active?: boolean | null;
-        };
-      };
-      order_promotions: {
-        Row: {
-          order_id: number;
-          promotion_id: number;
-        };
-        Insert: {
-          order_id: number;
-          promotion_id: number;
-        };
-        Update: {
-          order_id?: number;
-          promotion_id?: number;
-        };
-      };
-      package_inclusions: {
-        Row: {
-          inclusion_id: number;
-          package_id: number;
-          item_name: string;
-          quantity: number | null;
-        };
-        Insert: {
-          inclusion_id?: number;
-          package_id: number;
-          item_name: string;
-          quantity?: number | null;
-        };
-        Update: {
-          inclusion_id?: number;
-          package_id?: number;
-          item_name?: string;
-          quantity?: number | null;
-        };
-      };
-      party_addons: {
-        Row: {
-          party_addon_id: number;
-          booking_id: number;
-          product_id: number | null;
-          name: string | null;
-          quantity: number | null;
-          unit_price_usd: number;
-        };
-        Insert: {
-          party_addon_id?: number;
-          booking_id: number;
-          product_id?: number | null;
-          name?: string | null;
-          quantity?: number | null;
-          unit_price_usd?: number;
-        };
-        Update: {
-          party_addon_id?: number;
-          booking_id?: number;
-          product_id?: number | null;
-          name?: string | null;
-          quantity?: number | null;
-          unit_price_usd?: number;
-        };
-      };
-      party_guests: {
-        Row: {
-          party_guest_id: number;
-          booking_id: number;
-          guest_name: string | null;
-          is_child: boolean | null;
-        };
-        Insert: {
-          party_guest_id?: number;
-          booking_id: number;
-          guest_name?: string | null;
-          is_child?: boolean | null;
-        };
-        Update: {
-          party_guest_id?: number;
-          booking_id?: number;
-          guest_name?: string | null;
-          is_child?: boolean | null;
-        };
-      };
-      party_reschedules: {
-        Row: {
-          reschedule_id: number;
-          booking_id: number;
-          old_start: string;
-          old_end: string;
-          new_start: string;
-          new_end: string;
-          reason: string | null;
-          created_at: string | null;
-        };
-        Insert: {
-          reschedule_id?: number;
-          booking_id: number;
-          old_start: string;
-          old_end: string;
-          new_start: string;
-          new_end: string;
-          reason?: string | null;
-          created_at?: string | null;
-        };
-        Update: {
-          reschedule_id?: number;
-          booking_id?: number;
-          old_start?: string;
-          old_end?: string;
-          new_start?: string;
-          new_end?: string;
-          reason?: string | null;
           created_at?: string | null;
         };
       };
-      payments: {
-        Row: {
-          payment_id: number;
-          order_id: number;
-          provider: string;
-          provider_payment_id: string | null;
-          status: string;
-          amount_usd: number;
-          created_at: string | null;
-        };
-        Insert: {
-          payment_id?: number;
-          order_id: number;
-          provider: string;
-          provider_payment_id?: string | null;
-          status?: string;
-          amount_usd: number;
-          created_at?: string | null;
-        };
-        Update: {
-          payment_id?: number;
-          order_id?: number;
-          provider?: string;
-          provider_payment_id?: string | null;
-          status?: string;
-          amount_usd?: number;
-          created_at?: string | null;
-        };
-      };
-      policies: {
-        Row: {
-          policy_id: number;
-          key: string;
-          value: string | null;
-          is_active: boolean | null;
-        };
-        Insert: {
-          policy_id?: number;
-          key: string;
-          value?: string | null;
-          is_active?: boolean | null;
-        };
-        Update: {
-          policy_id?: number;
-          key?: string;
-          value?: string | null;
-          is_active?: boolean | null;
-        };
-      };
-      refunds: {
-        Row: {
-          refund_id: number;
-          payment_id: number | null;
-          order_id: number;
-          status: string;
-          reason: string | null;
-          amount_usd: number;
-          created_at: string | null;
-        };
-        Insert: {
-          refund_id?: number;
-          payment_id?: number | null;
-          order_id: number;
-          status?: string;
-          reason?: string | null;
-          amount_usd: number;
-          created_at?: string | null;
-        };
-        Update: {
-          refund_id?: number;
-          payment_id?: number | null;
-          order_id?: number;
-          status?: string;
-          reason?: string | null;
-          amount_usd?: number;
-          created_at?: string | null;
-        };
-      };
-      staff: {
-        Row: {
-          staff_id: number;
-          location_id: number | null;
-          full_name: string;
-          role: string | null;
-          phone: string | null;
-          email: string | null;
-          is_active: boolean | null;
-        };
-        Insert: {
-          staff_id?: number;
-          location_id?: number | null;
-          full_name: string;
-          role?: string | null;
-          phone?: string | null;
-          email?: string | null;
-          is_active?: boolean | null;
-        };
-        Update: {
-          staff_id?: number;
-          location_id?: number | null;
-          full_name?: string;
-          role?: string | null;
-          phone?: string | null;
-          email?: string | null;
-          is_active?: boolean | null;
-        };
-      };
-      testimonials: {
-        Row: {
-          testimonial_id: number;
-          name: string;
-          quote: string;
-          rating: number | null;
-          is_featured: boolean | null;
-          created_at: string | null;
-          relationship: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          testimonial_id?: number;
-          name: string;
-          quote: string;
-          rating?: number | null;
-          is_featured?: boolean | null;
-          created_at?: string | null;
-          relationship?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          testimonial_id?: number;
-          name?: string;
-          quote?: string;
-          rating?: number | null;
-          is_featured?: boolean | null;
-          created_at?: string | null;
-          relationship?: string | null;
-          updated_at?: string | null;
-        };
-      };
-      // Additional tables for app users (not in original schema, but needed for auth)
       users: {
         Row: {
           user_id: number;
           email: string;
-          password_hash: string | null;  // Nullable: Supabase Auth handles passwords
-          auth_user_id: string | null;   // Links to Supabase auth.users.id
+          password_hash: string | null;
+          auth_user_id: string | null;
           first_name: string | null;
           last_name: string | null;
           phone: string | null;
           roles: string[];
           customer_id: number | null;
-          // Address fields
           address_line1: string | null;
           address_line2: string | null;
           address_city: string | null;
@@ -940,177 +546,13 @@ export interface Database {
           updated_at?: string | null;
         };
       };
-      memberships: {
-        Row: {
-          membership_id: number;
-          customer_id: number;
-          plan_id: number | null;
-          tier: string;
-          status: string;
-          start_date: string;
-          end_date: string | null;
-          auto_renew: boolean | null;
-          visits_per_month: number | null;
-          visits_used_this_period: number | null;
-          visit_period_start: string | null;
-          last_visit_at: string | null;
-          stripe_subscription_id: string | null;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          membership_id?: number;
-          customer_id: number;
-          plan_id?: number | null;
-          tier: string;
-          status?: string;
-          start_date: string;
-          end_date?: string | null;
-          auto_renew?: boolean | null;
-          visits_per_month?: number | null;
-          visits_used_this_period?: number | null;
-          visit_period_start?: string | null;
-          last_visit_at?: string | null;
-          stripe_subscription_id?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          membership_id?: number;
-          customer_id?: number;
-          plan_id?: number | null;
-          tier?: string;
-          status?: string;
-          start_date?: string;
-          end_date?: string | null;
-          auto_renew?: boolean | null;
-          visits_per_month?: number | null;
-          visits_used_this_period?: number | null;
-          visit_period_start?: string | null;
-          last_visit_at?: string | null;
-          stripe_subscription_id?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-      };
-      announcements: {
-        Row: {
-          announcement_id: number;
-          title: string;
-          body: string;
-          publish_date: string | null;
-          expires_at: string | null;
-          is_active: boolean;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          announcement_id?: number;
-          title: string;
-          body: string;
-          publish_date?: string | null;
-          expires_at?: string | null;
-          is_active?: boolean;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          announcement_id?: number;
-          title?: string;
-          body?: string;
-          publish_date?: string | null;
-          expires_at?: string | null;
-          is_active?: boolean;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-      };
-      waiver_users: {
-        Row: {
-          waiver_user_id: number;
-          guardian_email: string | null;
-          guardian_phone: string | null;
-          guardian_first_name: string;
-          guardian_last_name: string;
-          guardian_date_of_birth: string | null;
-          relationship_to_minor: string | null;
-          marketing_opt_in: boolean;
-          last_waiver_signed_at: string | null;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          waiver_user_id?: number;
-          guardian_email?: string | null;
-          guardian_phone?: string | null;
-          guardian_first_name: string;
-          guardian_last_name?: string;
-          guardian_date_of_birth?: string | null;
-          relationship_to_minor?: string | null;
-          marketing_opt_in?: boolean;
-          last_waiver_signed_at?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          waiver_user_id?: number;
-          guardian_email?: string | null;
-          guardian_phone?: string | null;
-          guardian_first_name?: string;
-          guardian_last_name?: string;
-          guardian_date_of_birth?: string | null;
-          relationship_to_minor?: string | null;
-          marketing_opt_in?: boolean;
-          last_waiver_signed_at?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-      };
-      waiver_user_children: {
-        Row: {
-          waiver_user_child_id: number;
-          waiver_user_id: number;
-          minor_first_name: string;
-          minor_last_name: string | null;
-          minor_date_of_birth: string;
-          minor_gender: string | null;
-          created_at: string | null;
-          updated_at: string | null;
-        };
-        Insert: {
-          waiver_user_child_id?: number;
-          waiver_user_id: number;
-          minor_first_name: string;
-          minor_last_name?: string | null;
-          minor_date_of_birth: string;
-          minor_gender?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-        Update: {
-          waiver_user_child_id?: number;
-          waiver_user_id?: number;
-          minor_first_name?: string;
-          minor_last_name?: string | null;
-          minor_date_of_birth?: string;
-          minor_gender?: string | null;
-          created_at?: string | null;
-          updated_at?: string | null;
-        };
-      };
-      // Events table for special events
       events: {
         Row: {
           event_id: number;
-          location_id: number | null;
           title: string;
           description: string | null;
           start_date: string;
           end_date: string;
-          capacity: number | null;
-          tickets_remaining: number | null;
-          price: number | null;
-          tags: string[] | null;
           image_url: string | null;
           is_published: boolean | null;
           created_at: string | null;
@@ -1118,15 +560,10 @@ export interface Database {
         };
         Insert: {
           event_id?: number;
-          location_id?: number | null;
           title: string;
           description?: string | null;
           start_date: string;
           end_date: string;
-          capacity?: number | null;
-          tickets_remaining?: number | null;
-          price?: number | null;
-          tags?: string[] | null;
           image_url?: string | null;
           is_published?: boolean | null;
           created_at?: string | null;
@@ -1134,22 +571,16 @@ export interface Database {
         };
         Update: {
           event_id?: number;
-          location_id?: number | null;
           title?: string;
           description?: string | null;
           start_date?: string;
           end_date?: string;
-          capacity?: number | null;
-          tickets_remaining?: number | null;
-          price?: number | null;
-          tags?: string[] | null;
           image_url?: string | null;
           is_published?: boolean | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
       };
-      // Membership plans table
       membership_plans: {
         Row: {
           plan_id: number;
@@ -1194,7 +625,479 @@ export interface Database {
           updated_at?: string | null;
         };
       };
-      // Ticket purchases table for app ticket purchasing
+      memberships: {
+        Row: {
+          membership_id: number;
+          customer_id: number;
+          plan_id: number | null;
+          tier: string;
+          status: string;
+          start_date: string;
+          end_date: string | null;
+          auto_renew: boolean | null;
+          visits_per_month: number | null;
+          visits_used_this_period: number | null;
+          visit_period_start: string | null;
+          last_visit_at: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          membership_id?: number;
+          customer_id: number;
+          plan_id?: number | null;
+          tier: string;
+          status?: string;
+          start_date: string;
+          end_date?: string | null;
+          auto_renew?: boolean | null;
+          visits_per_month?: number | null;
+          visits_used_this_period?: number | null;
+          visit_period_start?: string | null;
+          last_visit_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          membership_id?: number;
+          customer_id?: number;
+          plan_id?: number | null;
+          tier?: string;
+          status?: string;
+          start_date?: string;
+          end_date?: string | null;
+          auto_renew?: boolean | null;
+          visits_per_month?: number | null;
+          visits_used_this_period?: number | null;
+          visit_period_start?: string | null;
+          last_visit_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      membership_reminders: {
+        Row: {
+          reminder_id: number;
+          membership_id: number;
+          reminder_type: string;
+          sent_at: string;
+          notification_method: string;
+          status: string;
+          error_message: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          reminder_id?: number;
+          membership_id: number;
+          reminder_type: string;
+          sent_at?: string;
+          notification_method: string;
+          status?: string;
+          error_message?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          reminder_id?: number;
+          membership_id?: number;
+          reminder_type?: string;
+          sent_at?: string;
+          notification_method?: string;
+          status?: string;
+          error_message?: string | null;
+          created_at?: string | null;
+        };
+      };
+      orders: {
+        Row: {
+          order_id: number;
+          customer_id: number | null;
+          location_id: number | null;
+          order_type: string;
+          status: string;
+          subtotal_usd: number;
+          discount_usd: number;
+          tax_usd: number;
+          total_usd: number;
+          notes: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          order_id?: number;
+          customer_id?: number | null;
+          location_id?: number | null;
+          order_type?: string;
+          status?: string;
+          subtotal_usd?: number;
+          discount_usd?: number;
+          tax_usd?: number;
+          total_usd?: number;
+          notes?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          order_id?: number;
+          customer_id?: number | null;
+          location_id?: number | null;
+          order_type?: string;
+          status?: string;
+          subtotal_usd?: number;
+          discount_usd?: number;
+          tax_usd?: number;
+          total_usd?: number;
+          notes?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      party_bookings: {
+        Row: {
+          booking_id: number;
+          customer_id: number | null;
+          package_id: number;
+          reference: string | null;
+          event_date: string | null;
+          start_time: string | null;
+          end_time: string | null;
+          scheduled_start: string | null;
+          scheduled_end: string | null;
+          location_name: string | null;
+          guests: number | null;
+          notes: string | null;
+          add_ons: Json | null;
+          subtotal: number | null;
+          cleaning_fee: number | null;
+          total: number | null;
+          deposit_amount: number | null;
+          balance_remaining: number | null;
+          status: string | null;
+          payment_status: string | null;
+          deposit_paid_at: string | null;
+          latest_payment_id: string | null;
+          child_ids: number[] | null;
+          private_notes: string | null;
+          payment_option: string | null;
+          guest_name: string | null;
+          guest_email: string | null;
+          guest_phone: string | null;
+          online_payment_amount: number | null;
+          venue_payment_amount: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          booking_id?: number;
+          customer_id?: number | null;
+          package_id: number;
+          reference?: string | null;
+          event_date?: string | null;
+          start_time?: string | null;
+          end_time?: string | null;
+          scheduled_start?: string | null;
+          scheduled_end?: string | null;
+          location_name?: string | null;
+          guests?: number | null;
+          notes?: string | null;
+          add_ons?: Json | null;
+          subtotal?: number | null;
+          cleaning_fee?: number | null;
+          total?: number | null;
+          deposit_amount?: number | null;
+          balance_remaining?: number | null;
+          status?: string | null;
+          payment_status?: string | null;
+          deposit_paid_at?: string | null;
+          latest_payment_id?: string | null;
+          child_ids?: number[] | null;
+          private_notes?: string | null;
+          payment_option?: string | null;
+          guest_name?: string | null;
+          guest_email?: string | null;
+          guest_phone?: string | null;
+          online_payment_amount?: number | null;
+          venue_payment_amount?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          booking_id?: number;
+          customer_id?: number | null;
+          package_id?: number;
+          reference?: string | null;
+          event_date?: string | null;
+          start_time?: string | null;
+          end_time?: string | null;
+          scheduled_start?: string | null;
+          scheduled_end?: string | null;
+          location_name?: string | null;
+          guests?: number | null;
+          notes?: string | null;
+          add_ons?: Json | null;
+          subtotal?: number | null;
+          cleaning_fee?: number | null;
+          total?: number | null;
+          deposit_amount?: number | null;
+          balance_remaining?: number | null;
+          status?: string | null;
+          payment_status?: string | null;
+          deposit_paid_at?: string | null;
+          latest_payment_id?: string | null;
+          child_ids?: number[] | null;
+          private_notes?: string | null;
+          payment_option?: string | null;
+          guest_name?: string | null;
+          guest_email?: string | null;
+          guest_phone?: string | null;
+          online_payment_amount?: number | null;
+          venue_payment_amount?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      order_items: {
+        Row: {
+          order_item_id: number;
+          order_id: number;
+          item_type: string;
+          product_id: number | null;
+          ticket_type_id: number | null;
+          booking_id: number | null;
+          event_id: number | null;
+          name_override: string | null;
+          quantity: number;
+          unit_price_usd: number;
+          line_total_usd: number;
+        };
+        Insert: {
+          order_item_id?: number;
+          order_id: number;
+          item_type: string;
+          product_id?: number | null;
+          ticket_type_id?: number | null;
+          booking_id?: number | null;
+          event_id?: number | null;
+          name_override?: string | null;
+          quantity: number;
+          unit_price_usd: number;
+          line_total_usd: number;
+        };
+        Update: {
+          order_item_id?: number;
+          order_id?: number;
+          item_type?: string;
+          product_id?: number | null;
+          ticket_type_id?: number | null;
+          booking_id?: number | null;
+          event_id?: number | null;
+          name_override?: string | null;
+          quantity?: number;
+          unit_price_usd?: number;
+          line_total_usd?: number;
+        };
+      };
+      payments: {
+        Row: {
+          payment_id: number;
+          order_id: number;
+          provider: string;
+          provider_payment_id: string | null;
+          status: string;
+          amount_usd: number;
+          receipt_url: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          payment_id?: number;
+          order_id: number;
+          provider: string;
+          provider_payment_id?: string | null;
+          status?: string;
+          amount_usd: number;
+          receipt_url?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          payment_id?: number;
+          order_id?: number;
+          provider?: string;
+          provider_payment_id?: string | null;
+          status?: string;
+          amount_usd?: number;
+          receipt_url?: string | null;
+          created_at?: string | null;
+        };
+      };
+      waiver_users: {
+        Row: {
+          waiver_user_id: number;
+          guardian_first_name: string;
+          guardian_last_name: string;
+          guardian_date_of_birth: string | null;
+          guardian_phone: string | null;
+          guardian_email: string | null;
+          relationship_to_minor: string | null;
+          marketing_opt_in: boolean;
+          last_waiver_signed_at: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          waiver_user_id?: number;
+          guardian_first_name: string;
+          guardian_last_name?: string;
+          guardian_date_of_birth?: string | null;
+          guardian_phone?: string | null;
+          guardian_email?: string | null;
+          relationship_to_minor?: string | null;
+          marketing_opt_in?: boolean;
+          last_waiver_signed_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          waiver_user_id?: number;
+          guardian_first_name?: string;
+          guardian_last_name?: string;
+          guardian_date_of_birth?: string | null;
+          guardian_phone?: string | null;
+          guardian_email?: string | null;
+          relationship_to_minor?: string | null;
+          marketing_opt_in?: boolean;
+          last_waiver_signed_at?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      waiver_user_children: {
+        Row: {
+          waiver_user_child_id: number;
+          waiver_user_id: number;
+          minor_first_name: string;
+          minor_last_name: string | null;
+          minor_date_of_birth: string;
+          minor_gender: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          waiver_user_child_id?: number;
+          waiver_user_id: number;
+          minor_first_name: string;
+          minor_last_name?: string | null;
+          minor_date_of_birth: string;
+          minor_gender?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          waiver_user_child_id?: number;
+          waiver_user_id?: number;
+          minor_first_name?: string;
+          minor_last_name?: string | null;
+          minor_date_of_birth?: string;
+          minor_gender?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      waiver_submissions: {
+        Row: {
+          submission_id: number;
+          customer_id: number | null;
+          waiver_user_id: number | null;
+          guardian_first_name: string;
+          guardian_last_name: string;
+          guardian_date_of_birth: string | null;
+          guardian_phone: string | null;
+          guardian_email: string | null;
+          relationship_to_minor: string | null;
+          child_ids: number[] | null;
+          digital_signature: string;
+          waiver_agreement_accepted: boolean;
+          accepted_policies: string[];
+          marketing_sms_opt_in: boolean | null;
+          marketing_email_opt_in: boolean | null;
+          date_signed: string;
+          expires_at: string | null;
+          archive_until: string | null;
+          ip_address: string | null;
+          waiver_code: string | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          submission_id?: number;
+          customer_id?: number | null;
+          waiver_user_id?: number | null;
+          guardian_first_name: string;
+          guardian_last_name?: string;
+          guardian_date_of_birth?: string | null;
+          guardian_phone?: string | null;
+          guardian_email?: string | null;
+          relationship_to_minor?: string | null;
+          child_ids?: number[] | null;
+          digital_signature: string;
+          waiver_agreement_accepted?: boolean;
+          accepted_policies: string[];
+          marketing_sms_opt_in?: boolean | null;
+          marketing_email_opt_in?: boolean | null;
+          date_signed?: string;
+          expires_at?: string | null;
+          archive_until?: string | null;
+          ip_address?: string | null;
+          waiver_code?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          submission_id?: number;
+          customer_id?: number | null;
+          waiver_user_id?: number | null;
+          guardian_first_name?: string;
+          guardian_last_name?: string;
+          guardian_date_of_birth?: string | null;
+          guardian_phone?: string | null;
+          guardian_email?: string | null;
+          relationship_to_minor?: string | null;
+          child_ids?: number[] | null;
+          digital_signature?: string;
+          waiver_agreement_accepted?: boolean;
+          accepted_policies?: string[];
+          marketing_sms_opt_in?: boolean | null;
+          marketing_email_opt_in?: boolean | null;
+          date_signed?: string;
+          expires_at?: string | null;
+          archive_until?: string | null;
+          ip_address?: string | null;
+          waiver_code?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      waiver_visits: {
+        Row: {
+          visit_id: number;
+          waiver_user_id: number;
+          waiver_submission_id: number | null;
+          visited_at: string;
+          created_at: string | null;
+        };
+        Insert: {
+          visit_id?: number;
+          waiver_user_id: number;
+          waiver_submission_id?: number | null;
+          visited_at?: string;
+          created_at?: string | null;
+        };
+        Update: {
+          visit_id?: number;
+          waiver_user_id?: number;
+          waiver_submission_id?: number | null;
+          visited_at?: string;
+          created_at?: string | null;
+        };
+      };
       ticket_purchases: {
         Row: {
           purchase_id: number;
@@ -1205,10 +1108,10 @@ export interface Database {
           quantity: number;
           unit_price: number;
           total: number;
-          codes: { code: string; status: string; redeemedAt?: string }[];
+          codes: Json;
           status: string;
-          metadata: Record<string, unknown> | null;
-          stripe_payment_intent_id: string | null;
+          metadata: Json | null;
+          provider_payment_id: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -1221,10 +1124,10 @@ export interface Database {
           quantity?: number;
           unit_price: number;
           total: number;
-          codes?: { code: string; status: string; redeemedAt?: string }[];
+          codes?: Json;
           status?: string;
-          metadata?: Record<string, unknown> | null;
-          stripe_payment_intent_id?: string | null;
+          metadata?: Json | null;
+          provider_payment_id?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -1237,15 +1140,14 @@ export interface Database {
           quantity?: number;
           unit_price?: number;
           total?: number;
-          codes?: { code: string; status: string; redeemedAt?: string }[];
+          codes?: Json;
           status?: string;
-          metadata?: Record<string, unknown> | null;
-          stripe_payment_intent_id?: string | null;
+          metadata?: Json | null;
+          provider_payment_id?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
       };
-      // App payments table for app-specific payment tracking
       app_payments: {
         Row: {
           app_payment_id: number;
@@ -1253,9 +1155,9 @@ export interface Database {
           amount: number;
           currency: string;
           status: string;
-          stripe_payment_intent_id: string;
+          provider_payment_id: string;
           purpose: string;
-          metadata: Record<string, unknown> | null;
+          metadata: Json | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -1265,9 +1167,9 @@ export interface Database {
           amount: number;
           currency?: string;
           status?: string;
-          stripe_payment_intent_id: string;
+          provider_payment_id: string;
           purpose: string;
-          metadata?: Record<string, unknown> | null;
+          metadata?: Json | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -1277,157 +1179,651 @@ export interface Database {
           amount?: number;
           currency?: string;
           status?: string;
-          stripe_payment_intent_id?: string;
+          provider_payment_id?: string;
           purpose?: string;
-          metadata?: Record<string, unknown> | null;
+          metadata?: Json | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
       };
-      // Waiver submissions table
-      waiver_submissions: {
+      email_otps: {
         Row: {
-          submission_id: number;
+          id: number;
+          email: string;
+          otp_code: string;
+          otp_type: string;
+          expires_at: string;
+          verified_at: string | null;
+          registration_data: Json | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          email: string;
+          otp_code: string;
+          otp_type?: string;
+          expires_at: string;
+          verified_at?: string | null;
+          registration_data?: Json | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: number;
+          email?: string;
+          otp_code?: string;
+          otp_type?: string;
+          expires_at?: string;
+          verified_at?: string | null;
+          registration_data?: Json | null;
+          created_at?: string | null;
+        };
+      };
+      receipts: {
+        Row: {
+          receipt_id: number;
+          receipt_number: string;
           customer_id: number | null;
-          waiver_user_id: number | null;
-          guardian_first_name: string;
-          guardian_last_name: string;
-          guardian_email: string | null;
-          guardian_phone: string | null;
-          guardian_date_of_birth: string | null;
-          relationship_to_minor: string | null;
-          children: { first_name?: string; last_name?: string; name?: string; birth_date?: string; birthDate?: string; gender?: string }[];
-          child_ids: number[] | null;
-          digital_signature: string;
-          waiver_agreement_accepted: boolean;
-          accepted_policies: string[];
-          marketing_sms_opt_in: boolean | null;
-          marketing_email_opt_in: boolean | null;
-          date_signed: string;
-          expires_at: string | null;
-          archive_until: string | null;
+          purchase_type: string;
+          reference_id: number;
+          subtotal_usd: number;
+          discount_usd: number;
+          tax_usd: number;
+          total_usd: number;
+          payment_method: string | null;
+          payment_id: string | null;
+          verification_hash: string;
+          metadata: Json | null;
+          created_at: string | null;
+        };
+        Insert: {
+          receipt_id?: number;
+          receipt_number: string;
+          customer_id?: number | null;
+          purchase_type: string;
+          reference_id: number;
+          subtotal_usd: number;
+          discount_usd?: number;
+          tax_usd?: number;
+          total_usd: number;
+          payment_method?: string | null;
+          payment_id?: string | null;
+          verification_hash: string;
+          metadata?: Json | null;
+          created_at?: string | null;
+        };
+        Update: {
+          receipt_id?: number;
+          receipt_number?: string;
+          customer_id?: number | null;
+          purchase_type?: string;
+          reference_id?: number;
+          subtotal_usd?: number;
+          discount_usd?: number;
+          tax_usd?: number;
+          total_usd?: number;
+          payment_method?: string | null;
+          payment_id?: string | null;
+          verification_hash?: string;
+          metadata?: Json | null;
+          created_at?: string | null;
+        };
+      };
+      payment_logs: {
+        Row: {
+          log_id: number;
+          idempotency_key: string;
+          payment_id: string | null;
+          order_id: string | null;
+          customer_id: number | null;
+          user_id: number | null;
+          booking_id: number | null;
+          provider: string;
+          payment_type: string;
+          amount_usd: number;
+          currency: string | null;
+          status: string;
+          previous_status: string | null;
+          source_type: string | null;
+          location_id: string | null;
+          reference_id: string | null;
+          response_code: string | null;
+          error_category: string | null;
+          error_code: string | null;
+          error_detail: string | null;
+          error_field: string | null;
+          square_receipt_number: string | null;
+          square_receipt_url: string | null;
+          card_brand: string | null;
+          card_last4: string | null;
+          card_exp_month: number | null;
+          card_exp_year: number | null;
+          entry_method: string | null;
+          cvv_status: string | null;
+          avs_status: string | null;
+          risk_level: string | null;
+          risk_score: number | null;
+          verification_method: string | null;
+          processing_time_ms: number | null;
+          request_payload: Json | null;
+          response_payload: Json | null;
           ip_address: string | null;
+          user_agent: string | null;
+          session_id: string | null;
+          metadata: Json | null;
+          initiated_at: string | null;
+          completed_at: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          log_id?: number;
+          idempotency_key: string;
+          payment_id?: string | null;
+          order_id?: string | null;
+          customer_id?: number | null;
+          user_id?: number | null;
+          booking_id?: number | null;
+          provider?: string;
+          payment_type: string;
+          amount_usd: number;
+          currency?: string | null;
+          status: string;
+          previous_status?: string | null;
+          source_type?: string | null;
+          location_id?: string | null;
+          reference_id?: string | null;
+          response_code?: string | null;
+          error_category?: string | null;
+          error_code?: string | null;
+          error_detail?: string | null;
+          error_field?: string | null;
+          square_receipt_number?: string | null;
+          square_receipt_url?: string | null;
+          card_brand?: string | null;
+          card_last4?: string | null;
+          card_exp_month?: number | null;
+          card_exp_year?: number | null;
+          entry_method?: string | null;
+          cvv_status?: string | null;
+          avs_status?: string | null;
+          risk_level?: string | null;
+          risk_score?: number | null;
+          verification_method?: string | null;
+          processing_time_ms?: number | null;
+          request_payload?: Json | null;
+          response_payload?: Json | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          session_id?: string | null;
+          metadata?: Json | null;
+          initiated_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          log_id?: number;
+          idempotency_key?: string;
+          payment_id?: string | null;
+          order_id?: string | null;
+          customer_id?: number | null;
+          user_id?: number | null;
+          booking_id?: number | null;
+          provider?: string;
+          payment_type?: string;
+          amount_usd?: number;
+          currency?: string | null;
+          status?: string;
+          previous_status?: string | null;
+          source_type?: string | null;
+          location_id?: string | null;
+          reference_id?: string | null;
+          response_code?: string | null;
+          error_category?: string | null;
+          error_code?: string | null;
+          error_detail?: string | null;
+          error_field?: string | null;
+          square_receipt_number?: string | null;
+          square_receipt_url?: string | null;
+          card_brand?: string | null;
+          card_last4?: string | null;
+          card_exp_month?: number | null;
+          card_exp_year?: number | null;
+          entry_method?: string | null;
+          cvv_status?: string | null;
+          avs_status?: string | null;
+          risk_level?: string | null;
+          risk_score?: number | null;
+          verification_method?: string | null;
+          processing_time_ms?: number | null;
+          request_payload?: Json | null;
+          response_payload?: Json | null;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          session_id?: string | null;
+          metadata?: Json | null;
+          initiated_at?: string | null;
+          completed_at?: string | null;
+          created_at?: string | null;
+        };
+      };
+      slot_reservations: {
+        Row: {
+          id: string;
+          slot_date: string;
+          slot_time: string;
+          location_name: string;
+          user_id: number | null;
+          session_id: string;
+          status: string;
+          expires_at: string;
+          created_at: string | null;
+          confirmed_at: string | null;
+          booking_id: number | null;
+        };
+        Insert: {
+          id?: string;
+          slot_date: string;
+          slot_time: string;
+          location_name: string;
+          user_id?: number | null;
+          session_id: string;
+          status?: string;
+          expires_at: string;
+          created_at?: string | null;
+          confirmed_at?: string | null;
+          booking_id?: number | null;
+        };
+        Update: {
+          id?: string;
+          slot_date?: string;
+          slot_time?: string;
+          location_name?: string;
+          user_id?: number | null;
+          session_id?: string;
+          status?: string;
+          expires_at?: string;
+          created_at?: string | null;
+          confirmed_at?: string | null;
+          booking_id?: number | null;
+        };
+      };
+      webhook_events: {
+        Row: {
+          id: number;
+          event_id: string;
+          event_type: string;
+          payload: Json;
+          status: string;
+          error_message: string | null;
+          retry_count: number | null;
+          created_at: string | null;
+          processed_at: string | null;
+        };
+        Insert: {
+          id?: number;
+          event_id: string;
+          event_type: string;
+          payload: Json;
+          status?: string;
+          error_message?: string | null;
+          retry_count?: number | null;
+          created_at?: string | null;
+          processed_at?: string | null;
+        };
+        Update: {
+          id?: number;
+          event_id?: string;
+          event_type?: string;
+          payload?: Json;
+          status?: string;
+          error_message?: string | null;
+          retry_count?: number | null;
+          created_at?: string | null;
+          processed_at?: string | null;
+        };
+      };
+      notification_queue: {
+        Row: {
+          id: number;
+          type: string;
+          recipient: string;
+          subject: string | null;
+          template: string;
+          payload: Json;
+          status: string;
+          attempts: number | null;
+          max_attempts: number | null;
+          next_attempt_at: string | null;
+          sent_at: string | null;
+          last_error: string | null;
+          created_at: string | null;
+          reference_type: string | null;
+          reference_id: number | null;
+        };
+        Insert: {
+          id?: number;
+          type: string;
+          recipient: string;
+          subject?: string | null;
+          template: string;
+          payload: Json;
+          status?: string;
+          attempts?: number | null;
+          max_attempts?: number | null;
+          next_attempt_at?: string | null;
+          sent_at?: string | null;
+          last_error?: string | null;
+          created_at?: string | null;
+          reference_type?: string | null;
+          reference_id?: number | null;
+        };
+        Update: {
+          id?: number;
+          type?: string;
+          recipient?: string;
+          subject?: string | null;
+          template?: string;
+          payload?: Json;
+          status?: string;
+          attempts?: number | null;
+          max_attempts?: number | null;
+          next_attempt_at?: string | null;
+          sent_at?: string | null;
+          last_error?: string | null;
+          created_at?: string | null;
+          reference_type?: string | null;
+          reference_id?: number | null;
+        };
+      };
+      refunds: {
+        Row: {
+          refund_id: number;
+          square_refund_id: string | null;
+          square_payment_id: string;
+          order_id: number | null;
+          payment_id: number | null;
+          booking_id: number | null;
+          amount_cents: number;
+          currency: string;
+          status: string;
+          reason: string | null;
+          initiated_by: number | null;
+          idempotency_key: string;
+          created_at: string | null;
+          processed_at: string | null;
+          error_code: string | null;
+          error_message: string | null;
+        };
+        Insert: {
+          refund_id?: number;
+          square_refund_id?: string | null;
+          square_payment_id: string;
+          order_id?: number | null;
+          payment_id?: number | null;
+          booking_id?: number | null;
+          amount_cents: number;
+          currency?: string;
+          status?: string;
+          reason?: string | null;
+          initiated_by?: number | null;
+          idempotency_key: string;
+          created_at?: string | null;
+          processed_at?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+        };
+        Update: {
+          refund_id?: number;
+          square_refund_id?: string | null;
+          square_payment_id?: string;
+          order_id?: number | null;
+          payment_id?: number | null;
+          booking_id?: number | null;
+          amount_cents?: number;
+          currency?: string;
+          status?: string;
+          reason?: string | null;
+          initiated_by?: number | null;
+          idempotency_key?: string;
+          created_at?: string | null;
+          processed_at?: string | null;
+          error_code?: string | null;
+          error_message?: string | null;
+        };
+      };
+      job_listings: {
+        Row: {
+          listing_id: number;
+          title: string;
+          slug: string;
+          department: string;
+          employment_type: string;
+          location: string;
+          description: string;
+          responsibilities: string[] | null;
+          qualifications: string[] | null;
+          nice_to_have: string[] | null;
+          perks: string[] | null;
+          pay_range: string | null;
+          minimum_age: number | null;
+          schedule_notes: string | null;
+          display_order: number | null;
+          is_active: boolean | null;
+          published_at: string | null;
+          closes_at: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
         Insert: {
-          submission_id?: number;
-          customer_id?: number | null;
-          waiver_user_id?: number | null;
-          guardian_first_name: string;
-          guardian_last_name?: string;
-          guardian_email?: string | null;
-          guardian_phone?: string | null;
-          guardian_date_of_birth?: string | null;
-          relationship_to_minor?: string | null;
-          children?: { first_name?: string; last_name?: string; name?: string; birth_date?: string; birthDate?: string; gender?: string }[];
-          child_ids?: number[] | null;
-          digital_signature: string;
-          waiver_agreement_accepted?: boolean;
-          accepted_policies: string[];
-          marketing_sms_opt_in?: boolean | null;
-          marketing_email_opt_in?: boolean | null;
-          date_signed?: string;
-          expires_at?: string | null;
-          archive_until?: string | null;
-          ip_address?: string | null;
+          listing_id?: number;
+          title: string;
+          slug: string;
+          department: string;
+          employment_type: string;
+          location?: string;
+          description: string;
+          responsibilities?: string[] | null;
+          qualifications?: string[] | null;
+          nice_to_have?: string[] | null;
+          perks?: string[] | null;
+          pay_range?: string | null;
+          minimum_age?: number | null;
+          schedule_notes?: string | null;
+          display_order?: number | null;
+          is_active?: boolean | null;
+          published_at?: string | null;
+          closes_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
         Update: {
-          submission_id?: number;
-          customer_id?: number | null;
-          waiver_user_id?: number | null;
-          guardian_first_name?: string;
-          guardian_last_name?: string;
-          guardian_email?: string | null;
-          guardian_phone?: string | null;
-          guardian_date_of_birth?: string | null;
-          relationship_to_minor?: string | null;
-          children?: { first_name?: string; last_name?: string; name?: string; birth_date?: string; birthDate?: string; gender?: string }[];
-          child_ids?: number[] | null;
-          digital_signature?: string;
-          waiver_agreement_accepted?: boolean;
-          accepted_policies?: string[];
-          marketing_sms_opt_in?: boolean | null;
-          marketing_email_opt_in?: boolean | null;
-          date_signed?: string;
-          expires_at?: string | null;
-          archive_until?: string | null;
-          ip_address?: string | null;
+          listing_id?: number;
+          title?: string;
+          slug?: string;
+          department?: string;
+          employment_type?: string;
+          location?: string;
+          description?: string;
+          responsibilities?: string[] | null;
+          qualifications?: string[] | null;
+          nice_to_have?: string[] | null;
+          perks?: string[] | null;
+          pay_range?: string | null;
+          minimum_age?: number | null;
+          schedule_notes?: string | null;
+          display_order?: number | null;
+          is_active?: boolean | null;
+          published_at?: string | null;
+          closes_at?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
+        };
+      };
+      job_applications: {
+        Row: {
+          application_id: number;
+          listing_id: number;
+          first_name: string;
+          last_name: string;
+          email: string;
+          phone: string;
+          date_of_birth: string | null;
+          resume_storage_path: string | null;
+          resume_original_name: string | null;
+          resume_mime_type: string | null;
+          resume_size_bytes: number | null;
+          cover_letter: string | null;
+          schedule_preference: string | null;
+          available_start_date: string | null;
+          has_experience_with_children: boolean | null;
+          how_heard: string | null;
+          emergency_contact_name: string | null;
+          emergency_contact_phone: string | null;
+          status: string | null;
+          admin_notes: string | null;
+          ip_address: string | null;
+          video_url: string | null;
+          video_storage_path: string | null;
+          video_original_name: string | null;
+          video_mime_type: string | null;
+          video_size_bytes: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          application_id?: number;
+          listing_id: number;
+          first_name: string;
+          last_name: string;
+          email: string;
+          phone: string;
+          date_of_birth?: string | null;
+          resume_storage_path?: string | null;
+          resume_original_name?: string | null;
+          resume_mime_type?: string | null;
+          resume_size_bytes?: number | null;
+          cover_letter?: string | null;
+          schedule_preference?: string | null;
+          available_start_date?: string | null;
+          has_experience_with_children?: boolean | null;
+          how_heard?: string | null;
+          emergency_contact_name?: string | null;
+          emergency_contact_phone?: string | null;
+          status?: string | null;
+          admin_notes?: string | null;
+          ip_address?: string | null;
+          video_url?: string | null;
+          video_storage_path?: string | null;
+          video_original_name?: string | null;
+          video_mime_type?: string | null;
+          video_size_bytes?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          application_id?: number;
+          listing_id?: number;
+          first_name?: string;
+          last_name?: string;
+          email?: string;
+          phone?: string;
+          date_of_birth?: string | null;
+          resume_storage_path?: string | null;
+          resume_original_name?: string | null;
+          resume_mime_type?: string | null;
+          resume_size_bytes?: number | null;
+          cover_letter?: string | null;
+          schedule_preference?: string | null;
+          available_start_date?: string | null;
+          has_experience_with_children?: boolean | null;
+          how_heard?: string | null;
+          emergency_contact_name?: string | null;
+          emergency_contact_phone?: string | null;
+          status?: string | null;
+          admin_notes?: string | null;
+          ip_address?: string | null;
+          video_url?: string | null;
+          video_storage_path?: string | null;
+          video_original_name?: string | null;
+          video_mime_type?: string | null;
+          video_size_bytes?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+      };
+      event_photos: {
+        Row: {
+          photo_id: number;
+          event_id: number;
+          photo_url: string;
+          storage_path: string;
+          caption: string | null;
+          display_order: number | null;
+          created_at: string | null;
+        };
+        Insert: {
+          photo_id?: number;
+          event_id: number;
+          photo_url: string;
+          storage_path: string;
+          caption?: string | null;
+          display_order?: number | null;
+          created_at?: string | null;
+        };
+        Update: {
+          photo_id?: number;
+          event_id?: number;
+          photo_url?: string;
+          storage_path?: string;
+          caption?: string | null;
+          display_order?: number | null;
+          created_at?: string | null;
         };
       };
     };
   };
 }
 
-// Helper types for easier usage
-export type Company = Database['public']['Tables']['company']['Row'];
-export type Customer = Database['public']['Tables']['customers']['Row'];
-export type FAQ = Database['public']['Tables']['faqs']['Row'];
+// ============= Row types (most commonly used) =============
 export type Location = Database['public']['Tables']['locations']['Row'];
-export type Product = Database['public']['Tables']['products']['Row'];
+export type StoreHoursRow = Database['public']['Tables']['store_hours']['Row'];
+export type Customer = Database['public']['Tables']['customers']['Row'];
 export type TicketType = Database['public']['Tables']['ticket_types']['Row'];
-export type Resource = Database['public']['Tables']['resources']['Row'];
 export type PartyPackage = Database['public']['Tables']['party_packages']['Row'];
-export type Waiver = Database['public']['Tables']['waivers']['Row'];
-export type Admission = Database['public']['Tables']['admissions']['Row'];
-export type InventoryMovement = Database['public']['Tables']['inventory_movements']['Row'];
+export type PartyAddOn = Database['public']['Tables']['party_add_ons']['Row'];
+export type PricingConfig = Database['public']['Tables']['pricing_config']['Row'];
+export type Resource = Database['public']['Tables']['resources']['Row'];
+export type FAQ = Database['public']['Tables']['faqs']['Row'];
+export type Testimonial = Database['public']['Tables']['testimonials']['Row'];
+export type Announcement = Database['public']['Tables']['announcements']['Row'];
+export type Promotion = Database['public']['Tables']['promotions']['Row'];
+export type User = Database['public']['Tables']['users']['Row'];
+export type Child = Database['public']['Tables']['children']['Row'];
+export type Event = Database['public']['Tables']['events']['Row'];
+export type MembershipPlan = Database['public']['Tables']['membership_plans']['Row'];
+export type Membership = Database['public']['Tables']['memberships']['Row'];
+export type MembershipReminder = Database['public']['Tables']['membership_reminders']['Row'];
 export type Order = Database['public']['Tables']['orders']['Row'];
 export type PartyBooking = Database['public']['Tables']['party_bookings']['Row'];
 export type OrderItem = Database['public']['Tables']['order_items']['Row'];
-export type Promotion = Database['public']['Tables']['promotions']['Row'];
-export type OrderPromotion = Database['public']['Tables']['order_promotions']['Row'];
-export type PackageInclusion = Database['public']['Tables']['package_inclusions']['Row'];
-export type PartyAddon = Database['public']['Tables']['party_addons']['Row'];
-export type PartyGuest = Database['public']['Tables']['party_guests']['Row'];
-export type PartyReschedule = Database['public']['Tables']['party_reschedules']['Row'];
 export type Payment = Database['public']['Tables']['payments']['Row'];
-export type Policy = Database['public']['Tables']['policies']['Row'];
-export type Refund = Database['public']['Tables']['refunds']['Row'];
-export type Staff = Database['public']['Tables']['staff']['Row'];
-export type Testimonial = Database['public']['Tables']['testimonials']['Row'];
-export type User = Database['public']['Tables']['users']['Row'];
-export type Child = Database['public']['Tables']['children']['Row'];
-export type Membership = Database['public']['Tables']['memberships']['Row'];
-export type Announcement = Database['public']['Tables']['announcements']['Row'];
 export type WaiverUser = Database['public']['Tables']['waiver_users']['Row'];
 export type WaiverUserChild = Database['public']['Tables']['waiver_user_children']['Row'];
-// New types from app migration
-export type Event = Database['public']['Tables']['events']['Row'];
-export type MembershipPlan = Database['public']['Tables']['membership_plans']['Row'];
+export type WaiverSubmission = Database['public']['Tables']['waiver_submissions']['Row'];
+export type WaiverVisit = Database['public']['Tables']['waiver_visits']['Row'];
 export type TicketPurchase = Database['public']['Tables']['ticket_purchases']['Row'];
 export type AppPayment = Database['public']['Tables']['app_payments']['Row'];
-export type WaiverSubmission = Database['public']['Tables']['waiver_submissions']['Row'];
+export type EmailOtp = Database['public']['Tables']['email_otps']['Row'];
+export type ReceiptRow = Database['public']['Tables']['receipts']['Row'];
+export type PaymentLogRow = Database['public']['Tables']['payment_logs']['Row'];
+export type SlotReservation = Database['public']['Tables']['slot_reservations']['Row'];
+export type WebhookEvent = Database['public']['Tables']['webhook_events']['Row'];
+export type NotificationQueueRow = Database['public']['Tables']['notification_queue']['Row'];
+export type Refund = Database['public']['Tables']['refunds']['Row'];
+export type JobListing = Database['public']['Tables']['job_listings']['Row'];
+export type JobApplication = Database['public']['Tables']['job_applications']['Row'];
+export type EventPhoto = Database['public']['Tables']['event_photos']['Row'];
 
-// Party Add-Ons type (from migration 004)
-export type PartyAddOn = {
-  add_on_id: number;
-  code: string;
-  label: string;
-  description: string | null;
-  price: number;
-  price_type: 'flat' | 'perChild' | 'duration';
-  is_active: boolean | null;
-  display_order: number | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-// Pricing Config type (from migration 004)
-export type PricingConfig = {
-  config_id: number;
-  config_key: string;
-  config_value: number;
-  description: string | null;
-  is_active: boolean | null;
-  created_at: string | null;
-  updated_at: string | null;
-};
-
-// Insert types for convenience
+// ============= Insert types =============
 export type UserInsert = Database['public']['Tables']['users']['Insert'];
 export type CustomerInsert = Database['public']['Tables']['customers']['Insert'];
 export type ChildInsert = Database['public']['Tables']['children']['Insert'];
@@ -1441,8 +1837,9 @@ export type WaiverUserChildInsert = Database['public']['Tables']['waiver_user_ch
 export type WaiverSubmissionInsert = Database['public']['Tables']['waiver_submissions']['Insert'];
 export type AnnouncementInsert = Database['public']['Tables']['announcements']['Insert'];
 export type MembershipPlanInsert = Database['public']['Tables']['membership_plans']['Insert'];
+export type EventPhotoInsert = Database['public']['Tables']['event_photos']['Insert'];
 
-// Update types for convenience
+// ============= Update types =============
 export type UserUpdate = Database['public']['Tables']['users']['Update'];
 export type CustomerUpdate = Database['public']['Tables']['customers']['Update'];
 export type ChildUpdate = Database['public']['Tables']['children']['Update'];

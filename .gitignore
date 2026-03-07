@@ -31,3 +31,8 @@ chatbot_service/chroma/
 
 # Local config
 .vscode-upload.json
+
+# Large media files (use optimized versions instead)
+*.mp4
+!frontend/public/videos/optimized/**/*.mp4
+WhatsApp Video*

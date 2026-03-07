@@ -1,6 +1,6 @@
-const CACHE_NAME = 'playfunia-v4';
-const STATIC_CACHE = 'playfunia-static-v4';
-const IMAGE_CACHE = 'playfunia-images-v4';
+const CACHE_NAME = 'playfunia-v5';
+const STATIC_CACHE = 'playfunia-static-v5';
+const IMAGE_CACHE = 'playfunia-images-v5';
 
 // Track if user has consented to enhanced caching
 let imageCacheEnabled = true; // Default to true for performance
@@ -11,7 +11,13 @@ const PRECACHE_ASSETS = [
   '/index.html',
   '/manifest.json',
   '/images/logo.png',
-  '/images/hero-ballpit-logo.jpg', // Hero image - critical for FCP
+  // Optimized hero images - critical for LCP
+  '/images/optimized/hero/hero-ballpit-logo-800w.avif',
+  '/images/optimized/hero/hero-ballpit-logo-1200w.avif',
+  '/images/optimized/hero/hero-ballpit-logo-1600w.avif',
+  '/images/optimized/hero/hero-ballpit-logo-800w.webp',
+  '/images/optimized/hero/hero-ballpit-logo-1200w.webp',
+  '/images/optimized/hero/hero-ballpit-logo-1600w.webp',
 ];
 
 // Additional images to cache for faster subsequent loads
@@ -105,7 +111,8 @@ self.addEventListener('fetch', (event) => {
 
   // Handle image requests - cache first with long-term storage
   // Images rarely change, so serve from cache immediately for speed
-  if (request.destination === 'image' || url.pathname.match(/\.(jpg|jpeg|png|gif|webp|svg|heic)$/i)) {
+  // Include AVIF format for optimized images
+  if (request.destination === 'image' || url.pathname.match(/\.(jpg|jpeg|png|gif|webp|avif|svg|heic)$/i)) {
     event.respondWith(
       caches.open(IMAGE_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {

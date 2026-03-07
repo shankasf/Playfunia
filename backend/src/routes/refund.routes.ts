@@ -26,10 +26,10 @@ refundRouter.get('/', listRefundsHandler);
 // POST /api/refunds { paymentId, amount?, reason, orderId?, bookingId? }
 refundRouter.post('/', createRefundHandler);
 
-// Get a specific refund by ID
-// GET /api/refunds/:id
-refundRouter.get('/:id', getRefundHandler);
-
 // Get refunds for a Square payment ID
 // GET /api/refunds/payment/:paymentId
 refundRouter.get('/payment/:paymentId', getRefundsByPaymentHandler);
+
+// Get a specific refund by ID
+// GET /api/refunds/:id
+refundRouter.get('/:id', getRefundHandler);

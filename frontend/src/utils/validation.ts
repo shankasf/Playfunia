@@ -2,17 +2,17 @@
  * Form validation utilities
  */
 
-// Name validation: only letters, spaces, hyphens, apostrophes
-export const NAME_REGEX = /^[a-zA-Z\s'-]+$/;
+// Name validation: letters (including accented), spaces, hyphens, apostrophes
+export const NAME_REGEX = /^[A-Za-zÀ-ÿ\s'-]+$/;
 
-export function isValidName(name: string): boolean {
+export function isValidName(name: string, minLength = 1, maxLength = 100): boolean {
   const trimmed = name.trim();
-  return trimmed.length >= 1 && trimmed.length <= 100 && NAME_REGEX.test(trimmed);
+  return trimmed.length >= minLength && trimmed.length <= maxLength && NAME_REGEX.test(trimmed);
 }
 
 export function formatNameInput(value: string): string {
-  // Remove any characters that aren't letters, spaces, hyphens, or apostrophes
-  return value.replace(/[^a-zA-Z\s'-]/g, '');
+  // Remove any characters that aren't letters (including accented), spaces, hyphens, or apostrophes
+  return value.replace(/[^A-Za-zÀ-ÿ\s'-]/g, '');
 }
 
 // Phone validation: exactly 10 digits
@@ -20,7 +20,11 @@ export const PHONE_REGEX = /^\d{10}$/;
 
 export function isValidPhone(phone: string): boolean {
   const digitsOnly = phone.replace(/\D/g, '');
-  return digitsOnly.length === 10;
+  if (digitsOnly.length !== 10) return false;
+  // Reject obviously invalid: all-same-digit or starts with 0/1
+  if (/^(\d)\1{9}$/.test(digitsOnly)) return false;
+  if (digitsOnly[0] === '0' || digitsOnly[0] === '1') return false;
+  return true;
 }
 
 export function formatPhoneInput(value: string): string {
@@ -43,34 +47,38 @@ export function isValidEmail(email: string): boolean {
   return EMAIL_REGEX.test(email.trim());
 }
 
-// Date of Birth validation
+// Child Date of Birth validation (ages 0-13)
 export function isValidDOB(dob: string): boolean {
   if (!dob) return false;
 
-  const date = new Date(dob);
+  // Parse as local time to avoid timezone shift (e.g. "2020-01-15" → midnight local, not UTC)
+  const date = new Date(dob + 'T00:00:00');
   if (isNaN(date.getTime())) return false;
 
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
   // DOB must be in the past
   if (date >= today) return false;
 
-  // For child DOB: must be 0-18 years old
+  // For child DOB: must be 0-13 years old
   const age = calculateAge(date);
-  return age >= 0 && age <= 18;
+  return age >= 0 && age <= 13;
 }
 
 export function isValidChildDOB(dob: string): boolean {
   if (!dob) return true; // DOB is often optional for children
 
-  const date = new Date(dob);
+  // Parse as local time to avoid timezone shift
+  const date = new Date(dob + 'T00:00:00');
   if (isNaN(date.getTime())) return false;
 
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
   if (date >= today) return false;
 
-  // Child must be 1-13 years old
+  // Child must be 0-13 years old
   const age = calculateAge(date);
-  return age >= 1 && age <= 13;
+  return age >= 0 && age <= 13;
 }
 
 export function calculateAge(birthDate: Date): number {
@@ -83,6 +91,17 @@ export function calculateAge(birthDate: Date): number {
   return age;
 }
 
+// Password validation
+export function isValidPassword(password: string): boolean {
+  return password.length >= 8 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password);
+}
+
+// Signature validation
+export function isValidSignature(signature: string): boolean {
+  const trimmed = signature.trim();
+  return trimmed.length >= 1 && trimmed.length <= 200;
+}
+
 // Validation error messages
 export const ValidationMessages = {
   nameRequired: 'Name is required',
@@ -92,7 +111,9 @@ export const ValidationMessages = {
   phoneRequired: 'Phone number is required',
   phoneInvalid: 'Please enter a valid 10-digit phone number',
   dobInvalid: 'Please enter a valid date of birth',
-  childDobInvalid: 'Child must be between 1-13 years old',
+  childDobInvalid: 'Child must be between 0-13 years old',
+  passwordInvalid: 'Password must be at least 8 characters with one uppercase, one lowercase, and one number',
+  signatureInvalid: 'Signature must be between 1 and 200 characters',
 };
 
 // Combined validation for guest form

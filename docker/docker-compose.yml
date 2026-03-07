@@ -3,7 +3,7 @@ services:
     build:
       context: ../backend
     container_name: playfunia-backend
-    command: sh -c 'npm install --ignore-scripts && if [ "$DEV_MODE" = "true" ]; then npm run dev; else npm run build && npm run start; fi'
+    command: sh -c 'npm install --ignore-scripts --production=false && if [ "$DEV_MODE" = "true" ]; then npm run dev; else npm run build && npm run start; fi'
     ports:
       - '5001:5000'
     env_file:

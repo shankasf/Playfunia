@@ -1,0 +1,322 @@
+{
+  "generated": "2026-01-30T21:52:15.986Z",
+  "images": [
+    {
+      "original": "hero-ballpit-logo.jpg",
+      "basePath": "/images/optimized/hero/hero-ballpit-logo",
+      "sizes": [
+        2400,
+        1600,
+        1200,
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground-overview.jpg",
+      "basePath": "/images/optimized/hero/playground-overview",
+      "sizes": [
+        2400,
+        1600,
+        1200,
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playfunia-illustration.jpg",
+      "basePath": "/images/optimized/hero/playfunia-illustration",
+      "sizes": [
+        2400,
+        1600,
+        1200,
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/party/party-cake.jpg",
+      "basePath": "/images/optimized/party/party-cake",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/party/party-balloons.jpg",
+      "basePath": "/images/optimized/party/party-balloons",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/party/party-celebration.jpg",
+      "basePath": "/images/optimized/party/party-celebration",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/facility/slides-overview.jpg",
+      "basePath": "/images/optimized/facility/slides-overview",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/facility/ball-pit-wheel.jpg",
+      "basePath": "/images/optimized/facility/ball-pit-wheel",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/facility/play-area.jpg",
+      "basePath": "/images/optimized/facility/play-area",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/facility/animal-seats.jpg",
+      "basePath": "/images/optimized/facility/animal-seats",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/facility/hanging-obstacles.jpg",
+      "basePath": "/images/optimized/facility/hanging-obstacles",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/facility/soft-play.jpg",
+      "basePath": "/images/optimized/facility/soft-play",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/ball-pit-neon.jpg",
+      "basePath": "/images/optimized/kids/ball-pit-neon",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/tube-slide.jpg",
+      "basePath": "/images/optimized/kids/tube-slide",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/climbing-stairs.jpg",
+      "basePath": "/images/optimized/kids/climbing-stairs",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/rocking-horse.jpg",
+      "basePath": "/images/optimized/kids/rocking-horse",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/ball-pit-red-ball.jpg",
+      "basePath": "/images/optimized/kids/ball-pit-red-ball",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/swing-bridge.jpg",
+      "basePath": "/images/optimized/kids/swing-bridge",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/hanging-platforms.jpg",
+      "basePath": "/images/optimized/kids/hanging-platforms",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/playhouse-window.jpg",
+      "basePath": "/images/optimized/kids/playhouse-window",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/colorful-balls.jpg",
+      "basePath": "/images/optimized/kids/colorful-balls",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    },
+    {
+      "original": "playground/kids/horse-seats.jpg",
+      "basePath": "/images/optimized/kids/horse-seats",
+      "sizes": [
+        800,
+        600,
+        400
+      ],
+      "formats": [
+        "avif",
+        "webp",
+        "jpg"
+      ]
+    }
+  ]
+}

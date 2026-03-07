@@ -10,9 +10,15 @@ export const listPartyPackagesHandler = asyncHandler(async (_req: Request, res: 
     id: pkg.id,
     name: pkg.name,
     description: pkg.description,
-    durationMinutes: (pkg.duration ?? 0) * 60, // Convert hours to minutes
+    durationMinutes: pkg.durationMinutes,
     basePrice: pkg.basePrice,
     maxGuests: pkg.maxGuests,
+    includesFood: pkg.includesFood,
+    includesDrinks: pkg.includesDrinks,
+    includesDecor: pkg.includesDecor,
+    features: pkg.features,
+    additionalTerms: pkg.additionalTerms,
+    extraAdultPrice: pkg.extraAdultPrice,
   }));
 
   return res.status(200).json({ packages: formatted });

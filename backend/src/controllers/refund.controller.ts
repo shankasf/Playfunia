@@ -14,6 +14,7 @@ import {
   type RefundStatus,
 } from '../services/refund.service';
 import { AppError } from '../utils/app-error';
+import { PAYMENT_LIMITS } from '../utils/currency';
 import { logger } from '../utils/logger';
 import type { SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 
@@ -41,9 +42,10 @@ export async function createRefundHandler(
     }
 
     // Validate amount if provided
+    // Bug fix #10a: Use centralized PAYMENT_LIMITS instead of hardcoded value
     if (amount !== undefined) {
-      if (typeof amount !== 'number' || amount <= 0) {
-        throw new AppError('amount must be a positive number', 400);
+      if (typeof amount !== 'number' || amount <= 0 || amount > PAYMENT_LIMITS.MAX_USD) {
+        throw new AppError(`amount must be between $0.01 and $${PAYMENT_LIMITS.MAX_USD.toLocaleString()}`, 400);
       }
     }
 

@@ -12,7 +12,6 @@ import type {
   Membership,
   PartyPackage,
   PartyBooking,
-  Waiver,
   WaiverUser,
   WaiverUserChild,
   FAQ,
@@ -41,7 +40,6 @@ export type {
   Membership,
   PartyPackage,
   PartyBooking,
-  Waiver,
   WaiverUser,
   WaiverUserChild,
   FAQ,
@@ -468,7 +466,6 @@ export const MembershipRepository = {
     start_date: string;
     end_date?: string;
     visits_per_month?: number;
-    stripe_subscription_id?: string;
     status?: string;
   }) {
     const { data, error } = await supabase
@@ -526,7 +523,9 @@ export const MembershipRepository = {
 
     if (error) {
       // If RPC doesn't exist, fall back to optimistic update
-      if (error.code === '42883') { // function does not exist
+      // 42883 = Postgres "function does not exist", PGRST202 = PostgREST schema cache miss
+      const msg = error.message ?? '';
+      if (error.code === '42883' || error.code === 'PGRST202' || msg.includes('Could not find the function')) {
         const membership = await this.findById(membershipId);
         if (!membership) return null;
 
@@ -544,7 +543,10 @@ export const MembershipRepository = {
           .select()
           .single();
 
-        if (updateError || !updated) return null;
+        if (updateError || !updated) {
+          // Optimistic lock failed (concurrent conflict) - throw to allow caller to retry
+          throw new Error('CONCURRENT_VISIT_CONFLICT');
+        }
         return updated;
       }
       throw error;
@@ -662,9 +664,6 @@ export const PartyBookingRepository = {
     scheduled_start: string;
     scheduled_end: string;
     status?: string;
-    additional_kids?: number;
-    additional_guests?: number;
-    special_requests?: string;
     // Extended fields
     reference?: string;
     event_date?: string;
@@ -761,6 +760,21 @@ export const PartyBookingRepository = {
     if (error) throw error;
     return count ?? 0;
   },
+
+  /**
+   * Find confirmed bookings whose event_date matches any of the given dates.
+   * Used by the booking reminder scheduler to find upcoming parties.
+   */
+  async findUpcomingConfirmed(eventDates: string[]) {
+    if (eventDates.length === 0) return [];
+    const { data, error } = await supabase
+      .from('party_bookings')
+      .select('*, party_packages(*), customers(*)')
+      .eq('status', 'Confirmed')
+      .in('event_date', eventDates);
+    if (error) throw error;
+    return data ?? [];
+  },
 };
 
 // ============= Resource Repository =============
@@ -839,6 +853,7 @@ function mapWaiverSubmission(data: WaiverSubmissionData): WaiverSubmissionData {
     archiveUntil: data.archive_until,
     marketingOptIn: data.marketing_sms_opt_in || data.marketing_email_opt_in,
     acceptedPolicies: data.accepted_policies,
+    waiverCode: data.waiver_code ?? null,
     allergies: null, // Removed from schema
     medicalNotes: null, // Removed from schema
     insuranceProvider: null, // Removed from schema
@@ -931,6 +946,8 @@ export const WaiverRepository = {
     marketing_email_opt_in?: boolean;
     archive_until?: string;
     ip_address?: string;
+    waiver_code?: string;
+    signature_image_url?: string;
   }) {
     // Parse guardian_name into first/last if provided
     let firstName = waiverData.guardian_first_name;
@@ -958,6 +975,8 @@ export const WaiverRepository = {
       marketing_email_opt_in: waiverData.marketing_email_opt_in ?? waiverData.marketing_opt_in ?? false,
       archive_until: waiverData.archive_until,
       ip_address: waiverData.ip_address,
+      waiver_code: waiverData.waiver_code,
+      signature_image_url: waiverData.signature_image_url,
     };
 
     // Only include child_ids if provided (for main users)
@@ -972,6 +991,16 @@ export const WaiverRepository = {
       .single();
     if (error) throw error;
     return mapWaiverSubmission(data);
+  },
+
+  async findByWaiverCode(code: string) {
+    const { data, error } = await supabase
+      .from('waiver_submissions')
+      .select('submission_id')
+      .eq('waiver_code', code)
+      .limit(1);
+    if (error) throw error;
+    return (data ?? []).length > 0;
   },
 
   async findAll(options?: { limit?: number }) {
@@ -1395,12 +1424,11 @@ export const PaymentRepository = {
     return data ?? [];
   },
 
-  async findByStripePaymentIntentId(paymentIntentId: string) {
+  async findByProviderPaymentId(providerPaymentId: string) {
     const { data, error } = await supabase
       .from('payments')
       .select('*')
-      .eq('provider', 'stripe')
-      .eq('provider_payment_id', paymentIntentId)
+      .eq('provider_payment_id', providerPaymentId)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
     return data;
@@ -1410,19 +1438,25 @@ export const PaymentRepository = {
     order_id: number;
     provider?: string;
     provider_payment_id?: string;
-    stripe_payment_intent_id?: string; // Alias for provider_payment_id
+    legacy_payment_intent_id?: string; // Deprecated alias for provider_payment_id
     status?: string;
     amount_usd: number;
+    receipt_url?: string | null; // Fix #16: Store Square receipt URL
   }) {
+    const insertData: Record<string, unknown> = {
+      order_id: paymentData.order_id,
+      provider: paymentData.provider ?? 'square',
+      provider_payment_id: paymentData.legacy_payment_intent_id ?? paymentData.provider_payment_id,
+      status: paymentData.status ?? 'Pending',
+      amount_usd: paymentData.amount_usd,
+    };
+    // Only include receipt_url if provided (Fix #16)
+    if (paymentData.receipt_url !== undefined) {
+      insertData.receipt_url = paymentData.receipt_url;
+    }
     const { data, error } = await supabase
       .from('payments')
-      .insert({
-        order_id: paymentData.order_id,
-        provider: paymentData.provider ?? 'stripe',
-        provider_payment_id: paymentData.stripe_payment_intent_id ?? paymentData.provider_payment_id,
-        status: paymentData.status ?? 'Pending',
-        amount_usd: paymentData.amount_usd,
-      })
+      .insert(insertData)
       .select()
       .single();
     if (error) throw error;
@@ -1538,6 +1572,7 @@ export const OrderItemRepository = {
     product_id?: number;
     ticket_type_id?: number;
     booking_id?: number;
+    event_id?: number;
     name_override?: string;
     quantity: number;
     unit_price_usd: number;
@@ -1558,6 +1593,7 @@ export const OrderItemRepository = {
     product_id?: number;
     ticket_type_id?: number;
     booking_id?: number;
+    event_id?: number;
     name_override?: string;
     quantity: number;
     unit_price_usd: number;
@@ -1598,14 +1634,21 @@ export const PromotionRepository = {
       p_promotion_id: promotionId,
     });
     if (error) {
-      // Fallback if RPC doesn't exist
-      const promo = await this.findById(promotionId);
-      if (promo) {
-        await supabase
-          .from('promotions')
-          .update({ redemptions: (promo.redemptions ?? 0) + 1 })
-          .eq('promotion_id', promotionId);
+      // Fallback if RPC doesn't exist - use atomic increment via optimistic lock
+      const msg = error.message ?? '';
+      if (error.code === '42883' || error.code === 'PGRST202' || msg.includes('Could not find the function')) {
+        const promo = await this.findById(promotionId);
+        if (promo) {
+          const currentRedemptions = promo.redemptions ?? 0;
+          await supabase
+            .from('promotions')
+            .update({ redemptions: currentRedemptions + 1 })
+            .eq('promotion_id', promotionId)
+            .eq('redemptions', currentRedemptions); // Optimistic lock to prevent lost updates
+        }
+        return null;
       }
+      throw error;
     }
     return data;
   },
@@ -1642,10 +1685,12 @@ export const LocationRepository = {
   },
 
   async findByName(name: string) {
+    // Escape LIKE wildcards to prevent unintended pattern matching
+    const escapedName = name.replace(/%/g, '\\%').replace(/_/g, '\\_');
     const { data, error } = await supabase
       .from('locations')
       .select('*')
-      .ilike('name', `%${name}%`)
+      .ilike('name', `%${escapedName}%`)
       .eq('is_active', true)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
@@ -1656,7 +1701,7 @@ export const LocationRepository = {
 // ============= Event Repository =============
 export const EventRepository = {
   async findAll(options?: { publishedOnly?: boolean | undefined; limit?: number | undefined }) {
-    let query = supabaseAny.from('events').select('*, locations(*)');
+    let query = supabaseAny.from('events').select('*');
     if (options?.publishedOnly) query = query.eq('is_published', true);
     if (options?.limit) query = query.limit(options.limit);
     const { data, error } = await query.order('start_date', { ascending: true });
@@ -1667,7 +1712,7 @@ export const EventRepository = {
   async findById(eventId: number) {
     const { data, error } = await supabase
       .from('events')
-      .select('*, locations(*)')
+      .select('*')
       .eq('event_id', eventId)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
@@ -1678,7 +1723,7 @@ export const EventRepository = {
     const now = new Date().toISOString();
     let query = supabase
       .from('events')
-      .select('*, locations(*)')
+      .select('*')
       .eq('is_published', true)
       .gte('start_date', now)
       .order('start_date', { ascending: true });
@@ -1693,20 +1738,12 @@ export const EventRepository = {
     description?: string;
     start_date: string;
     end_date: string;
-    location_id?: number;
-    capacity?: number;
-    tickets_remaining?: number;
-    price?: number;
-    tags?: string[];
     image_url?: string;
     is_published?: boolean;
   }) {
     const { data, error } = await supabase
       .from('events')
-      .insert({
-        ...eventData,
-        tickets_remaining: eventData.tickets_remaining ?? eventData.capacity,
-      })
+      .insert(eventData)
       .select()
       .single();
     if (error) throw error;
@@ -1727,14 +1764,6 @@ export const EventRepository = {
   async delete(eventId: number) {
     const { error } = await supabaseAny.from('events').delete().eq('event_id', eventId);
     if (error) throw error;
-  },
-
-  async decrementTickets(eventId: number, quantity: number) {
-    const event = await this.findById(eventId);
-    if (!event) throw new Error('Event not found');
-    
-    const newRemaining = Math.max(0, (event.tickets_remaining ?? 0) - quantity);
-    return this.update(eventId, { tickets_remaining: newRemaining });
   },
 };
 
@@ -1825,14 +1854,36 @@ export const TicketPurchaseRepository = {
   },
 
   async findByCode(code: string) {
-    // Search for a purchase containing this code in the codes array
+    // Try RPC first for efficient server-side filtering
+    const { data: rpcData, error: rpcError } = await supabase.rpc('find_ticket_purchase_by_code', {
+      p_code: code,
+    });
+
+    if (!rpcError && rpcData) {
+      // RPC returns the purchase_id; fetch full record with joins
+      const purchaseId = typeof rpcData === 'object' && 'purchase_id' in rpcData
+        ? rpcData.purchase_id
+        : rpcData;
+      if (purchaseId) {
+        return this.findById(purchaseId);
+      }
+      return null;
+    }
+
+    // Fallback: use textual search with LIKE on the codes column
+    // This avoids loading ALL rows into memory
     const { data, error } = await supabase
       .from('ticket_purchases')
       .select('*, events(*), ticket_types(*), customers(*)')
-      .contains('codes', [{ code }])
-      .single();
-    if (error && error.code !== 'PGRST116') throw error;
-    return data;
+      .like('codes', `%"code":"${code}"%`);
+    if (error) throw error;
+
+    // Verify exact match (LIKE is approximate)
+    const match = (data ?? []).find(row => {
+      const codes = typeof row.codes === 'string' ? JSON.parse(row.codes) : (row.codes ?? []);
+      return codes.some((c: { code: string }) => c.code === code);
+    });
+    return match ?? null;
   },
 
   async create(purchaseData: {
@@ -1846,7 +1897,7 @@ export const TicketPurchaseRepository = {
     codes: { code: string; status: string; redeemedAt?: string }[];
     status?: string;
     metadata?: Record<string, unknown>;
-    stripe_payment_intent_id?: string;
+    provider_payment_id?: string;
   }) {
     const { data, error } = await supabase
       .from('ticket_purchases')
@@ -1926,11 +1977,11 @@ export const AppPaymentRepository = {
     return data;
   },
 
-  async findByStripePaymentIntentId(paymentIntentId: string) {
+  async findByProviderPaymentId(providerPaymentId: string) {
     const { data, error } = await supabase
       .from('app_payments')
       .select('*, customers(*)')
-      .eq('stripe_payment_intent_id', paymentIntentId)
+      .eq('provider_payment_id', providerPaymentId)
       .single();
     if (error && error.code !== 'PGRST116') throw error;
     return data;
@@ -1951,7 +2002,7 @@ export const AppPaymentRepository = {
     amount: number;
     currency?: string;
     status?: string;
-    stripe_payment_intent_id: string;
+    provider_payment_id: string;
     purpose: string;
     metadata?: Record<string, unknown>;
   }) {
@@ -1975,11 +2026,11 @@ export const AppPaymentRepository = {
     return data;
   },
 
-  async updateByStripeId(stripePaymentIntentId: string, updates: Partial<AppPayment>) {
+  async updateByProviderId(providerPaymentId: string, updates: Partial<AppPayment>) {
     const { data, error } = await supabase
       .from('app_payments')
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('stripe_payment_intent_id', stripePaymentIntentId)
+      .eq('provider_payment_id', providerPaymentId)
       .select()
       .single();
     if (error) throw error;
@@ -2064,6 +2115,7 @@ export const WaiverSubmissionRepository = {
     expires_at?: string;
     archive_until?: string;
     ip_address?: string;
+    signature_image_url?: string;
   }) {
     // Parse guardian_name into first/last if provided
     let firstName = waiverData.guardian_first_name;
@@ -2075,7 +2127,7 @@ export const WaiverSubmissionRepository = {
       lastName = parts.slice(1).join(' ') || '';
     }
 
-    const insertData = {
+    const insertData: Record<string, unknown> = {
       customer_id: waiverData.customer_id,
       waiver_user_id: waiverData.waiver_user_id,
       guardian_first_name: firstName || 'Unknown',
@@ -2093,6 +2145,7 @@ export const WaiverSubmissionRepository = {
       expires_at: waiverData.expires_at,
       archive_until: waiverData.archive_until,
       ip_address: waiverData.ip_address,
+      signature_image_url: waiverData.signature_image_url,
     };
 
     const { data, error } = await supabase
@@ -2126,6 +2179,7 @@ export const WaiverSubmissionRepository = {
       expires_at: string | null;
       date_signed: string | null;
       archive_until: string | null;
+      waiver_code: string | null;
     }>,
   ) {
     const normalizedUpdates = {
@@ -2606,5 +2660,414 @@ export const PricingConfigRepository = {
       .single();
     if (error) throw error;
     return data as PricingConfig;
+  },
+};
+
+// ============= Store Hours Repository =============
+export interface StoreHours {
+  id: number;
+  location_name: string;
+  day_of_week: number; // 0 = Sunday, 6 = Saturday
+  open_time: string;   // HH:MM format
+  close_time: string;  // HH:MM format
+  is_closed: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Cache for store hours to avoid repeated DB calls (per-location timestamps)
+let cachedStoreHours: Map<string, { data: StoreHours[]; fetchedAt: number }> | null = null;
+const STORE_HOURS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export const StoreHoursRepository = {
+  /**
+   * Clear the store hours cache (e.g., after admin update)
+   */
+  clearCache() {
+    cachedStoreHours = null;
+  },
+
+  /**
+   * Find all store hours for a location
+   */
+  async findByLocation(locationName: string): Promise<StoreHours[]> {
+    // Check cache first (per-location TTL)
+    if (cachedStoreHours) {
+      const cached = cachedStoreHours.get(locationName);
+      if (cached && Date.now() - cached.fetchedAt < STORE_HOURS_CACHE_TTL) {
+        return cached.data;
+      }
+    }
+
+    const { data, error } = await supabaseAny
+      .from('store_hours')
+      .select('*')
+      .eq('location_name', locationName)
+      .eq('is_active', true)
+      .order('day_of_week', { ascending: true });
+
+    if (error) throw error;
+
+    const hours = (data ?? []) as StoreHours[];
+
+    // Update cache with per-location timestamp
+    if (!cachedStoreHours) cachedStoreHours = new Map();
+    cachedStoreHours.set(locationName, { data: hours, fetchedAt: Date.now() });
+
+    return hours;
+  },
+
+  /**
+   * Get hours for a specific day at a location
+   */
+  async findByLocationAndDay(locationName: string, dayOfWeek: number): Promise<StoreHours | null> {
+    const allHours = await this.findByLocation(locationName);
+    return allHours.find(h => h.day_of_week === dayOfWeek) ?? null;
+  },
+
+  /**
+   * Get all store hours (for admin)
+   */
+  async findAll(): Promise<StoreHours[]> {
+    const { data, error } = await supabaseAny
+      .from('store_hours')
+      .select('*')
+      .eq('is_active', true)
+      .order('location_name', { ascending: true })
+      .order('day_of_week', { ascending: true });
+
+    if (error) throw error;
+    return (data ?? []) as StoreHours[];
+  },
+
+  /**
+   * Update store hours for a location/day
+   */
+  async update(id: number, updates: Partial<Omit<StoreHours, 'id' | 'created_at'>>): Promise<StoreHours> {
+    const { data, error } = await supabaseAny
+      .from('store_hours')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    this.clearCache();
+    return data as StoreHours;
+  },
+
+  /**
+   * Upsert store hours (create or update)
+   */
+  async upsert(hoursData: {
+    location_name: string;
+    day_of_week: number;
+    open_time: string;
+    close_time: string;
+    is_closed?: boolean;
+  }): Promise<StoreHours> {
+    const { data, error } = await supabaseAny
+      .from('store_hours')
+      .upsert({
+        location_name: hoursData.location_name,
+        day_of_week: hoursData.day_of_week,
+        open_time: hoursData.open_time,
+        close_time: hoursData.close_time,
+        is_closed: hoursData.is_closed ?? false,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'location_name,day_of_week' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    this.clearCache();
+    return data as StoreHours;
+  },
+};
+
+// ============= Job Listing Repository =============
+export const JobListingRepository = {
+  async findAllActive() {
+    const { data, error } = await supabaseAny
+      .from('job_listings')
+      .select('*')
+      .eq('is_active', true)
+      .or('closes_at.is.null,closes_at.gte.' + new Date().toISOString())
+      .order('display_order', { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async findById(listingId: number) {
+    const { data, error } = await supabaseAny
+      .from('job_listings')
+      .select('*')
+      .eq('listing_id', listingId)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async findBySlug(slug: string) {
+    const { data, error } = await supabaseAny
+      .from('job_listings')
+      .select('*')
+      .eq('slug', slug)
+      .eq('is_active', true)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async findAll() {
+    const { data, error } = await supabaseAny
+      .from('job_listings')
+      .select('listing_id, title')
+      .order('display_order', { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  },
+};
+
+// ============= Job Application Repository =============
+export const JobApplicationRepository = {
+  async create(applicationData: {
+    listing_id: number;
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    date_of_birth: string | null;
+    resume_storage_path: string | null;
+    resume_original_name: string | null;
+    resume_mime_type: string | null;
+    resume_size_bytes: number | null;
+    cover_letter: string | null;
+    schedule_preference: string | null;
+    available_start_date: string | null;
+    has_experience_with_children: boolean;
+    gender: string | null;
+    pronouns: string | null;
+    how_heard: string | null;
+    emergency_contact_name: string | null;
+    emergency_contact_phone: string | null;
+    ip_address: string | null;
+    video_url: string | null;
+    video_storage_path: string | null;
+    video_original_name: string | null;
+    video_mime_type: string | null;
+    video_size_bytes: number | null;
+  }) {
+    const { data, error } = await supabaseAny
+      .from('job_applications')
+      .insert(applicationData)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async checkDuplicateApplication(email: string, listingId: number): Promise<boolean> {
+    const { count, error } = await supabaseAny
+      .from('job_applications')
+      .select('*', { count: 'exact', head: true })
+      .eq('email', email.toLowerCase())
+      .eq('listing_id', listingId);
+    if (error) throw error;
+    return (count ?? 0) > 0;
+  },
+
+  async findByListing(listingId: number) {
+    const { data, error } = await supabaseAny
+      .from('job_applications')
+      .select('*, job_listings(*)')
+      .eq('listing_id', listingId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async findAll(options?: {
+    status?: string;
+    listingId?: number;
+    search?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    let query = supabaseAny
+      .from('job_applications')
+      .select('*, job_listings(listing_id, title)', { count: 'exact' });
+
+    if (options?.status) query = query.eq('status', options.status);
+    if (options?.listingId) query = query.eq('listing_id', options.listingId);
+    if (options?.search) {
+      const s = options.search.replace(/%/g, '\\%').replace(/_/g, '\\_').trim();
+      query = query.or(`first_name.ilike.%${s}%,last_name.ilike.%${s}%,email.ilike.%${s}%`);
+    }
+    if (options?.dateFrom) query = query.gte('created_at', `${options.dateFrom}T00:00:00`);
+    if (options?.dateTo) query = query.lte('created_at', `${options.dateTo}T23:59:59`);
+
+    const limit = options?.limit ?? 50;
+    const offset = options?.offset ?? 0;
+    query = query.range(offset, offset + limit - 1);
+    query = query.order('created_at', { ascending: false });
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+    return { data: data ?? [], count: count ?? 0 };
+  },
+
+  async findById(applicationId: number) {
+    const { data, error } = await supabaseAny
+      .from('job_applications')
+      .select('*, job_listings(*)')
+      .eq('application_id', applicationId)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async updateStatus(applicationId: number, status: string, adminNotes?: string) {
+    const updates: Record<string, unknown> = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+    if (adminNotes !== undefined) updates.admin_notes = adminNotes;
+
+    const { data, error } = await supabaseAny
+      .from('job_applications')
+      .update(updates)
+      .eq('application_id', applicationId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteById(applicationId: number) {
+    const { error } = await supabaseAny
+      .from('job_applications')
+      .delete()
+      .eq('application_id', applicationId);
+    if (error) throw error;
+  },
+};
+
+// ============= Event Photo Repository =============
+export const EventPhotoRepository = {
+  async findByEventId(eventId: number) {
+    const { data, error } = await supabaseAny
+      .from('event_photos')
+      .select('*')
+      .eq('event_id', eventId)
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async create(photoData: {
+    event_id: number;
+    photo_url: string;
+    storage_path: string;
+    caption?: string | null;
+    display_order?: number;
+    media_type?: 'image' | 'video';
+  }) {
+    const { data, error } = await supabaseAny
+      .from('event_photos')
+      .insert(photoData)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async delete(photoId: number) {
+    // First get the storage_path for cleanup
+    const { data: photo, error: findError } = await supabaseAny
+      .from('event_photos')
+      .select('storage_path')
+      .eq('photo_id', photoId)
+      .single();
+    if (findError && findError.code !== 'PGRST116') throw findError;
+    if (!photo) return null;
+
+    const { error } = await supabaseAny
+      .from('event_photos')
+      .delete()
+      .eq('photo_id', photoId);
+    if (error) throw error;
+    return photo.storage_path as string;
+  },
+
+  async deleteByEventId(eventId: number) {
+    // First get all storage paths for cleanup
+    const { data: photos, error: findError } = await supabaseAny
+      .from('event_photos')
+      .select('storage_path')
+      .eq('event_id', eventId);
+    if (findError) throw findError;
+
+    const storagePaths = (photos ?? []).map((p: { storage_path: string }) => p.storage_path);
+
+    if (storagePaths.length > 0) {
+      const { error } = await supabaseAny
+        .from('event_photos')
+        .delete()
+        .eq('event_id', eventId);
+      if (error) throw error;
+    }
+
+    return storagePaths;
+  },
+
+  async getEventIdsWithMedia(): Promise<number[]> {
+    const { data, error } = await supabaseAny
+      .from('event_photos')
+      .select('event_id');
+    if (error) throw error;
+    const ids = (data ?? []).map((row: { event_id: number }) => row.event_id);
+    return [...new Set(ids)];
+  },
+};
+
+// ============= Booking Reminder Repository =============
+export const BookingReminderRepository = {
+  async findByBookingAndType(bookingId: number, reminderType: string) {
+    const { data, error } = await supabaseAny
+      .from('booking_reminders')
+      .select('*')
+      .eq('booking_id', bookingId)
+      .eq('reminder_type', reminderType)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async record(params: {
+    bookingId: number;
+    reminderType: string;
+    notificationMethod: string;
+    status?: string;
+    errorMessage?: string;
+  }) {
+    const { error } = await supabaseAny
+      .from('booking_reminders')
+      .upsert(
+        {
+          booking_id: params.bookingId,
+          reminder_type: params.reminderType,
+          notification_method: params.notificationMethod,
+          status: params.status || 'sent',
+          error_message: params.errorMessage || null,
+          sent_at: new Date().toISOString(),
+        },
+        { onConflict: 'booking_id,reminder_type' }
+      );
+    if (error) throw error;
   },
 };

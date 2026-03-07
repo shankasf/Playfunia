@@ -15,7 +15,7 @@ export const membershipUserParamSchema = z.object({
 export type MembershipUserParamInput = z.infer<typeof membershipUserParamSchema>;
 
 export const recordMembershipVisitSchema = z.object({
-  note: z.string().max(200).optional(),
+  note: z.string().trim().max(200).optional(),
 });
 
 export type RecordMembershipVisitInput = z.infer<typeof recordMembershipVisitSchema>;

@@ -220,6 +220,68 @@ textarea:focus {
   background: rgba(148, 163, 184, 0.1);
 }
 
+.required {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+.signButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 1.5rem;
+  border: 2px dashed rgba(124, 58, 237, 0.35);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.04), rgba(255, 107, 157, 0.04));
+  color: #7c3aed;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.signButton:hover {
+  border-color: rgba(124, 58, 237, 0.6);
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(255, 107, 157, 0.08));
+}
+
+.signaturePreview {
+  position: relative;
+  border: 2px solid rgba(124, 58, 237, 0.25);
+  border-radius: var(--radius-lg);
+  background: #fafbfc;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.signaturePreviewImage {
+  max-width: 100%;
+  max-height: 120px;
+  object-fit: contain;
+}
+
+.resignButton {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: rgba(124, 58, 237, 0.1);
+  border: none;
+  color: #7c3aed;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.resignButton:hover {
+  background: rgba(124, 58, 237, 0.2);
+}
+
 @media (max-width: 720px) {
   .form {
     padding: 2rem;

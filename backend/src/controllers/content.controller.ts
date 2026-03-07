@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 
 import { appConfig } from '../config/env';
-import type { AuthenticatedRequest } from '../middleware/auth.middleware';
+import type { SupabaseAuthenticatedRequest as AuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 import {
   announcementIdParamSchema,
   faqIdParamSchema,
@@ -17,6 +17,7 @@ import {
   createTestimonial,
   listAnnouncements,
   listFaqs,
+  listStoreHours,
   listTestimonials,
   updateAnnouncement,
   updateFaq,
@@ -66,6 +67,12 @@ export const updateTestimonialHandler = asyncHandler(async (req: Request, res: R
 export const listAnnouncementsHandler = asyncHandler(async (_req: Request, res: Response) => {
   const announcements = await listAnnouncements();
   return res.status(200).json({ announcements });
+});
+
+export const listStoreHoursHandler = asyncHandler(async (req: Request, res: Response) => {
+  const location = (req.query.location as string) || 'Albany';
+  const hours = await listStoreHours(location);
+  return res.status(200).json({ hours });
 });
 
 export const createAnnouncementHandler = asyncHandler(

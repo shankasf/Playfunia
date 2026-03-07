@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'crypto';
 
 import { ReceiptRepository, type Receipt } from '../repositories';
 import { appConfig } from '../config/env';
+import { logger } from '../utils/logger';
 
 export interface ReceiptItem {
   label: string;
@@ -20,6 +21,7 @@ export interface ReceiptData {
   items: ReceiptItem[];
   subtotal: number;
   taxAmount?: number;
+  taxRate?: number; // Tax rate as percentage (e.g., 8 for 8%)
   discounts: Array<{ label: string; amount: number }>;
   total: number;
   paymentMethod: string;
@@ -57,20 +59,32 @@ export function generateVerificationHash(
   total: number,
   createdAt: string
 ): string {
-  const secretKey = appConfig.jwtSecret || 'playfunia-receipt-secret';
+  const secretKey = appConfig.jwtSecret;
+  if (!secretKey) throw new Error('JWT_SECRET is required for receipt verification');
   const data = `${receiptNumber}:${customerId ?? 'guest'}:${total}:${createdAt}:${secretKey}`;
   return createHash('sha256').update(data).digest('hex');
+}
+
+/**
+ * Normalize timestamp to ISO format for consistent hashing
+ * Converts "+00:00" suffix to "Z" for consistency
+ */
+function normalizeTimestamp(timestamp: string): string {
+  // Convert PostgreSQL format (+00:00) to JavaScript ISO format (Z)
+  return new Date(timestamp).toISOString();
 }
 
 /**
  * Verify a receipt's authenticity using its hash
  */
 export function verifyReceiptHash(receipt: Receipt): boolean {
+  // Normalize the timestamp to ensure consistent format for hash comparison
+  const normalizedCreatedAt = normalizeTimestamp(receipt.created_at);
   const expectedHash = generateVerificationHash(
     receipt.receipt_number,
     receipt.customer_id,
     receipt.total_usd,
-    receipt.created_at
+    normalizedCreatedAt
   );
   return receipt.verification_hash === expectedHash;
 }
@@ -90,15 +104,14 @@ export async function createReceiptRecord(data: {
   paymentId?: string;
   metadata?: Record<string, unknown>;
 }): Promise<{ receipt: Receipt; receiptNumber: string }> {
-  console.log('[ReceiptService] Creating receipt record:', {
+  logger.info({
     purchaseType: data.purchaseType,
     referenceId: data.referenceId,
-    customerId: data.customerId,
     total: data.total,
-  });
+  }, 'Creating receipt record');
 
   const receiptNumber = generateReceiptNumber(data.purchaseType);
-  console.log('[ReceiptService] Generated receipt number:', receiptNumber);
+  logger.debug({ receiptNumber }, 'Generated receipt number');
 
   const createdAt = new Date().toISOString();
   const verificationHash = generateVerificationHash(
@@ -107,7 +120,7 @@ export async function createReceiptRecord(data: {
     data.total,
     createdAt
   );
-  console.log('[ReceiptService] Generated verification hash');
+  logger.debug('Generated verification hash');
 
   try {
     const receipt = await ReceiptRepository.create({
@@ -123,18 +136,19 @@ export async function createReceiptRecord(data: {
       payment_id: data.paymentId,
       verification_hash: verificationHash,
       metadata: data.metadata ?? {},
+      created_at: createdAt, // Pass the same timestamp used for hash calculation
     });
 
-    console.log('[ReceiptService] Receipt created successfully:', receipt.receipt_id);
+    logger.info({ receiptId: receipt.receipt_id }, 'Receipt created successfully');
     return { receipt, receiptNumber };
   } catch (error) {
     const err = error as Error & { code?: string; details?: string; hint?: string; message?: string };
-    console.error('[ReceiptService] Failed to create receipt in database:', {
+    logger.error({
       message: err.message,
       code: err.code,
       details: err.details,
       hint: err.hint,
-    });
+    }, 'Failed to create receipt in database');
     throw error;
   }
 }
@@ -173,6 +187,8 @@ export interface MembershipReceiptData {
   monthlyPrice: number;
   durationMonths: number;
   subtotal: number;
+  taxAmount: number;
+  taxRate?: number; // Tax rate as percentage (e.g., 8 for 8%)
   total: number;
   paymentMethod: string;
   paymentId: string;
@@ -263,12 +279,15 @@ export async function generateMembershipReceiptPDF(data: MembershipReceiptData):
         .text('Total', pageWidth - margin - 60, y + 5, { align: 'right', width: 50 });
 
       y += 22;
-      doc.font('Helvetica').fontSize(8).fillColor(textColor)
-        .text(`${data.planName} Membership`, margin + 8, y)
+      doc.font('Helvetica').fontSize(8).fillColor(textColor);
+      const planLabel = `${data.planName} Membership`;
+      const planLabelHeight = doc.heightOfString(planLabel, { width: 230 });
+      doc
+        .text(planLabel, margin + 8, y, { width: 230 })
         .text(`${data.durationMonths} month${data.durationMonths > 1 ? 's' : ''}`, 280, y)
         .text(`$${data.total.toFixed(2)}`, pageWidth - margin - 60, y, { align: 'right', width: 50 });
 
-      y += 12;
+      y += Math.max(12, planLabelHeight + 4);
       doc.fillColor(grayColor).fontSize(7).text(`$${data.monthlyPrice.toFixed(2)}/month`, margin + 12, y);
 
       // Divider
@@ -316,6 +335,12 @@ export async function generateMembershipReceiptPDF(data: MembershipReceiptData):
       doc.fillColor(grayColor).fontSize(8).font('Helvetica').text('Subtotal', rightX, rY);
       doc.fillColor(textColor).text(`$${data.subtotal.toFixed(2)}`, rightX + 150, rY, { align: 'right', width: 50 });
 
+      // Tax line
+      rY += 12;
+      const taxLabel = data.taxRate ? `Tax (${data.taxRate}%)` : 'Tax';
+      doc.fillColor(grayColor).fontSize(8).font('Helvetica').text(taxLabel, rightX, rY);
+      doc.fillColor(textColor).text(`$${data.taxAmount.toFixed(2)}`, rightX + 150, rY, { align: 'right', width: 50 });
+
       // Total box
       rY += 16;
       doc.rect(rightX, rY, 210, 22).fill(primaryColor);
@@ -340,7 +365,7 @@ export async function generateMembershipReceiptPDF(data: MembershipReceiptData):
       const range = doc.bufferedPageRange();
       if (range.count > 1) {
         // If multiple pages were created, we only want the first
-        console.warn('[ReceiptService] PDF had multiple pages, truncating to 1');
+        logger.warn('PDF had multiple pages, truncating to 1');
       }
 
       doc.end();
@@ -359,12 +384,18 @@ export interface BookingReceiptData {
   customerEmail: string;
   bookingReference: string;
   packageName: string;
+  packageBasePrice?: number;
   eventDate: string;
   startTime: string;
   location: string;
   guestCount: number;
   subtotal: number;
+  taxAmount?: number;
+  taxRate?: number; // Tax rate as percentage (e.g., 8 for 8%)
   cleaningFee?: number;
+  // Itemized extras
+  extraChildren?: { count: number; unitPrice: number; total: number };
+  extraAdults?: { count: number; unitPrice: number; total: number };
   addOns?: Array<{ name: string; price: number; quantity: number }>;
   depositAmount: number;
   balanceRemaining: number;
@@ -380,6 +411,10 @@ export interface BookingReceiptData {
     includesDrinks: boolean;
     includesDecor: boolean;
     notes?: string;
+    features?: string[];
+    additionalTerms?: Array<{ title: string; description: string }>;
+    extraChildPrice?: number;
+    extraAdultPrice?: number;
   };
 }
 
@@ -494,31 +529,47 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
         .text('Item', margin + 10, y + 6)
         .text('Amount', margin + contentWidth - 75, y + 6, { align: 'right', width: 65 });
 
-      // Package line item
+      // Package line item (base price)
       y += 25;
-      doc.font('Helvetica').fontSize(9).fillColor(textColor)
-        .text(data.packageName, margin + 10, y)
-        .text(`$${data.subtotal.toFixed(2)}`, margin + contentWidth - 75, y, { align: 'right', width: 65 });
+      const itemTextWidth = contentWidth - 90;
+      const packagePrice = data.packageBasePrice ?? data.packageDetails?.priceUsd ?? data.subtotal;
+      doc.font('Helvetica').fontSize(9).fillColor(textColor);
+      const pkgNameHeight = doc.heightOfString(data.packageName, { width: itemTextWidth });
+      doc
+        .text(data.packageName, margin + 10, y, { width: itemTextWidth })
+        .text(`$${packagePrice.toFixed(2)}`, margin + contentWidth - 75, y, { align: 'right', width: 65 });
 
-      y += 16;
+      y += Math.max(16, pkgNameHeight + 6);
+
+      // Extra Children
+      if (data.extraChildren && data.extraChildren.count > 0) {
+        const extraChildLabel = `Extra Children (${data.extraChildren.count} × $${data.extraChildren.unitPrice.toFixed(2)})`;
+        doc.fillColor(grayColor)
+          .text(extraChildLabel, margin + 10, y, { width: itemTextWidth })
+          .text(`$${data.extraChildren.total.toFixed(2)}`, margin + contentWidth - 75, y, { align: 'right', width: 65 });
+        y += 14;
+      }
+
+      // Extra Adults
+      if (data.extraAdults && data.extraAdults.count > 0) {
+        const extraAdultLabel = `Extra Adults (${data.extraAdults.count} × $${data.extraAdults.unitPrice.toFixed(2)})`;
+        doc.fillColor(grayColor)
+          .text(extraAdultLabel, margin + 10, y, { width: itemTextWidth })
+          .text(`$${data.extraAdults.total.toFixed(2)}`, margin + contentWidth - 75, y, { align: 'right', width: 65 });
+        y += 14;
+      }
 
       // Add-ons
       if (data.addOns && data.addOns.length > 0) {
         for (const addon of data.addOns) {
           const addonTotal = addon.price * addon.quantity;
+          const addonLabel = `${addon.name}${addon.quantity > 1 ? ` (${addon.quantity} × $${addon.price.toFixed(2)})` : ''}`;
+          const addonHeight = doc.heightOfString(addonLabel, { width: itemTextWidth });
           doc.fillColor(grayColor)
-            .text(`  ${addon.name}${addon.quantity > 1 ? ` x${addon.quantity}` : ''}`, margin + 10, y)
+            .text(addonLabel, margin + 10, y, { width: itemTextWidth })
             .text(`$${addonTotal.toFixed(2)}`, margin + contentWidth - 75, y, { align: 'right', width: 65 });
-          y += 14;
+          y += Math.max(14, addonHeight + 4);
         }
-      }
-
-      // Cleaning fee
-      if (data.cleaningFee && data.cleaningFee > 0) {
-        doc.fillColor(grayColor)
-          .text('  Cleaning Fee', margin + 10, y)
-          .text(`$${data.cleaningFee.toFixed(2)}`, margin + contentWidth - 75, y, { align: 'right', width: 65 });
-        y += 14;
       }
 
       // Divider
@@ -530,8 +581,30 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
       const sumX = margin + 320;
       const valX = margin + contentWidth - 75;
 
+      // Subtotal
+      doc.fillColor(grayColor).fontSize(9).font('Helvetica')
+        .text('Subtotal', sumX, y);
+      doc.fillColor(textColor).text(`$${data.subtotal.toFixed(2)}`, valX, y, { align: 'right', width: 65 });
+
+      // Cleaning fee
+      if (data.cleaningFee && data.cleaningFee > 0) {
+        y += 14;
+        doc.fillColor(grayColor).fontSize(9).font('Helvetica')
+          .text('Cleaning Fee', sumX, y);
+        doc.fillColor(textColor).text(`$${data.cleaningFee.toFixed(2)}`, valX, y, { align: 'right', width: 65 });
+      }
+
+      // Tax
+      if (data.taxAmount !== undefined && data.taxAmount > 0) {
+        y += 14;
+        const taxLabel = data.taxRate ? `Tax (${data.taxRate}%)` : 'Tax';
+        doc.fillColor(grayColor).fontSize(9).font('Helvetica')
+          .text(taxLabel, sumX, y);
+        doc.fillColor(textColor).text(`$${data.taxAmount.toFixed(2)}`, valX, y, { align: 'right', width: 65 });
+      }
+
       // Total paid box (green success box)
-      y += 4;
+      y += 18;
       doc.rect(sumX - 10, y, 185, 35).fill(successColor);
       doc.fillColor('#ffffff').fontSize(10).font('Helvetica')
         .text('Total Paid', sumX, y + 8);
@@ -594,38 +667,76 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
 
         // Package info
         y += 55;
-        doc.fillColor(primaryColor).fontSize(12).font('Helvetica-Bold').text('Package Includes', margin, y);
+        doc.fillColor(primaryColor).fontSize(12).font('Helvetica-Bold').text('What\'s Included in Your Package', margin, y);
 
         y += 20;
         const pkg = data.packageDetails;
-        const checkMark = '✓';
-        const crossMark = '✗';
+        const pkgName = data.packageName.toLowerCase();
 
-        // Create a nice grid of included items
-        doc.fontSize(10).font('Helvetica');
-
-        const inclusions = [
-          { label: 'Base Price', value: `$${pkg.priceUsd.toFixed(2)}`, always: true },
-          { label: 'Children Included', value: `${pkg.baseChildren} kids`, always: true },
-          { label: 'Party Room Time', value: `${pkg.baseRoomHours} hour${pkg.baseRoomHours > 1 ? 's' : ''}`, always: true },
-          { label: 'Food & Pizza', value: pkg.includesFood ? checkMark : crossMark, included: pkg.includesFood },
-          { label: 'Drinks & Beverages', value: pkg.includesDrinks ? checkMark : crossMark, included: pkg.includesDrinks },
-          { label: 'Decorations', value: pkg.includesDecor ? checkMark : crossMark, included: pkg.includesDecor },
+        // Base info rows
+        const baseInfo: Array<{ label: string; value: string; highlight?: boolean }> = [
+          { label: 'Base Price', value: `$${pkg.priceUsd.toFixed(2)}` },
+          { label: 'Children Included', value: `${pkg.baseChildren} kids` },
+          { label: 'Party Room Time', value: `${pkg.baseRoomHours} hour${pkg.baseRoomHours > 1 ? 's' : ''}` },
+          { label: 'All-Day Park Access', value: 'Unlimited' },
         ];
 
-        for (const item of inclusions) {
-          doc.rect(margin, y, contentWidth, 28).fill(lightGray);
+        // Add extra children if booked
+        if (data.extraChildren && data.extraChildren.count > 0) {
+          baseInfo.push({
+            label: 'Extra Children Added',
+            value: `${data.extraChildren.count} kid${data.extraChildren.count > 1 ? 's' : ''} (+$${data.extraChildren.total.toFixed(2)})`,
+            highlight: true,
+          });
+        }
 
+        // Add extra adults if booked
+        if (data.extraAdults && data.extraAdults.count > 0) {
+          baseInfo.push({
+            label: 'Extra Guests Added',
+            value: `${data.extraAdults.count} guest${data.extraAdults.count > 1 ? 's' : ''} (+$${data.extraAdults.total.toFixed(2)})`,
+            highlight: true,
+          });
+        }
+
+        doc.fontSize(10).font('Helvetica');
+        for (const item of baseInfo) {
+          const bgColor = item.highlight ? '#ecfdf5' : lightGray; // Light green for extras
+          const valueColor = item.highlight ? successColor : primaryColor;
+          doc.rect(margin, y, contentWidth, 28).fill(bgColor);
           doc.fillColor(textColor).font('Helvetica-Bold').text(item.label, margin + 15, y + 9);
-
-          if (item.always) {
-            doc.fillColor(primaryColor).font('Helvetica-Bold').text(item.value, margin + contentWidth - 150, y + 9, { align: 'right', width: 130 });
-          } else {
-            const color = item.included ? successColor : '#dc2626';
-            doc.fillColor(color).font('Helvetica-Bold').text(item.value, margin + contentWidth - 150, y + 9, { align: 'right', width: 130 });
-          }
-
+          doc.fillColor(valueColor).font('Helvetica-Bold').text(item.value, margin + contentWidth - 200, y + 9, { align: 'right', width: 180 });
           y += 32;
+        }
+
+        // Package-specific features (from database)
+        const features = pkg.features ?? [];
+        if (features.length > 0) {
+          y += 10;
+          doc.fillColor(primaryColor).fontSize(12).font('Helvetica-Bold').text('Package Features', margin, y);
+          y += 18;
+          doc.fontSize(9).font('Helvetica').fillColor(textColor);
+
+          for (const feature of features) {
+            doc.text(`• ${feature}`, margin + 10, y, { width: contentWidth - 20 });
+            y += 16;
+          }
+        }
+
+        // Additional Terms (from database)
+        const additionalTerms = pkg.additionalTerms ?? [];
+        if (additionalTerms.length > 0) {
+          y += 15;
+          doc.fillColor(primaryColor).fontSize(12).font('Helvetica-Bold').text('Additional Terms', margin, y);
+          y += 18;
+          doc.fontSize(9).font('Helvetica').fillColor(textColor);
+
+          for (let i = 0; i < additionalTerms.length; i++) {
+            const term = additionalTerms[i]!;
+            doc.font('Helvetica-Bold').text(`${i + 1}. ${term.title}`, margin + 10, y, { continued: true });
+            doc.font('Helvetica').text(` — ${term.description}`, { width: contentWidth - 30 });
+            y += 16;
+          }
         }
 
         // Notes section if available
@@ -754,99 +865,182 @@ export async function generateReceiptPDF(data: ReceiptData): Promise<Buffer> {
         .font('Helvetica')
         .text(data.customerEmail, 50, y);
 
-      // Items table header
-      y = 200;
+      // Items section title
+      y = 195;
       doc
-        .rect(50, y, 495, 25)
+        .fillColor(primaryColor)
+        .fontSize(11)
+        .font('Helvetica-Bold')
+        .text('Purchase Details', 50, y);
+
+      // Items table header
+      y += 18;
+      doc
+        .rect(50, y, 495, 22)
         .fill(lightGray);
 
       doc
         .fillColor(textColor)
-        .fontSize(10)
+        .fontSize(9)
         .font('Helvetica-Bold')
-        .text('Item', 60, y + 8)
-        .text('Qty', 320, y + 8, { align: 'center', width: 50 })
-        .text('Price', 380, y + 8, { align: 'right', width: 70 })
-        .text('Total', 460, y + 8, { align: 'right', width: 75 });
+        .text('Description', 60, y + 6)
+        .text('Qty', 300, y + 6, { align: 'center', width: 40 })
+        .text('Unit Price', 350, y + 6, { align: 'right', width: 70 })
+        .text('Amount', 460, y + 6, { align: 'right', width: 75 });
 
       // Items
-      y += 30;
+      y += 26;
       doc.font('Helvetica').fontSize(10);
 
+      let itemsSubtotal = 0;
       for (const item of data.items) {
+        // Measure description height to handle text wrapping
+        doc.font('Helvetica-Bold').fontSize(10);
+        const descHeight = doc.heightOfString(item.label, { width: 230 });
+
+        // Item description (left column, constrained width)
         doc
           .fillColor(textColor)
-          .text(item.label, 60, y, { width: 250 })
-          .text(item.quantity.toString(), 320, y, { align: 'center', width: 50 })
-          .text(`$${item.unitPrice.toFixed(2)}`, 380, y, { align: 'right', width: 70 })
+          .text(item.label, 60, y, { width: 230 });
+
+        // Qty, Unit Price, Amount on the same starting y
+        doc
+          .font('Helvetica')
+          .fillColor(grayColor)
+          .text(item.quantity.toString(), 300, y, { align: 'center', width: 40 })
+          .text(`$${item.unitPrice.toFixed(2)}`, 350, y, { align: 'right', width: 70 });
+
+        doc
+          .fillColor(textColor)
+          .font('Helvetica-Bold')
           .text(`$${item.total.toFixed(2)}`, 460, y, { align: 'right', width: 75 });
 
-        y += 20;
+        itemsSubtotal += item.total;
+        y += Math.max(18, descHeight + 6);
+
+        // Show calculation breakdown for items with quantity > 1
+        if (item.quantity > 1) {
+          doc
+            .fillColor(grayColor)
+            .fontSize(8)
+            .font('Helvetica')
+            .text(`(${item.quantity} × $${item.unitPrice.toFixed(2)})`, 70, y);
+          y += 14;
+        }
 
         // Show entry codes if present
         if (item.codes && item.codes.length > 0) {
+          doc.fontSize(8);
           doc
-            .fillColor(grayColor)
-            .fontSize(9)
-            .text(`Entry codes: ${item.codes.join(', ')}`, 70, y, { width: 380 });
-          y += 15;
+            .fillColor(primaryColor)
+            .font('Helvetica-Bold')
+            .text('Entry Codes:', 70, y);
+          doc
+            .fillColor(textColor)
+            .font('Helvetica')
+            .text(item.codes.join(', '), 140, y, { width: 340 });
+          const codesHeight = doc.heightOfString(item.codes.join(', '), { width: 340 });
+          y += Math.max(14, codesHeight + 4);
         }
 
-        // Divider between items
+        // Reset font size for next item
+        doc.fontSize(10);
+
+        // Light divider between items
+        y += 4;
         doc
-          .moveTo(50, y + 5)
-          .lineTo(545, y + 5)
+          .moveTo(60, y)
+          .lineTo(535, y)
           .strokeColor('#e5e7eb')
+          .lineWidth(0.5)
           .stroke();
 
-        y += 15;
+        y += 10;
       }
 
-      // Summary section
-      y += 10;
-      const summaryX = 380;
+      // Items subtotal line (if multiple items)
+      if (data.items.length > 1) {
+        doc
+          .fillColor(grayColor)
+          .fontSize(9)
+          .font('Helvetica')
+          .text('Items Subtotal', 350, y, { align: 'right', width: 100 });
+        doc
+          .fillColor(textColor)
+          .font('Helvetica-Bold')
+          .text(`$${itemsSubtotal.toFixed(2)}`, 460, y, { align: 'right', width: 75 });
+        y += 18;
+      }
+
+      // Summary section with clear divider
+      y += 5;
+      doc
+        .moveTo(300, y)
+        .lineTo(545, y)
+        .strokeColor('#cbd5e1')
+        .lineWidth(1)
+        .stroke();
+
+      y += 12;
+      const summaryX = 350;
       const valueX = 460;
 
+      // Payment Summary header
+      doc
+        .fillColor(primaryColor)
+        .fontSize(10)
+        .font('Helvetica-Bold')
+        .text('Payment Summary', summaryX, y);
+
+      y += 18;
       doc
         .fillColor(grayColor)
         .fontSize(10)
         .font('Helvetica')
-        .text('Subtotal', summaryX, y)
+        .text('Subtotal', summaryX, y);
+      doc
         .fillColor(textColor)
         .text(`$${data.subtotal.toFixed(2)}`, valueX, y, { align: 'right', width: 75 });
 
-      // Discounts
+      // Discounts (shown in green with savings highlight)
       for (const discount of data.discounts) {
-        y += 18;
+        y += 16;
         doc
-          .fillColor(grayColor)
-          .text(discount.label, summaryX, y)
-          .fillColor('#22c55e')
+          .fillColor('#16a34a')
+          .font('Helvetica')
+          .text(discount.label, summaryX, y);
+        doc
+          .font('Helvetica-Bold')
           .text(`-$${discount.amount.toFixed(2)}`, valueX, y, { align: 'right', width: 75 });
       }
 
       // Tax
       if (data.taxAmount !== undefined && data.taxAmount > 0) {
-        y += 18;
+        y += 16;
+        const taxLabel = data.taxRate ? `Tax (${data.taxRate}%)` : 'Tax';
         doc
           .fillColor(grayColor)
-          .text('Tax (8%)', summaryX, y)
+          .font('Helvetica')
+          .text(taxLabel, summaryX, y);
+        doc
           .fillColor(textColor)
           .text(`$${data.taxAmount.toFixed(2)}`, valueX, y, { align: 'right', width: 75 });
       }
 
-      // Total
-      y += 25;
+      // Total box with prominent styling
+      y += 20;
       doc
-        .rect(summaryX - 10, y - 5, 175, 30)
+        .rect(summaryX - 15, y - 3, 200, 32)
         .fill(primaryColor);
 
       doc
         .fillColor('#ffffff')
-        .fontSize(12)
+        .fontSize(11)
         .font('Helvetica-Bold')
-        .text('Total Paid', summaryX, y + 3)
-        .text(`$${data.total.toFixed(2)}`, valueX, y + 3, { align: 'right', width: 75 });
+        .text('Total Paid', summaryX, y + 6);
+      doc
+        .fontSize(14)
+        .text(`$${data.total.toFixed(2)}`, valueX, y + 4, { align: 'right', width: 75 });
 
       // Payment info
       y += 50;

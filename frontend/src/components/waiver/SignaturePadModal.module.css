@@ -1,0 +1,160 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+}
+
+.modal {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  padding: 1.5rem 1.5rem 1rem;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.3rem;
+  color: #1f2937;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.canvasContainer {
+  position: relative;
+  margin: 0 1.5rem;
+  height: 200px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafbfc;
+  cursor: crosshair;
+  touch-action: none;
+  overflow: hidden;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.signLine {
+  position: absolute;
+  bottom: 40px;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+  background: #d1d5db;
+  pointer-events: none;
+}
+
+.signLabel {
+  position: absolute;
+  bottom: 18px;
+  left: 24px;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  pointer-events: none;
+  font-style: italic;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  justify-content: flex-end;
+}
+
+.clearButton,
+.cancelButton,
+.acceptButton {
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.clearButton {
+  background: #fef2f2;
+  color: #dc2626;
+  margin-right: auto;
+}
+
+.clearButton:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+.clearButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cancelButton {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.cancelButton:hover {
+  background: #e5e7eb;
+}
+
+.acceptButton {
+  background: #7c3aed;
+  color: white;
+}
+
+.acceptButton:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+.acceptButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Responsive: taller canvas on mobile for easier signing */
+@media (max-width: 480px) {
+  .modal {
+    max-width: 100%;
+    border-radius: 12px;
+  }
+
+  .canvasContainer {
+    height: 220px;
+    margin: 0 1rem;
+  }
+
+  .header {
+    padding: 1.25rem 1rem 0.75rem;
+  }
+
+  .actions {
+    padding: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .clearButton {
+    margin-right: auto;
+  }
+}

@@ -1,5 +1,10 @@
 import { apiGet, apiPost, apiPatch } from './client';
 
+export type AdditionalTerm = {
+  title: string;
+  description: string;
+};
+
 export type PartyPackageDto = {
   id: string;
   name: string;
@@ -7,6 +12,13 @@ export type PartyPackageDto = {
   durationMinutes: number;
   basePrice: number;
   maxGuests: number;
+  includesFood?: boolean;
+  includesDrinks?: boolean;
+  includesDecor?: boolean;
+  features?: string[];
+  additionalTerms?: AdditionalTerm[];
+  extraChildPrice?: number;
+  extraAdultPrice?: number;
 };
 
 export type BookingSlot = {
@@ -23,12 +35,13 @@ export type BookingSlotsResponse = {
 
 export type BookingEstimate = {
   basePrice: number;
-  extraGuestCount: number;
-  extraGuestFee: number;
-  extraGuestTotal: number;
+  extraAdultCount: number;
+  extraAdultFee: number;
+  extraAdultTotal: number;
   addOns: Array<{ id: string; price: number; quantity: number }>;
   cleaningFee: number;
   subtotal: number;
+  tax: number;
   total: number;
   currency: string;
 };
@@ -76,36 +89,24 @@ export type CreateBookingResponse = {
   balanceRemaining: number;
 };
 
-export type BookingDepositIntentResponse = {
-  clientSecret: string;
-  paymentIntentId?: string;
-  amount: number;
-  currency: string;
-  mock?: boolean;
-};
-
-export type BookingDepositConfirmationResponse = {
-  bookingId: string;
-  depositPaidAt?: string;
-  balanceRemaining: number;
-  status: string;
-};
-
 export async function fetchPartyPackages() {
   const response = await apiGet<{ packages: PartyPackageDto[] }>('/party-packages');
   return response.packages;
 }
 
-export async function fetchBookingSlots(params: { location: string; eventDate: string }) {
-  return apiGet<BookingSlotsResponse>(
-    `/bookings/slots?location=${encodeURIComponent(params.location)}&eventDate=${encodeURIComponent(params.eventDate)}`
-  );
+export async function fetchBookingSlots(params: { location: string; eventDate: string; packageId?: string }) {
+  let url = `/bookings/slots?location=${encodeURIComponent(params.location)}&eventDate=${encodeURIComponent(params.eventDate)}`;
+  if (params.packageId) {
+    url += `&packageId=${encodeURIComponent(params.packageId)}`;
+  }
+  return apiGet<BookingSlotsResponse>(url);
 }
 
 export async function estimateBooking(payload: {
   partyPackageId: string;
   location: string;
   guests: number;
+  extraAdults?: number;
   addOns?: BookingAddOnSelection[];
 }) {
   return apiPost<BookingEstimate, typeof payload>('/bookings/estimate', payload);
@@ -119,27 +120,12 @@ export async function createGuestBooking(payload: CreateGuestBookingPayload) {
   return apiPost<CreateBookingResponse & { guestEmail: string }, CreateGuestBookingPayload>('/bookings/guest', payload);
 }
 
-export async function createBookingDepositIntent(bookingId: string) {
-  return apiPost<BookingDepositIntentResponse, Record<string, never>>(
-    `/bookings/${bookingId}/deposit-intent`,
-    {} as Record<string, never>
-  );
-}
-
-export async function confirmBookingDeposit(bookingId: string, paymentIntentId: string) {
-  return apiPost<BookingDepositConfirmationResponse, { paymentIntentId: string }>(
-    `/bookings/${bookingId}/deposit/confirm`,
-    { paymentIntentId }
-  );
-}
-
 export type SquareDepositResponse = {
   paymentId: string;
   amount: number;
   currency: string;
   status: string;
   balanceRemaining: number;
-  mock?: boolean;
 };
 
 export async function processSquareDeposit(

@@ -12,7 +12,9 @@ import { cachePublic } from '../middleware/cache.middleware';
 export const membershipRouter = Router();
 
 membershipRouter.get('/', cachePublic(300), listMembershipsHandler);
-membershipRouter.post('/purchase', supabaseAuthGuard, purchaseMembershipHandler);
+// SECURITY: Direct purchase endpoint restricted to admin/staff only
+// Regular users must use checkout flow which validates payment
+membershipRouter.post('/purchase', supabaseAuthGuard, requireRoles('admin', 'staff'), purchaseMembershipHandler);
 membershipRouter.get(
   '/admin',
   supabaseAuthGuard,

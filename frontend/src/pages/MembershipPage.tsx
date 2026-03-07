@@ -121,7 +121,7 @@ export function MembershipPage() {
         monthlyPrice: plan.monthlyPrice,
         durationMonths: duration,
         autoRenew,
-        total: Number((plan.monthlyPrice * duration).toFixed(2)),
+        total: Math.round(Math.round(plan.monthlyPrice * 100) * duration) / 100,
         status: "pending",
       });
 

@@ -1,18 +1,27 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { sendContactInquiry } from '../services/email.service';
 
 export const contactRouter = Router();
 
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many messages. Please try again later.' },
+});
+
 const contactSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  email: z.string().email('Invalid email address'),
-  preferredDate: z.string().optional(),
-  message: z.string().max(2000).optional(),
+  name: z.string().trim().min(1, 'Name is required').max(100).regex(/^[A-Za-zÀ-ÿ\s'-]+$/, 'Name must contain only letters'),
+  email: z.string().trim().email('Invalid email address').toLowerCase(),
+  preferredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
+  message: z.string().trim().max(2000).optional(),
 });
 
 // POST /api/contact - Submit contact form
-contactRouter.post('/', async (req: Request, res: Response) => {
+contactRouter.post('/', contactLimiter, async (req: Request, res: Response) => {
   try {
     const data = contactSchema.parse(req.body);
 

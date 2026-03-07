@@ -20,6 +20,7 @@ export type GuardianWaiver = {
   relationshipToMinor?: string | null;
   marketingSmsOptIn?: boolean;
   marketingEmailOptIn?: boolean;
+  waiverCode?: string | null;
   // Backward compatible fields (mapped from new schema)
   guardianName: string | null;
   guardianEmail: string | null;

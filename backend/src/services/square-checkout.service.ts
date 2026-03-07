@@ -1,16 +1,41 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import type { CreatePaymentRequest, Money } from 'square';
 import { DateTime } from 'luxon';
 
 import { getSquareClient, getSquareLocationId } from '../config/square';
 import { appConfig } from '../config/env';
-import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository, PartyBookingRepository, PartyPackageRepository } from '../repositories';
+import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository, PartyBookingRepository, PartyPackageRepository, PartyAddOnRepository, EventRepository } from '../repositories';
+import {
+  getTaxRate as getPricingTaxRate,
+  getTaxRateSync as getPricingTaxRateSync,
+  getCleaningFee as getPricingCleaningFee,
+  getExtraChildFee,
+  getExtraAdultFee,
+  getSingleAdmissionPrice,
+  roundCurrency as pricingRoundCurrency,
+  initializePricingCache,
+} from './pricing-config.service';
 import { AppError } from '../utils/app-error';
+import { PAYMENT_STATUS } from '../utils/payment-statuses';
+import { getUserFriendlyErrorMessage } from './payment-logger.service';
 import { reserveTickets } from './ticket.service';
 import { purchaseMembership } from './membership.service';
 import { sendOrderConfirmation, sendBookingConfirmation, sendAdminBookingNotification, sendAdminTicketNotification, sendAdminMembershipNotification, type BookingEmailData } from './email.service';
 import { sendOrderConfirmationSms, sendTicketConfirmationSms, sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
 import { generateReceiptPDF, generateBookingReceiptPDF, createReceiptRecord } from './receipt.service';
+import { reserveSlot, confirmReservation, getReservation } from './slot-reservation.service';
+import { logger } from '../utils/logger';
+import {
+  toSquareMoney,
+  PAYMENT_LIMITS,
+  dollarsToCents,
+  centsToDollars,
+  calculateTaxCents,
+} from '../utils/currency';
+import { withRetry } from '../utils/retry';
+
+// Valid payment statuses (Fix #4 - accept PENDING for ACH, Afterpay, etc.)
+const VALID_PAYMENT_STATUSES = ['COMPLETED', 'PENDING'];
 
 import type {
   SquareCheckoutIntentInput,
@@ -26,6 +51,144 @@ const REVERSE_TIER_MAP: Record<string, string[]> = {
   'adventurer': ['Gold'],
   'champion': ['Platinum', 'VIP Platinum'],
 };
+
+// Price tolerance in cents (allow 1 cent rounding difference)
+const PRICE_TOLERANCE_CENTS = 1;
+
+/**
+ * Generate a deterministic hash of the sourceId to use in idempotency keys.
+ * SECURITY: Uses full hash instead of just last 8 chars to prevent collision attacks.
+ */
+function hashSourceId(sourceId: string): string {
+  return createHash('sha256').update(sourceId).digest('hex').slice(0, 16);
+}
+
+/**
+ * SECURITY: Validate that frontend-submitted prices match database prices.
+ * This prevents price manipulation attacks where attackers modify localStorage or intercept API calls.
+ */
+async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<void> {
+  for (const item of items) {
+    if (item.type === 'ticket') {
+      let expectedPrice: number;
+
+      if (item.eventId) {
+        // Event ticket - validate event exists
+        const event = await EventRepository.findById(parseInt(item.eventId, 10));
+        if (!event) {
+          throw new AppError('Event not found', 404);
+        }
+
+        expectedPrice = item.unitPrice; // Events no longer have a price column
+      } else {
+        // General admission ticket - validate against single admission price
+        expectedPrice = await getSingleAdmissionPrice();
+      }
+
+      const priceDiffCents = Math.abs(dollarsToCents(item.unitPrice) - dollarsToCents(expectedPrice));
+
+      if (priceDiffCents > PRICE_TOLERANCE_CENTS) {
+        logger.warn({
+          itemType: 'ticket',
+          submittedPrice: item.unitPrice,
+          expectedPrice,
+          eventId: item.eventId,
+          label: item.label,
+        }, 'Price manipulation detected: ticket price mismatch');
+        throw new AppError(
+          'Ticket price has changed. Please refresh the page and try again.',
+          400
+        );
+      }
+    }
+
+    if (item.type === 'membership') {
+      // Validate membership price against database
+      const planId = parseInt(item.membershipId, 10);
+      const plan = await MembershipPlanRepository.findById(planId);
+
+      if (!plan) {
+        throw new AppError('Membership plan not found', 404);
+      }
+
+      // Calculate expected total (monthly_price * durationMonths)
+      const expectedTotal = plan.monthly_price * item.durationMonths;
+      const priceDiffCents = Math.abs(dollarsToCents(item.unitPrice) - dollarsToCents(expectedTotal));
+
+      if (priceDiffCents > PRICE_TOLERANCE_CENTS) {
+        logger.warn({
+          itemType: 'membership',
+          submittedPrice: item.unitPrice,
+          expectedPrice: expectedTotal,
+          planId,
+          durationMonths: item.durationMonths,
+        }, 'Price manipulation detected: membership price mismatch');
+        throw new AppError(
+          'Membership price has changed. Please refresh the page and try again.',
+          400
+        );
+      }
+    }
+
+    if (item.type === 'booking') {
+      // Validate booking price against database
+      const packageId = parseInt(item.packageId, 10);
+      const partyPackage = await PartyPackageRepository.findById(packageId);
+
+      if (!partyPackage) {
+        throw new AppError('Party package not found', 404);
+      }
+
+      // Calculate expected price from package + add-ons + cleaning fee
+      const globalCleaningFee = await getPricingCleaningFee();
+      const cleaningFee = (partyPackage as any).cleaning_fee != null ? Number((partyPackage as any).cleaning_fee) : globalCleaningFee;
+      const extraAdultFee = await getExtraAdultFee();
+
+      let expectedSubtotal = partyPackage.price_usd ?? 0;
+
+      // Process add-ons
+      if (item.addOns && item.addOns.length > 0) {
+        const addOnDefinitions = await PartyAddOnRepository.findAll(true);
+        const addOnMap = new Map(addOnDefinitions.map(a => [a.code, a]));
+
+        for (const addOn of item.addOns) {
+          const def = addOnMap.get(addOn.id);
+          if (def) {
+            if (addOn.id === 'extra_adult') {
+              expectedSubtotal += (addOn.quantity ?? 0) * extraAdultFee;
+            } else if (addOn.id === 'extra_child') {
+              // Already counted above, skip
+            } else {
+              expectedSubtotal += def.price * (addOn.quantity ?? 1);
+            }
+          }
+        }
+      }
+
+      // Expected unitPrice = subtotal + cleaningFee
+      const expectedUnitPrice = expectedSubtotal + cleaningFee;
+      const priceDiffCents = Math.abs(dollarsToCents(item.unitPrice) - dollarsToCents(expectedUnitPrice));
+
+      // Fixed 10-cent max tolerance instead of percentage-based (prevents underpayment on large bookings)
+      const toleranceCents = 10;
+
+      if (priceDiffCents > toleranceCents) {
+        logger.warn({
+          itemType: 'booking',
+          submittedPrice: item.unitPrice,
+          expectedPrice: expectedUnitPrice,
+          packageId,
+          guestCount: item.guestCount,
+          addOns: item.addOns,
+        }, 'Price manipulation detected: booking price mismatch');
+        throw new AppError(
+          'Booking price has changed. Please refresh the page and try again.',
+          400
+        );
+      }
+    }
+  }
+}
 
 // Cache for pricing config values (refreshed on each checkout)
 let cachedSiblingDiscountRate: number | null = null;
@@ -73,18 +236,35 @@ export interface SquareCheckoutSummary {
   lines: CheckoutLine[];
 }
 
-// Tax rate constant (8%)
-const TAX_RATE = 0.08;
-
-function roundCurrency(value: number) {
-  return Math.round(value * 100) / 100;
+// Tax rate - use centralized pricing config service
+async function getTaxRate(): Promise<number> {
+  return getPricingTaxRate();
 }
 
-function toSquareMoney(amount: number): Money {
-  return {
-    amount: BigInt(Math.round(amount * 100)),
-    currency: 'USD',
-  };
+// Sync version for places that can't be async - uses cached value from pricing config service
+function getTaxRateSync(): number {
+  return getPricingTaxRateSync();
+}
+
+// Fix #11 & #12: Use precise currency utilities from utils/currency.ts
+// roundCurrency now goes through cents to avoid floating point issues
+function roundCurrency(value: number) {
+  return centsToDollars(dollarsToCents(value));
+}
+
+// Note: toSquareMoney is now imported from utils/currency.ts (Fix #11)
+
+/**
+ * Normalize time formats for robust comparison (Fix #10)
+ * PostgreSQL TIME can return "HH:MM:SS" or "HH:MM:SS.sss"
+ * Frontend sends "HH:MM"
+ * This ensures consistent comparison regardless of format
+ */
+function normalizeTime(time: string | null | undefined): string {
+  if (!time) return '';
+  // Extract just HH:MM from any format
+  const match = time.match(/^(\d{2}):(\d{2})/);
+  return match ? `${match[1]}:${match[2]}` : '';
 }
 
 async function getUserWithMembership(userId: string) {
@@ -191,7 +371,7 @@ async function buildSummary(
   const subtotal = roundCurrency(lines.reduce((sum, line) => sum + line.subtotal, 0));
 
   // Calculate tax (8%) - no discounts
-  const taxAmount = roundCurrency(subtotal * TAX_RATE);
+  const taxAmount = roundCurrency(subtotal * getTaxRateSync());
   const total = roundCurrency(subtotal + taxAmount);
 
   return {
@@ -208,12 +388,15 @@ async function buildSummary(
 }
 
 async function buildGuestSummary(items: SquareCheckoutItemInput[], _promoCode?: string): Promise<SquareCheckoutSummary> {
+  // Bug fix #11: Reset sibling discount cache for guest checkout (same as buildSummary)
+  cachedSiblingDiscountRate = null;
+
   // Calculate lines - no discounts applied
   const lines = await Promise.all(items.map(item => calculateLine(item, 0)));
   const subtotal = roundCurrency(lines.reduce((sum, line) => sum + line.subtotal, 0));
 
   // Calculate tax (8%) - no discounts
-  const taxAmount = roundCurrency(subtotal * TAX_RATE);
+  const taxAmount = roundCurrency(subtotal * getTaxRateSync());
   const total = roundCurrency(subtotal + taxAmount);
 
   return {
@@ -227,7 +410,7 @@ async function buildGuestSummary(items: SquareCheckoutItemInput[], _promoCode?: 
 }
 
 function assertSquareConfigured() {
-  if (!appConfig.mockPayments && !appConfig.squareAccessToken) {
+  if (!appConfig.squareAccessToken) {
     throw new AppError('Payments are temporarily unavailable. Please try again later.', 503);
   }
 }
@@ -267,17 +450,37 @@ export async function createSquareCheckoutPaymentIntent(userId: string, input: S
 export async function finalizeSquareCheckout(userId: string, input: SquareCheckoutFinalizeInput) {
   assertSquareConfigured();
 
+  // ============================================================
+  // PHASE 0: PRICE VALIDATION (Critical Security Check)
+  // ============================================================
+  // SECURITY: Validate frontend-submitted prices against database prices
+  // This prevents price manipulation attacks
+  await validateItemPrices(input.items);
+
   const { summary, user } = await buildSummary(userId, input.items, input.promoCode);
 
   if (summary.total <= 0) {
     throw new AppError('No payment is required for this cart', 400);
   }
 
+  // Fix #7 & #19: Validate payment amount is within Square's limits
+  if (summary.total < PAYMENT_LIMITS.MIN_USD) {
+    throw new AppError(`Minimum payment amount is $${PAYMENT_LIMITS.MIN_USD.toFixed(2)}`, 400);
+  }
+  if (summary.total > PAYMENT_LIMITS.MAX_USD) {
+    throw new AppError(`Payment amount exceeds the maximum of $${PAYMENT_LIMITS.MAX_USD.toFixed(2)}`, 400);
+  }
+
   // ============================================================
-  // PHASE 1: PRE-VALIDATION (Before any payment)
+  // PHASE 1: PRE-VALIDATION & SLOT RESERVATION (Before any payment)
   // ============================================================
-  // Validate all items before charging the customer
-  for (const item of input.items) {
+  // Validate all items and atomically reserve booking slots to prevent TOCTOU race conditions
+  // Session ID ties reservations to this checkout attempt
+  // SECURITY: Use hash of full sourceId to prevent collision attacks
+  const sessionId = `checkout_${userId}_${hashSourceId(input.sourceId)}`;
+  const slotReservations: Map<number, string> = new Map(); // itemIndex -> reservationId
+
+  for (const [itemIndex, item] of input.items.entries()) {
     if (item.type === 'booking') {
       // Verify party package exists and get details
       const packageId = parseInt(item.packageId, 10);
@@ -286,31 +489,90 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
         throw new AppError(`Party package not found: ${item.label}`, 400);
       }
 
-      // Verify slot is still available (critical - prevents double booking)
-      const eventDate = DateTime.fromISO(item.eventDate);
+      // SECURITY: Validate that booking date/time is in the future
+      const eventDate = DateTime.fromISO(item.eventDate, { zone: 'America/New_York' });
       const [hour, minute] = item.startTime.split(':').map(Number);
       const startDateTime = eventDate.set({ hour, minute, second: 0, millisecond: 0 });
-      const durationMinutes = partyPackage.duration_minutes ?? 120;
-      const endDateTime = startDateTime.plus({ minutes: durationMinutes + 30 }); // +30 for cleaning buffer
 
-      const existingBookings = await PartyBookingRepository.findByLocationAndDate(
-        item.location,
-        item.eventDate
-      );
-
-      const hasConflict = existingBookings.some(booking => {
-        if (!booking.scheduled_start || !booking.scheduled_end) return false;
-        const bookingStart = DateTime.fromISO(booking.scheduled_start);
-        const bookingEnd = DateTime.fromISO(booking.scheduled_end);
-        // Check for overlap
-        return startDateTime < bookingEnd && endDateTime > bookingStart;
-      });
-
-      if (hasConflict) {
+      if (startDateTime <= DateTime.now().setZone('America/New_York')) {
         throw new AppError(
-          `The time slot ${item.startTime} on ${item.eventDate} at ${item.location} is no longer available. Please select a different time.`,
-          409 // Conflict
+          `Cannot book a party in the past. Please select a future date and time.`,
+          400
         );
+      }
+
+      // Check if frontend already reserved the slot (passed reservationId)
+      // This prevents double-reservation when frontend reserves before calling finalize
+      if (input.reservationId) {
+        // Validate the existing reservation
+        const existingReservation = await getReservation(input.reservationId);
+        if (!existingReservation) {
+          throw new AppError('Reservation not found. Please try again.', 404);
+        }
+        if (existingReservation.status === 'expired') {
+          throw new AppError('Your reservation has expired. Please select the time slot again.', 410);
+        }
+        if (existingReservation.status === 'cancelled') {
+          throw new AppError('Reservation was cancelled. Please try again.', 410);
+        }
+        if (existingReservation.status !== 'pending' && existingReservation.status !== 'confirmed') {
+          throw new AppError(`Invalid reservation status: ${existingReservation.status}`, 400);
+        }
+        // Validate that reservation matches the booking item
+        // Fix #10: Use robust time normalization for comparison
+        const reservationTime = normalizeTime(existingReservation.slot_time);
+        const itemTime = normalizeTime(item.startTime);
+        if (existingReservation.slot_date !== item.eventDate ||
+            reservationTime !== itemTime ||
+            existingReservation.location_name !== item.location) {
+          logger.warn({
+            reservationId: input.reservationId,
+            reservation: { date: existingReservation.slot_date, time: existingReservation.slot_time, location: existingReservation.location_name },
+            item: { date: item.eventDate, time: item.startTime, location: item.location },
+          }, 'Reservation mismatch detected');
+          throw new AppError('Reservation does not match the booking details.', 400);
+        }
+        // Check if reservation is still valid (not expired by time)
+        if (new Date(existingReservation.expires_at) < new Date()) {
+          throw new AppError('Your reservation has expired. Please select the time slot again.', 410);
+        }
+        slotReservations.set(itemIndex, input.reservationId);
+        logger.info({
+          reservationId: input.reservationId,
+          eventDate: item.eventDate,
+          startTime: item.startTime,
+          location: item.location,
+        }, 'Using existing frontend reservation');
+      } else {
+        // No reservationId provided - create new reservation (API callers without frontend)
+        // SECURITY: Atomically reserve the slot to prevent double-booking race conditions
+        // The reservation expires in 5 minutes if payment doesn't complete
+        try {
+          const reservation = await reserveSlot(
+            item.eventDate,
+            item.startTime,
+            item.location,
+            parseInt(userId, 10),
+            sessionId
+          );
+          slotReservations.set(itemIndex, reservation.reservationId);
+          logger.info({
+            reservationId: reservation.reservationId,
+            eventDate: item.eventDate,
+            startTime: item.startTime,
+            location: item.location,
+            expiresAt: reservation.expiresAt,
+          }, 'Slot reserved for checkout');
+        } catch (err) {
+          // Slot is no longer available - another user reserved it
+          if (err instanceof AppError && err.statusCode === 409) {
+            throw new AppError(
+              `The time slot ${item.startTime} on ${item.eventDate} at ${item.location} is no longer available. Please select a different time.`,
+              409
+            );
+          }
+          throw err;
+        }
       }
     }
 
@@ -342,7 +604,8 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
   });
 
   // Use order_id as part of idempotency key to prevent duplicate payments
-  const idempotencyKey = `checkout_${order.order_id}_${input.sourceId.slice(-8)}`;
+  // SECURITY: Use hash of full sourceId to prevent collision attacks
+  const idempotencyKey = `checkout_${order.order_id}_${hashSourceId(input.sourceId)}`;
 
   let paymentId: string;
   let receiptUrl: string | null | undefined = null;
@@ -351,17 +614,7 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
   // PHASE 3: PROCESS PAYMENT
   // ============================================================
   try {
-    if (appConfig.mockPayments) {
-      paymentId = `mock_sq_${randomUUID()}`;
-
-      await PaymentRepository.create({
-        order_id: order.order_id,
-        provider: 'square',
-        provider_payment_id: paymentId,
-        amount_usd: summary.total,
-        status: 'Captured',
-      });
-    } else {
+    {
       const square = getSquareClient();
       const locationId = getSquareLocationId();
 
@@ -380,9 +633,15 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
         paymentRequest.verificationToken = input.verificationToken;
       }
 
-      const response = await square.payments.create(paymentRequest);
+      // Fix #15: Add retry logic for transient errors (429, 5xx, network issues)
+      const response = await withRetry(
+        () => square.payments.create(paymentRequest),
+        { maxRetries: 3, operationName: 'squarePaymentCreate' }
+      );
 
-      if (!response.payment || response.payment.status !== 'COMPLETED') {
+      // Fix #4: Accept both COMPLETED and PENDING statuses
+      // PENDING is valid for ACH transfers, Afterpay/Clearpay, gift cards, etc.
+      if (!response.payment || !VALID_PAYMENT_STATUSES.includes(response.payment.status ?? '')) {
         await OrderRepository.update(order.order_id, { status: 'Failed' });
         throw new AppError('Payment failed. Please try again.', 400);
       }
@@ -395,17 +654,31 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
       paymentId = payment.id;
       receiptUrl = payment.receiptUrl;
 
+      // Record payment with receipt URL (Fix #16)
       await PaymentRepository.create({
         order_id: order.order_id,
         provider: 'square',
         provider_payment_id: paymentId,
         amount_usd: summary.total,
-        status: 'Captured',
+        status: payment.status === 'PENDING' ? 'Pending' : 'Captured',
+        receipt_url: payment.receiptUrl ?? null,
       });
     }
   } catch (paymentError) {
     // Update order to failed status
     await OrderRepository.update(order.order_id, { status: 'Failed' });
+
+    // Convert Square API errors (e.g., invalid card, declined) to user-friendly messages
+    if (paymentError && typeof paymentError === 'object' && !(paymentError instanceof AppError)) {
+      const obj = paymentError as Record<string, unknown>;
+      if ('statusCode' in obj && 'errors' in obj && Array.isArray(obj.errors)) {
+        const statusCode = obj.statusCode as number;
+        const errors = obj.errors as Array<{ code?: string }>;
+        if (statusCode >= 400 && statusCode < 500 && errors[0]?.code) {
+          throw new AppError(getUserFriendlyErrorMessage(errors[0].code), 400);
+        }
+      }
+    }
     throw paymentError;
   }
 
@@ -465,24 +738,49 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
         }
 
         // Calculate times
-        const eventDate = DateTime.fromISO(item.eventDate);
+        const eventDate = DateTime.fromISO(item.eventDate, { zone: 'America/New_York' });
         const [hour, minute] = item.startTime.split(':').map(Number);
         const startDateTime = eventDate.set({ hour, minute, second: 0, millisecond: 0 });
-        const durationMinutes = partyPackage.duration_minutes ?? 120;
-        const endDateTime = startDateTime.plus({ minutes: durationMinutes });
+        const baseDuration = (partyPackage.base_room_hours ?? 2) * 60;
+        const hasExtraHour = (item.addOns ?? []).some(
+          (a: any) => a.id === 'extra_hour' || a.productName?.toLowerCase().includes('extra hour')
+        );
+        const totalPartyMinutes = baseDuration + (hasExtraHour ? 60 : 0);
+        const endDateTime = startDateTime.plus({ minutes: totalPartyMinutes });
+        const scheduledEndDateTime = endDateTime.plus({ minutes: 30 }); // cleaning buffer
 
         // Generate unique reference
         const reference = `BK-${DateTime.now().toFormat('yyyyLLddHHmm')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
-        // Get cleaning fee from pricing config or use default
-        const cleaningFee = await PricingConfigRepository.getValue('cleaning_fee', 50);
+        // Use per-package cleaning fee if set, otherwise global
+        const globalCleaningFee = await getPricingCleaningFee();
+        const cleaningFee = (partyPackage as any).cleaning_fee != null ? Number((partyPackage as any).cleaning_fee) : globalCleaningFee;
+
+        // SECURITY: Validate that subtotal is non-negative after subtracting cleaning fee
+        // This prevents price manipulation attacks where cleaningFee > unitPrice
+        const bookingSubtotal = item.unitPrice - cleaningFee;
+        if (bookingSubtotal < 0) {
+          throw new AppError(
+            'Invalid booking price: unit price cannot be less than cleaning fee. Please refresh and try again.',
+            400
+          );
+        }
+
+        // Calculate tax using cents-based math for consistency with summary-level calculation
+        const taxRate = getTaxRateSync();
+        const unitPriceCents = dollarsToCents(item.unitPrice);
+        const taxAmountCents = calculateTaxCents(unitPriceCents, taxRate);
+        const taxAmount = centsToDollars(taxAmountCents);
+        const totalWithTax = centsToDollars(unitPriceCents + taxAmountCents);
 
         // Create the booking
+        // Note: Tax is calculated using (subtotal + cleaningFee) * taxRate at receipt time
+        // The total already includes tax for proper payment amount
         const booking = await PartyBookingRepository.create({
           package_id: packageId,
           customer_id: user.customer_id ?? null,
           scheduled_start: startDateTime.toISO() ?? startDateTime.toJSDate().toISOString(),
-          scheduled_end: endDateTime.toISO() ?? endDateTime.toJSDate().toISOString(),
+          scheduled_end: scheduledEndDateTime.toISO() ?? scheduledEndDateTime.toJSDate().toISOString(),
           reference,
           location_name: item.location,
           event_date: item.eventDate,
@@ -491,15 +789,28 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
           guests: item.guestCount,
           notes: item.notes,
           add_ons: item.addOns ?? [],
-          subtotal: item.unitPrice - cleaningFee,
+          subtotal: bookingSubtotal,
           cleaning_fee: cleaningFee,
-          total: item.unitPrice,
-          deposit_amount: item.unitPrice,
+          total: totalWithTax,
+          deposit_amount: totalWithTax,
           balance_remaining: 0,
-          payment_status: 'paid',
+          payment_status: PAYMENT_STATUS.PAID,
           status: 'Confirmed',
           child_ids: item.childIds?.map(id => parseInt(id, 10)) ?? [],
         });
+
+        // SECURITY: Confirm the slot reservation now that booking is created
+        // This permanently locks the slot and links it to the booking
+        const reservationId = slotReservations.get(index);
+        if (reservationId) {
+          try {
+            await confirmReservation(reservationId, booking.booking_id);
+            logger.info({ reservationId, bookingId: booking.booking_id }, 'Slot reservation confirmed');
+          } catch (confirmErr) {
+            // Log but don't fail - booking is created, reservation will expire naturally
+            logger.error({ error: confirmErr, reservationId, bookingId: booking.booking_id }, 'Failed to confirm reservation');
+          }
+        }
 
         bookingResults.push({ cartIndex: index, booking, item });
       }
@@ -511,15 +822,72 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
   }
 
   // ============================================================
-  // PHASE 5: UPDATE ORDER STATUS
+  // PHASE 5: HANDLE PARTIAL FULFILLMENT (Automatic Refund)
+  // ============================================================
+  let partialRefundIssued = false;
+  let partialRefundAmount = 0;
+
+  if (fulfillmentErrors.length > 0) {
+    // Calculate refund amount for unfulfilled items
+    const fulfilledIndices = new Set([
+      ...ticketResults.map(t => t.cartIndex),
+      ...membershipResults.map(m => m.cartIndex),
+      ...bookingResults.map(b => b.cartIndex),
+    ]);
+
+    const unfulfilledLines = summary.lines.filter((_, idx) => !fulfilledIndices.has(idx));
+    // Bug fix #1: Include proportional tax in refund amount (line totals are pre-tax)
+    const unfulfilledSubtotal = unfulfilledLines.reduce((sum, line) => sum + line.total, 0);
+    const unfulfilledTax = roundCurrency(unfulfilledSubtotal * getTaxRateSync());
+    const unfulfilledAmount = roundCurrency(unfulfilledSubtotal + unfulfilledTax);
+
+    if (unfulfilledAmount > 0) {
+      try {
+        const square = getSquareClient();
+
+        // Fix #20: Use deterministic idempotency key (no timestamp) to prevent duplicate refunds
+        const refundResponse = await square.refunds.refundPayment({
+          paymentId,
+          idempotencyKey: `refund_${order.order_id}_partial_${hashSourceId(paymentId)}`,
+          amountMoney: toSquareMoney(unfulfilledAmount),
+          reason: 'PARTIAL_FULFILLMENT_FAILURE',
+        });
+
+        if (refundResponse.refund?.status === 'COMPLETED' || refundResponse.refund?.status === 'PENDING') {
+          partialRefundIssued = true;
+          partialRefundAmount = unfulfilledAmount;
+          logger.info({
+            orderId: order.order_id,
+            refundId: refundResponse.refund.id,
+            amount: unfulfilledAmount,
+            unfulfilledItems: unfulfilledLines.map(l => l.label),
+          }, 'Partial refund issued for unfulfilled items');
+        }
+      } catch (refundError) {
+        // Log error but don't fail - payment succeeded, manual refund may be needed
+        logger.error({
+          error: refundError,
+          orderId: order.order_id,
+          paymentId,
+          amount: unfulfilledAmount,
+          fulfillmentErrors,
+        }, 'Partial refund failed - requires manual intervention');
+      }
+    }
+  }
+
+  // ============================================================
+  // PHASE 6: UPDATE ORDER STATUS
   // ============================================================
   // If there were fulfillment errors, mark as partially completed
   const finalStatus = fulfillmentErrors.length > 0 ? 'Partial' : 'Completed';
+  const orderNotes = fulfillmentErrors.length > 0
+    ? `Fulfillment issues: ${fulfillmentErrors.join('; ')}${partialRefundIssued ? ` | Refund issued: $${partialRefundAmount.toFixed(2)}` : ' | Refund may be required'}`
+    : undefined;
+
   await OrderRepository.update(order.order_id, {
     status: finalStatus,
-    notes: fulfillmentErrors.length > 0
-      ? `${order.order_id} - Fulfillment issues: ${fulfillmentErrors.join('; ')}`
-      : undefined,
+    notes: orderNotes,
   });
 
   // ============================================================
@@ -622,11 +990,45 @@ async function sendNotifications(params: {
         const totalAmount = booking.total ?? item.unitPrice;
         const depositPaid = booking.deposit_amount ?? item.unitPrice;
         const balanceRemaining = booking.balance_remaining ?? 0;
-        const subtotal = booking.subtotal ?? totalAmount;
+        const subtotal = booking.subtotal ?? 0;
         const cleaningFee = booking.cleaning_fee ?? 0;
+        const packageBasePrice = partyPackage?.price_usd ?? 0;
+        // Calculate tax from stored subtotal and cleaning fee using centralized tax rate
+        const taxableAmount = subtotal + cleaningFee;
+        const taxAmount = centsToDollars(calculateTaxCents(dollarsToCents(taxableAmount), getTaxRateSync()));
 
-        // Parse add-ons
-        const addOns = (booking.add_ons ?? []) as Array<{ label?: string; name?: string; price: number; quantity: number }>;
+        // Parse add-ons to extract extra children and extra adults
+        const addOnsArray = (booking.add_ons ?? []) as Array<{ id?: string; label?: string; name?: string; price: number; quantity: number }>;
+        const extraChildAddOn = addOnsArray.find(a => a.id === 'extra_child' || a.name === 'Extra Child');
+        const extraAdultAddOn = addOnsArray.find(a => a.id === 'extra_adult' || a.name === 'Extra Adult');
+
+        // Extract counts from add-ons (preferred) or calculate from guest count
+        const maxGuests = partyPackage?.base_children ?? 10;
+        const extraChildrenCount = extraChildAddOn?.quantity ?? Math.max(0, guestCount - maxGuests);
+        const extraAdultsCount = extraAdultAddOn?.quantity ?? 0;
+
+        // Use stored price from add-on, or fetch from pricing config service
+        const extraChildUnitPrice = extraChildAddOn?.price ?? await getExtraChildFee();
+        const extraAdultUnitPrice = extraAdultAddOn?.price ?? await getExtraAdultFee();
+
+        // Build extra children/adults data
+        const extraChildren = extraChildrenCount > 0 ? {
+          count: extraChildrenCount,
+          unitPrice: extraChildUnitPrice,
+          total: extraChildrenCount * extraChildUnitPrice,
+        } : undefined;
+
+        const extraAdults = extraAdultsCount > 0 ? {
+          count: extraAdultsCount,
+          unitPrice: extraAdultUnitPrice,
+          total: extraAdultsCount * extraAdultUnitPrice,
+        } : undefined;
+
+        // Filter out extra_child and extra_adult from add-ons (they're shown separately)
+        const addOns = addOnsArray.filter(a =>
+          a.id !== 'extra_child' && a.id !== 'extra_adult' &&
+          a.name !== 'Extra Child' && a.name !== 'Extra Adult'
+        );
         const formattedAddOns = addOns.map(a => ({
           name: a.label ?? a.name ?? 'Add-on',
           price: a.price,
@@ -642,21 +1044,42 @@ async function sendNotifications(params: {
             purchaseType: 'booking',
             referenceId: booking.booking_id,
             customerId: booking.customer_id ?? user.customer_id ?? null,
-            subtotal: item.unitPrice,
+            subtotal: subtotal,
             discount: 0,
-            tax: 0,
-            total: item.unitPrice,
+            tax: taxAmount,
+            total: totalAmount,
             paymentMethod: 'Credit Card (Square)',
             paymentId: paymentId,
             metadata: {
               bookingReference: reference,
               packageName,
-              eventDate: booking.event_date,
+              packageBasePrice,
+              eventDate,
               startTime,
               location,
               guestCount,
+              subtotal,
+              taxAmount,
+              taxRate: Math.round(getTaxRateSync() * 100),
+              cleaningFee,
+              extraChildren,
+              extraAdults,
+              addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
               totalAmount,
               balanceRemaining,
+              packageDetails: partyPackage ? {
+                priceUsd: partyPackage.price_usd ?? 0,
+                baseChildren: partyPackage.base_children ?? 10,
+                baseRoomHours: partyPackage.base_room_hours ?? 2,
+                includesFood: partyPackage.includes_food ?? false,
+                includesDrinks: partyPackage.includes_drinks ?? false,
+                includesDecor: partyPackage.includes_decor ?? false,
+                notes: partyPackage.notes ?? undefined,
+                features: (partyPackage as any).features ?? [],
+                additionalTerms: (partyPackage as any).additional_terms ?? [],
+                extraChildPrice: (partyPackage as any).extra_child_price ?? 40,
+                extraAdultPrice: (partyPackage as any).extra_adult_price ?? 10,
+              } : undefined,
             },
           });
           receiptNumber = receiptResult.receiptNumber;
@@ -669,14 +1092,19 @@ async function sendNotifications(params: {
             customerEmail: user.email ?? '',
             bookingReference: reference,
             packageName,
+            packageBasePrice,
             eventDate,
             startTime,
             location,
             guestCount,
             subtotal,
+            taxAmount,
+            taxRate: Math.round(getTaxRateSync() * 100), // Convert decimal to percentage
             cleaningFee,
+            extraChildren,
+            extraAdults,
             addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
-            depositAmount: item.unitPrice, // Full payment - no deposit
+            depositAmount: totalAmount, // Full payment - deposit equals total with tax
             balanceRemaining,
             total: totalAmount,
             paymentMethod: 'Credit Card (Square)',
@@ -689,6 +1117,10 @@ async function sendNotifications(params: {
               includesDrinks: partyPackage.includes_drinks ?? false,
               includesDecor: partyPackage.includes_decor ?? false,
               notes: partyPackage.notes ?? undefined,
+              features: (partyPackage as any).features ?? [],
+              additionalTerms: (partyPackage as any).additional_terms ?? [],
+              extraChildPrice: (partyPackage as any).extra_child_price ?? 40,
+              extraAdultPrice: (partyPackage as any).extra_adult_price ?? 10,
             } : undefined,
           });
         } catch (receiptError) {
@@ -701,13 +1133,21 @@ async function sendNotifications(params: {
           guestName,
           email: user.email,
           eventDate,
+          rawEventDate: booking.event_date ?? item.eventDate,
           startTime,
           location,
           packageName,
+          packageBasePrice,
           guestCount,
           depositAmount: item.unitPrice, // Full payment - no deposit
+          subtotal,
+          cleaningFee,
+          taxAmount,
+          taxRate: Math.round(getTaxRateSync() * 100), // Tax rate as percentage
           totalAmount,
           balanceRemaining,
+          extraChildren,
+          extraAdults,
           addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
           receiptPdf,
           receiptNumber,
@@ -783,18 +1223,49 @@ async function sendNotifications(params: {
       });
 
       const nonBookingSubtotal = nonBookingLines.reduce((sum, l) => sum + l.subtotal, 0);
-      const nonBookingTotal = nonBookingLines.reduce((sum, l) => sum + l.total, 0);
+      const nonBookingDiscount = summary.discounts.reduce((sum, d) => sum + d.amount, 0);
+      // Calculate tax only on non-booking items (bookings have their own tax in booking.total)
+      const nonBookingTax = roundCurrency(nonBookingSubtotal * getTaxRateSync());
+      const nonBookingTotal = roundCurrency(nonBookingSubtotal - nonBookingDiscount + nonBookingTax);
+
+      // Create receipt record for ticket/membership purchases
+      let ticketReceiptNumber = orderNumber;
+      if (ticketResults.length > 0 || membershipResults.length > 0) {
+        try {
+          const firstTicket = ticketResults[0]?.ticket as { orderId?: number } | undefined;
+          const referenceId = firstTicket?.orderId ?? user.customer_id ?? Date.now();
+          const receiptResult = await createReceiptRecord({
+            purchaseType: 'ticket',
+            referenceId,
+            customerId: user.customer_id ?? undefined,
+            subtotal: nonBookingSubtotal,
+            discount: nonBookingDiscount,
+            tax: nonBookingTax,
+            total: nonBookingTotal,
+            paymentMethod: 'Credit Card (Square)',
+            paymentId,
+            metadata: {
+              items: emailItems,
+              discounts: summary.discounts,
+            },
+          });
+          ticketReceiptNumber = receiptResult.receiptNumber;
+        } catch (receiptError) {
+          console.error('Failed to create ticket receipt record:', receiptError);
+        }
+      }
 
       try {
         // Generate PDF receipt for non-booking items
+        // Bug fix #4: Use nonBookingTax (not summary.taxAmount which includes all items)
         const receiptPdf = await generateReceiptPDF({
-          receiptNumber: orderNumber,
+          receiptNumber: ticketReceiptNumber,
           date: orderDate,
           customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
           customerEmail: user.email,
           items: emailItems,
           subtotal: nonBookingSubtotal,
-          taxAmount: summary.taxAmount,
+          taxAmount: nonBookingTax,
           discounts: summary.discounts,
           total: nonBookingTotal,
           paymentMethod: 'Credit Card (Square)',
@@ -805,11 +1276,11 @@ async function sendNotifications(params: {
         await sendOrderConfirmation({
           email: user.email,
           customerName: user.first_name ?? 'Customer',
-          orderNumber,
+          orderNumber: ticketReceiptNumber,
           orderDate,
           items: emailItems,
           subtotal: nonBookingSubtotal,
-          taxAmount: summary.taxAmount,
+          taxAmount: nonBookingTax,
           discounts: summary.discounts,
           total: nonBookingTotal,
           paymentMethod: 'Credit Card (Square)',
@@ -831,14 +1302,14 @@ async function sendNotifications(params: {
             });
 
             await sendAdminTicketNotification({
-              orderNumber,
+              orderNumber: ticketReceiptNumber,
               customerName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer',
               customerEmail: user.email,
               customerPhone: user.phone ?? undefined,
               customerId: user.customer_id?.toString(),
               tickets: adminTicketItems,
               subtotal: nonBookingSubtotal,
-              taxAmount: summary.taxAmount,
+              taxAmount: nonBookingTax,
               totalAmount: nonBookingTotal,
               discounts: summary.discounts,
               paymentId,
@@ -875,7 +1346,7 @@ async function sendNotifications(params: {
                 expiryDate: membership.expiresAt ? new Date(membership.expiresAt).toLocaleDateString() : 'N/A',
                 visitsPerMonth: membership.visitsPerMonth ?? null,
                 monthlyPrice: membership.monthlyPrice ?? line?.unitPrice ?? 0,
-                totalPaid: line?.total ?? 0,
+                totalPaid: roundCurrency((line?.total ?? 0) * (1 + getTaxRateSync())),
                 durationMonths: (line?.metadata as { durationMonths?: number })?.durationMonths ?? 1,
                 autoRenew: membership.autoRenew ?? false,
                 paymentId,
@@ -961,16 +1432,33 @@ export async function createSquareGuestCheckoutPaymentIntent(input: SquareGuestC
 export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFinalizeInput) {
   assertSquareConfigured();
 
+  // PHASE 0: PRICE VALIDATION (Critical Security Check)
+  // Validate all prices against database before processing payment
+  await validateItemPrices(input.items);
+
   const summary = await buildGuestSummary(input.items, input.promoCode);
 
   if (summary.total <= 0) {
     throw new AppError('No payment is required for this cart', 400);
   }
 
+  // Fix #7 & #19: Validate payment amount is within Square's limits
+  if (summary.total < PAYMENT_LIMITS.MIN_USD) {
+    throw new AppError(`Minimum payment amount is $${PAYMENT_LIMITS.MIN_USD.toFixed(2)}`, 400);
+  }
+  if (summary.total > PAYMENT_LIMITS.MAX_USD) {
+    throw new AppError(`Payment amount exceeds the maximum of $${PAYMENT_LIMITS.MAX_USD.toFixed(2)}`, 400);
+  }
+
   // ============================================================
-  // PHASE 1: PRE-VALIDATION (Before any payment)
+  // PHASE 1: PRE-VALIDATION & SLOT RESERVATION (Before any payment)
   // ============================================================
-  for (const item of input.items) {
+  // Session ID ties reservations to this guest checkout attempt
+  // SECURITY: Use hash of full sourceId to prevent collision attacks
+  const sessionId = `guest_checkout_${input.guestEmail}_${hashSourceId(input.sourceId)}`;
+  const slotReservations: Map<number, string> = new Map(); // itemIndex -> reservationId
+
+  for (const [itemIndex, item] of input.items.entries()) {
     if (item.type === 'booking') {
       const packageId = parseInt(item.packageId, 10);
       const partyPackage = await PartyPackageRepository.findById(packageId);
@@ -978,30 +1466,90 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
         throw new AppError(`Party package not found: ${item.label}`, 400);
       }
 
-      // Verify slot availability before charging
-      const eventDate = DateTime.fromISO(item.eventDate);
+      // SECURITY: Validate that booking date/time is in the future
+      const eventDate = DateTime.fromISO(item.eventDate, { zone: 'America/New_York' });
       const [hour, minute] = item.startTime.split(':').map(Number);
       const startDateTime = eventDate.set({ hour, minute, second: 0, millisecond: 0 });
-      const durationMinutes = partyPackage.duration_minutes ?? 120;
-      const endDateTime = startDateTime.plus({ minutes: durationMinutes + 30 });
 
-      const existingBookings = await PartyBookingRepository.findByLocationAndDate(
-        item.location,
-        item.eventDate
-      );
-
-      const hasConflict = existingBookings.some(booking => {
-        if (!booking.scheduled_start || !booking.scheduled_end) return false;
-        const bookingStart = DateTime.fromISO(booking.scheduled_start);
-        const bookingEnd = DateTime.fromISO(booking.scheduled_end);
-        return startDateTime < bookingEnd && endDateTime > bookingStart;
-      });
-
-      if (hasConflict) {
+      if (startDateTime <= DateTime.now().setZone('America/New_York')) {
         throw new AppError(
-          `The time slot ${item.startTime} on ${item.eventDate} at ${item.location} is no longer available.`,
-          409
+          `Cannot book a party in the past. Please select a future date and time.`,
+          400
         );
+      }
+
+      // Check if frontend already reserved the slot (passed reservationId)
+      // This prevents double-reservation when frontend reserves before calling finalize
+      if (input.reservationId) {
+        // Validate the existing reservation
+        const existingReservation = await getReservation(input.reservationId);
+        if (!existingReservation) {
+          throw new AppError('Reservation not found. Please try again.', 404);
+        }
+        if (existingReservation.status === 'expired') {
+          throw new AppError('Your reservation has expired. Please select the time slot again.', 410);
+        }
+        if (existingReservation.status === 'cancelled') {
+          throw new AppError('Reservation was cancelled. Please try again.', 410);
+        }
+        if (existingReservation.status !== 'pending' && existingReservation.status !== 'confirmed') {
+          throw new AppError(`Invalid reservation status: ${existingReservation.status}`, 400);
+        }
+        // Validate that reservation matches the booking item
+        // Fix #10: Use robust time normalization for comparison
+        const reservationTime = normalizeTime(existingReservation.slot_time);
+        const itemTime = normalizeTime(item.startTime);
+        if (existingReservation.slot_date !== item.eventDate ||
+            reservationTime !== itemTime ||
+            existingReservation.location_name !== item.location) {
+          logger.warn({
+            reservationId: input.reservationId,
+            reservation: { date: existingReservation.slot_date, time: existingReservation.slot_time, location: existingReservation.location_name },
+            item: { date: item.eventDate, time: item.startTime, location: item.location },
+          }, 'Reservation mismatch detected');
+          throw new AppError('Reservation does not match the booking details.', 400);
+        }
+        // Check if reservation is still valid (not expired by time)
+        if (new Date(existingReservation.expires_at) < new Date()) {
+          throw new AppError('Your reservation has expired. Please select the time slot again.', 410);
+        }
+        slotReservations.set(itemIndex, input.reservationId);
+        logger.info({
+          reservationId: input.reservationId,
+          eventDate: item.eventDate,
+          startTime: item.startTime,
+          location: item.location,
+        }, 'Using existing frontend reservation for guest checkout');
+      } else {
+        // No reservationId provided - create new reservation
+        // SECURITY: Atomically reserve the slot to prevent double-booking race conditions
+        // The reservation expires in 5 minutes if payment doesn't complete
+        try {
+          const reservation = await reserveSlot(
+            item.eventDate,
+            item.startTime,
+            item.location,
+            null, // Guest user - no user ID
+            sessionId
+          );
+          slotReservations.set(itemIndex, reservation.reservationId);
+          logger.info({
+            reservationId: reservation.reservationId,
+            eventDate: item.eventDate,
+            startTime: item.startTime,
+            location: item.location,
+            expiresAt: reservation.expiresAt,
+          }, 'Slot reserved for guest checkout');
+        } catch (err) {
+          // Slot is no longer available - another user reserved it
+          if (err instanceof AppError && err.statusCode === 409) {
+            throw new AppError(
+              `The time slot ${item.startTime} on ${item.eventDate} at ${item.location} is no longer available.`,
+              409
+            );
+          }
+          throw err;
+        }
       }
     }
   }
@@ -1030,7 +1578,8 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
     notes: `Guest checkout: ${input.guestFirstName} ${input.guestLastName}`,
   });
 
-  const idempotencyKey = `guest_checkout_${order.order_id}_${input.sourceId.slice(-8)}`;
+  // SECURITY: Use hash of full sourceId to prevent collision attacks
+  const idempotencyKey = `guest_checkout_${order.order_id}_${hashSourceId(input.sourceId)}`;
 
   let paymentId: string;
   let receiptUrl: string | null | undefined = null;
@@ -1039,17 +1588,7 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
   // PHASE 4: PROCESS PAYMENT
   // ============================================================
   try {
-    if (appConfig.mockPayments) {
-      paymentId = `mock_sq_guest_${randomUUID()}`;
-
-      await PaymentRepository.create({
-        order_id: order.order_id,
-        provider: 'square',
-        provider_payment_id: paymentId,
-        amount_usd: summary.total,
-        status: 'Captured',
-      });
-    } else {
+    {
       const square = getSquareClient();
       const locationId = getSquareLocationId();
 
@@ -1068,9 +1607,14 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
         paymentRequest.verificationToken = input.verificationToken;
       }
 
-      const response = await square.payments.create(paymentRequest);
+      // Fix #15: Add retry logic for transient errors
+      const response = await withRetry(
+        () => square.payments.create(paymentRequest),
+        { maxRetries: 3, operationName: 'squareGuestPaymentCreate' }
+      );
 
-      if (!response.payment || response.payment.status !== 'COMPLETED') {
+      // Fix #4: Accept both COMPLETED and PENDING statuses
+      if (!response.payment || !VALID_PAYMENT_STATUSES.includes(response.payment.status ?? '')) {
         await OrderRepository.update(order.order_id, { status: 'Failed' });
         throw new AppError('Payment failed. Please try again.', 400);
       }
@@ -1083,16 +1627,30 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
       paymentId = payment.id;
       receiptUrl = payment.receiptUrl;
 
+      // Record payment with receipt URL (Fix #16)
       await PaymentRepository.create({
         order_id: order.order_id,
         provider: 'square',
         provider_payment_id: paymentId,
         amount_usd: summary.total,
-        status: 'Captured',
+        status: payment.status === 'PENDING' ? 'Pending' : 'Captured',
+        receipt_url: payment.receiptUrl ?? null,
       });
     }
   } catch (paymentError) {
     await OrderRepository.update(order.order_id, { status: 'Failed' });
+
+    // Convert Square API errors (e.g., invalid card, declined) to user-friendly messages
+    if (paymentError && typeof paymentError === 'object' && !(paymentError instanceof AppError)) {
+      const obj = paymentError as Record<string, unknown>;
+      if ('statusCode' in obj && 'errors' in obj && Array.isArray(obj.errors)) {
+        const statusCode = obj.statusCode as number;
+        const errors = obj.errors as Array<{ code?: string }>;
+        if (statusCode >= 400 && statusCode < 500 && errors[0]?.code) {
+          throw new AppError(getUserFriendlyErrorMessage(errors[0].code), 400);
+        }
+      }
+    }
     throw paymentError;
   }
 
@@ -1139,20 +1697,47 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
           continue;
         }
 
-        const eventDate = DateTime.fromISO(item.eventDate);
+        const eventDate = DateTime.fromISO(item.eventDate, { zone: 'America/New_York' });
         const [hour, minute] = item.startTime.split(':').map(Number);
         const startDateTime = eventDate.set({ hour, minute, second: 0, millisecond: 0 });
-        const durationMinutes = partyPackage.duration_minutes ?? 120;
-        const endDateTime = startDateTime.plus({ minutes: durationMinutes });
+        const baseDuration = (partyPackage.base_room_hours ?? 2) * 60;
+        const hasExtraHour = (item.addOns ?? []).some(
+          (a: any) => a.id === 'extra_hour' || a.productName?.toLowerCase().includes('extra hour')
+        );
+        const totalPartyMinutes = baseDuration + (hasExtraHour ? 60 : 0);
+        const endDateTime = startDateTime.plus({ minutes: totalPartyMinutes });
+        const scheduledEndDateTime = endDateTime.plus({ minutes: 30 }); // cleaning buffer
 
         const reference = `BK-${DateTime.now().toFormat('yyyyLLddHHmm')}-${randomUUID().slice(0, 8).toUpperCase()}`;
-        const cleaningFee = await PricingConfigRepository.getValue('cleaning_fee', 50);
+        // Use per-package cleaning fee if set, otherwise global
+        const guestGlobalCleaningFee = await getPricingCleaningFee();
+        const cleaningFee = (partyPackage as any).cleaning_fee != null ? Number((partyPackage as any).cleaning_fee) : guestGlobalCleaningFee;
 
+        // SECURITY: Validate that subtotal is non-negative after subtracting cleaning fee
+        // This prevents price manipulation attacks where cleaningFee > unitPrice
+        const guestBookingSubtotal = item.unitPrice - cleaningFee;
+        if (guestBookingSubtotal < 0) {
+          throw new AppError(
+            'Invalid booking price: unit price cannot be less than cleaning fee. Please refresh and try again.',
+            400
+          );
+        }
+
+        // Calculate tax using cents-based math for consistency with summary-level calculation
+        const taxRate = getTaxRateSync();
+        const unitPriceCents = dollarsToCents(item.unitPrice);
+        const taxAmountCents = calculateTaxCents(unitPriceCents, taxRate);
+        const taxAmount = centsToDollars(taxAmountCents);
+        const totalWithTax = centsToDollars(unitPriceCents + taxAmountCents);
+
+        // Create booking
+        // Note: Tax is calculated using (subtotal + cleaningFee) * taxRate at receipt time
+        // The total already includes tax for proper payment amount
         const booking = await PartyBookingRepository.create({
           package_id: packageId,
           customer_id: guestCustomer.customer_id,
           scheduled_start: startDateTime.toISO() ?? startDateTime.toJSDate().toISOString(),
-          scheduled_end: endDateTime.toISO() ?? endDateTime.toJSDate().toISOString(),
+          scheduled_end: scheduledEndDateTime.toISO() ?? scheduledEndDateTime.toJSDate().toISOString(),
           reference,
           location_name: item.location,
           event_date: item.eventDate,
@@ -1161,17 +1746,30 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
           guests: item.guestCount,
           notes: item.notes,
           add_ons: item.addOns ?? [],
-          subtotal: item.unitPrice - cleaningFee,
+          subtotal: guestBookingSubtotal,
           cleaning_fee: cleaningFee,
-          total: item.unitPrice,
-          deposit_amount: item.unitPrice,
+          total: totalWithTax,
+          deposit_amount: totalWithTax,
           balance_remaining: 0,
-          payment_status: 'paid',
+          payment_status: PAYMENT_STATUS.PAID,
           status: 'Confirmed',
           guest_name: `${input.guestFirstName} ${input.guestLastName}`,
           guest_email: input.guestEmail,
           guest_phone: input.guestPhone,
         });
+
+        // SECURITY: Confirm the slot reservation now that booking is created
+        // This permanently locks the slot and links it to the booking
+        const reservationId = slotReservations.get(index);
+        if (reservationId) {
+          try {
+            await confirmReservation(reservationId, booking.booking_id);
+            logger.info({ reservationId, bookingId: booking.booking_id }, 'Guest slot reservation confirmed');
+          } catch (confirmErr) {
+            // Log but don't fail - booking is created, reservation will expire naturally
+            logger.error({ error: confirmErr, reservationId, bookingId: booking.booking_id }, 'Failed to confirm guest reservation');
+          }
+        }
 
         bookingResults.push({ cartIndex: index, booking, item });
       }
@@ -1183,10 +1781,69 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
   }
 
   // ============================================================
+  // PHASE 5.5: HANDLE PARTIAL FULFILLMENT (Automatic Refund)
+  // ============================================================
+  let guestPartialRefundIssued = false;
+  let guestPartialRefundAmount = 0;
+
+  if (fulfillmentErrors.length > 0) {
+    // Calculate refund amount for unfulfilled items
+    const fulfilledIndices = new Set([
+      ...ticketResults.map(t => t.cartIndex),
+      ...bookingResults.map(b => b.cartIndex),
+    ]);
+
+    const unfulfilledLines = summary.lines.filter((_, idx) => !fulfilledIndices.has(idx));
+    // Bug fix #1: Include proportional tax in refund amount (line totals are pre-tax)
+    const unfulfilledSubtotal = unfulfilledLines.reduce((sum, line) => sum + line.total, 0);
+    const unfulfilledTax = roundCurrency(unfulfilledSubtotal * getTaxRateSync());
+    const unfulfilledAmount = roundCurrency(unfulfilledSubtotal + unfulfilledTax);
+
+    if (unfulfilledAmount > 0) {
+      try {
+        const square = getSquareClient();
+
+        const refundResponse = await square.refunds.refundPayment({
+          paymentId,
+          idempotencyKey: `refund_guest_${order.order_id}_partial_${hashSourceId(paymentId)}`,
+          amountMoney: toSquareMoney(unfulfilledAmount),
+          reason: 'PARTIAL_FULFILLMENT_FAILURE',
+        });
+
+        if (refundResponse.refund?.status === 'COMPLETED' || refundResponse.refund?.status === 'PENDING') {
+          guestPartialRefundIssued = true;
+          guestPartialRefundAmount = unfulfilledAmount;
+          logger.info({
+            orderId: order.order_id,
+            refundId: refundResponse.refund.id,
+            amount: unfulfilledAmount,
+            unfulfilledItems: unfulfilledLines.map(l => l.label),
+          }, 'Guest partial refund issued for unfulfilled items');
+        }
+      } catch (refundError) {
+        logger.error({
+          error: refundError,
+          orderId: order.order_id,
+          paymentId,
+          amount: unfulfilledAmount,
+          fulfillmentErrors,
+        }, 'Guest partial refund failed - requires manual intervention');
+      }
+    }
+  }
+
+  // ============================================================
   // PHASE 6: UPDATE ORDER STATUS
   // ============================================================
   const finalStatus = fulfillmentErrors.length > 0 ? 'Partial' : 'Completed';
-  await OrderRepository.update(order.order_id, { status: finalStatus });
+  const guestOrderNotes = fulfillmentErrors.length > 0
+    ? `Guest checkout - Fulfillment issues: ${fulfillmentErrors.join('; ')}${guestPartialRefundIssued ? ` | Refund issued: $${guestPartialRefundAmount.toFixed(2)}` : ' | Refund may be required'}`
+    : undefined;
+
+  await OrderRepository.update(order.order_id, {
+    status: finalStatus,
+    notes: guestOrderNotes,
+  });
 
   // ============================================================
   // PHASE 7: SEND NOTIFICATIONS (Async - Non-blocking)
@@ -1283,11 +1940,45 @@ async function sendGuestNotifications(params: {
       const totalAmount = booking.total ?? item.unitPrice;
       const depositPaid = booking.deposit_amount ?? item.unitPrice;
       const balanceRemaining = booking.balance_remaining ?? 0;
-      const subtotal = booking.subtotal ?? totalAmount;
+      const subtotal = booking.subtotal ?? 0;
       const cleaningFee = booking.cleaning_fee ?? 0;
+      const packageBasePrice = partyPackage?.price_usd ?? 0;
+      // Calculate tax from stored subtotal and cleaning fee using centralized tax rate
+      const taxableAmount = subtotal + cleaningFee;
+      const taxAmount = centsToDollars(calculateTaxCents(dollarsToCents(taxableAmount), getTaxRateSync()));
 
-      // Parse add-ons
-      const addOns = (booking.add_ons ?? []) as Array<{ label?: string; name?: string; price: number; quantity: number }>;
+      // Parse add-ons to extract extra children and extra adults
+      const addOnsArray = (booking.add_ons ?? []) as Array<{ id?: string; label?: string; name?: string; price: number; quantity: number }>;
+      const extraChildAddOn = addOnsArray.find(a => a.id === 'extra_child' || a.name === 'Extra Child');
+      const extraAdultAddOn = addOnsArray.find(a => a.id === 'extra_adult' || a.name === 'Extra Adult');
+
+      // Extract counts from add-ons (preferred) or calculate from guest count
+      const maxGuests = partyPackage?.base_children ?? 10;
+      const extraChildrenCount = extraChildAddOn?.quantity ?? Math.max(0, guestCount - maxGuests);
+      const extraAdultsCount = extraAdultAddOn?.quantity ?? 0;
+
+      // Use stored price from add-on, or fetch from pricing config service
+      const extraChildUnitPrice = extraChildAddOn?.price ?? await getExtraChildFee();
+      const extraAdultUnitPrice = extraAdultAddOn?.price ?? await getExtraAdultFee();
+
+      // Build extra children/adults data
+      const extraChildren = extraChildrenCount > 0 ? {
+        count: extraChildrenCount,
+        unitPrice: extraChildUnitPrice,
+        total: extraChildrenCount * extraChildUnitPrice,
+      } : undefined;
+
+      const extraAdults = extraAdultsCount > 0 ? {
+        count: extraAdultsCount,
+        unitPrice: extraAdultUnitPrice,
+        total: extraAdultsCount * extraAdultUnitPrice,
+      } : undefined;
+
+      // Filter out extra_child and extra_adult from add-ons
+      const addOns = addOnsArray.filter(a =>
+        a.id !== 'extra_child' && a.id !== 'extra_adult' &&
+        a.name !== 'Extra Child' && a.name !== 'Extra Adult'
+      );
       const formattedAddOns = addOns.map(a => ({
         name: a.label ?? a.name ?? 'Add-on',
         price: a.price,
@@ -1303,21 +1994,42 @@ async function sendGuestNotifications(params: {
           purchaseType: 'booking',
           referenceId: booking.booking_id,
           customerId: booking.customer_id ?? guestCustomer.customer_id ?? null,
-          subtotal: item.unitPrice,
+          subtotal,
           discount: 0,
-          tax: 0,
-          total: item.unitPrice,
+          tax: taxAmount,
+          total: totalAmount,
           paymentMethod: 'Credit Card (Square)',
           paymentId: paymentId,
           metadata: {
             bookingReference: reference,
             packageName,
-            eventDate: booking.event_date,
+            packageBasePrice,
+            eventDate,
             startTime,
             location,
             guestCount,
+            subtotal,
+            taxAmount,
+            taxRate: Math.round(getTaxRateSync() * 100),
+            cleaningFee,
+            extraChildren,
+            extraAdults,
+            addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
             totalAmount,
             balanceRemaining,
+            packageDetails: partyPackage ? {
+              priceUsd: partyPackage.price_usd ?? 0,
+              baseChildren: partyPackage.base_children ?? 10,
+              baseRoomHours: partyPackage.base_room_hours ?? 2,
+              includesFood: partyPackage.includes_food ?? false,
+              includesDrinks: partyPackage.includes_drinks ?? false,
+              includesDecor: partyPackage.includes_decor ?? false,
+              notes: partyPackage.notes ?? undefined,
+              features: (partyPackage as any).features ?? [],
+              additionalTerms: (partyPackage as any).additional_terms ?? [],
+              extraChildPrice: (partyPackage as any).extra_child_price ?? 40,
+              extraAdultPrice: (partyPackage as any).extra_adult_price ?? 10,
+            } : undefined,
           },
         });
         receiptNumber = receiptResult.receiptNumber;
@@ -1330,14 +2042,19 @@ async function sendGuestNotifications(params: {
           customerEmail: input.guestEmail,
           bookingReference: reference,
           packageName,
+          packageBasePrice,
           eventDate,
           startTime,
           location,
           guestCount,
           subtotal,
+          taxAmount,
+          taxRate: Math.round(getTaxRateSync() * 100), // Convert decimal to percentage
           cleaningFee,
+          extraChildren,
+          extraAdults,
           addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
-          depositAmount: item.unitPrice,
+          depositAmount: totalAmount, // Full payment - deposit equals total with tax
           balanceRemaining,
           total: totalAmount,
           paymentMethod: 'Credit Card (Square)',
@@ -1350,6 +2067,10 @@ async function sendGuestNotifications(params: {
             includesDrinks: partyPackage.includes_drinks ?? false,
             includesDecor: partyPackage.includes_decor ?? false,
             notes: partyPackage.notes ?? undefined,
+            features: (partyPackage as any).features ?? [],
+            additionalTerms: (partyPackage as any).additional_terms ?? [],
+            extraChildPrice: (partyPackage as any).extra_child_price ?? 40,
+            extraAdultPrice: (partyPackage as any).extra_adult_price ?? 10,
           } : undefined,
         });
       } catch (receiptError) {
@@ -1362,13 +2083,21 @@ async function sendGuestNotifications(params: {
         guestName,
         email: input.guestEmail,
         eventDate,
+        rawEventDate: booking.event_date ?? item.eventDate,
         startTime,
         location,
         packageName,
+        packageBasePrice,
         guestCount,
         depositAmount: item.unitPrice,
+        subtotal,
+        cleaningFee,
+        taxAmount,
+        taxRate: Math.round(getTaxRateSync() * 100), // Tax rate as percentage
         totalAmount,
         balanceRemaining,
+        extraChildren,
+        extraAdults,
         addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
         receiptPdf,
         receiptNumber,
@@ -1443,18 +2172,50 @@ async function sendGuestNotifications(params: {
   // Only send order confirmation if there are non-booking items
   if (emailItems.length > 0) {
     const nonBookingSubtotal = nonBookingLines.reduce((sum, l) => sum + l.subtotal, 0);
-    const nonBookingTotal = nonBookingLines.reduce((sum, l) => sum + l.total, 0);
+    const nonBookingDiscount = summary.discounts.reduce((sum, d) => sum + d.amount, 0);
+    // Calculate tax only on non-booking items (bookings have their own tax in booking.total)
+    const nonBookingTax = roundCurrency(nonBookingSubtotal * getTaxRateSync());
+    const nonBookingTotal = roundCurrency(nonBookingSubtotal - nonBookingDiscount + nonBookingTax);
+
+    // Create receipt record for guest ticket purchases
+    let guestTicketReceiptNumber = orderNumber;
+    if (ticketResults.length > 0) {
+      try {
+        const firstTicket = ticketResults[0]?.ticket as { orderId?: number } | undefined;
+        const referenceId = firstTicket?.orderId ?? guestCustomer.customer_id ?? Date.now();
+        const receiptResult = await createReceiptRecord({
+          purchaseType: 'ticket',
+          referenceId,
+          customerId: guestCustomer.customer_id,
+          subtotal: nonBookingSubtotal,
+          discount: nonBookingDiscount,
+          tax: nonBookingTax,
+          total: nonBookingTotal,
+          paymentMethod: 'Credit Card (Square)',
+          paymentId,
+          metadata: {
+            items: emailItems,
+            discounts: summary.discounts,
+            guestName: `${input.guestFirstName} ${input.guestLastName}`,
+            guestEmail: input.guestEmail,
+          },
+        });
+        guestTicketReceiptNumber = receiptResult.receiptNumber;
+      } catch (receiptError) {
+        console.error('Failed to create guest ticket receipt record:', receiptError);
+      }
+    }
 
     try {
       // Generate PDF receipt
       const receiptPdf = await generateReceiptPDF({
-        receiptNumber: orderNumber,
+        receiptNumber: guestTicketReceiptNumber,
         date: orderDate,
         customerName: `${input.guestFirstName} ${input.guestLastName}`,
         customerEmail: input.guestEmail,
         items: emailItems,
         subtotal: nonBookingSubtotal,
-        taxAmount: summary.taxAmount,
+        taxAmount: nonBookingTax,
         discounts: summary.discounts,
         total: nonBookingTotal,
         paymentMethod: 'Credit Card (Square)',
@@ -1465,11 +2226,11 @@ async function sendGuestNotifications(params: {
       await sendOrderConfirmation({
         email: input.guestEmail,
         customerName: input.guestFirstName,
-        orderNumber,
+        orderNumber: guestTicketReceiptNumber,
         orderDate,
         items: emailItems,
         subtotal: nonBookingSubtotal,
-        taxAmount: summary.taxAmount,
+        taxAmount: nonBookingTax,
         discounts: summary.discounts,
         total: nonBookingTotal,
         paymentMethod: 'Credit Card (Square)',
@@ -1491,14 +2252,14 @@ async function sendGuestNotifications(params: {
           });
 
           await sendAdminTicketNotification({
-            orderNumber,
+            orderNumber: guestTicketReceiptNumber,
             customerName: `${input.guestFirstName} ${input.guestLastName}`,
             customerEmail: input.guestEmail,
             customerPhone: input.guestPhone ?? undefined,
             customerId: guestCustomer?.customer_id?.toString(),
             tickets: adminTicketItems,
             subtotal: nonBookingSubtotal,
-            taxAmount: summary.taxAmount,
+            taxAmount: nonBookingTax,
             totalAmount: nonBookingTotal,
             discounts: summary.discounts,
             paymentId,

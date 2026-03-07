@@ -8,8 +8,11 @@ import {
   PartyBookingRepository,
   PartyAddOnRepository,
   PricingConfigRepository,
+  StoreHoursRepository,
 } from '../repositories';
+import { getTaxRate, roundCurrency } from './pricing-config.service';
 import { AppError } from '../utils/app-error';
+import { PAYMENT_STATUS } from '../utils/payment-statuses';
 import { publishAdminEvent } from './admin-events.service';
 
 import type {
@@ -20,7 +23,6 @@ import type {
   CreateGuestBookingInput,
   UpdateBookingStatusInput,
 } from '../schemas/booking.schema';
-import { createBookingDepositPaymentIntent, confirmBookingDepositPayment } from './payment.service';
 
 interface CreateBookingResult {
   bookingId: string;
@@ -32,15 +34,23 @@ interface CreateBookingResult {
 
 type BookingAddOnInput = { id: string; quantity?: number | undefined };
 
+/**
+ * Generate a unique booking reference.
+ * Format: BK-YYYYMMDDHHmm-XXXXXXXX (8 hex chars from UUID = 32 bits of entropy)
+ */
+function generateBookingReference(): string {
+  return `BK-${DateTime.now().toFormat('yyyyLLddHHmm')}-${randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
 const PARTY_DURATION_MINUTES = 120;
 const EXTRA_HOUR_MINUTES = 60;
 const CLEANING_BUFFER_MINUTES = 30;
 
 const PARTY_LOCATIONS = ['Albany'] as const;
 
-// Store operating hours by day of week (24-hour format)
-// Slots are every 30 minutes, last slot is 2 hours before closing
-const STORE_HOURS: Record<number, { open: string; close: string }> = {
+// Default store hours (fallback if database is empty)
+// These should match what's in the database for consistency
+const DEFAULT_STORE_HOURS: Record<number, { open: string; close: string }> = {
   0: { open: '11:00', close: '18:00' }, // Sunday: 11am - 6pm
   1: { open: '10:00', close: '19:00' }, // Monday: 10am - 7pm
   2: { open: '10:00', close: '19:00' }, // Tuesday: 10am - 7pm
@@ -50,20 +60,25 @@ const STORE_HOURS: Record<number, { open: string; close: string }> = {
   6: { open: '10:00', close: '20:00' }, // Saturday: 10am - 8pm
 };
 
-// Generate 30-minute interval slots from open time to 2 hours before close
-function generateSlots(open: string, close: string): string[] {
+// Generate 30-minute interval slots from open time to (party duration + cleaning buffer) before close
+function generateSlots(open: string, close: string, partyDuration: number = PARTY_DURATION_MINUTES): string[] {
   const slots: string[] = [];
-  const openParts = open.split(':').map(Number);
-  const closeParts = close.split(':').map(Number);
+  // Handle TIME format from PostgreSQL (HH:MM:SS) by taking first 5 chars
+  const openStr = open.slice(0, 5);
+  const closeStr = close.slice(0, 5);
+  const openParts = openStr.split(':').map(Number);
+  const closeParts = closeStr.split(':').map(Number);
 
   const openHour = openParts[0] ?? 10;
   const openMin = openParts[1] ?? 0;
   const closeHour = closeParts[0] ?? 19;
   const closeMin = closeParts[1] ?? 0;
 
-  // Last slot is 2 hours before closing
-  const lastSlotHour = closeHour - 2;
-  const lastSlotMin = closeMin;
+  // Last slot must allow full party + cleaning buffer before closing
+  const closeMinutes = closeHour * 60 + closeMin;
+  const lastSlotMinutes = closeMinutes - partyDuration - CLEANING_BUFFER_MINUTES;
+  const lastSlotHour = Math.floor(lastSlotMinutes / 60);
+  const lastSlotMin = lastSlotMinutes % 60;
 
   let currentHour = openHour;
   let currentMin = openMin;
@@ -83,23 +98,34 @@ function generateSlots(open: string, close: string): string[] {
   return slots;
 }
 
-// Pre-generate slots for each day
-const DAILY_SLOTS_BY_DAY: Record<number, string[]> = {
-  0: generateSlots(STORE_HOURS[0]!.open, STORE_HOURS[0]!.close), // Sunday
-  1: generateSlots(STORE_HOURS[1]!.open, STORE_HOURS[1]!.close), // Monday
-  2: generateSlots(STORE_HOURS[2]!.open, STORE_HOURS[2]!.close), // Tuesday
-  3: generateSlots(STORE_HOURS[3]!.open, STORE_HOURS[3]!.close), // Wednesday
-  4: generateSlots(STORE_HOURS[4]!.open, STORE_HOURS[4]!.close), // Thursday
-  5: generateSlots(STORE_HOURS[5]!.open, STORE_HOURS[5]!.close), // Friday
-  6: generateSlots(STORE_HOURS[6]!.open, STORE_HOURS[6]!.close), // Saturday
-};
-
-// Helper to get slots for a specific day
-function getSlotsForDay(date: DateTime): string[] {
+// Helper to get slots for a specific day from database
+// Falls back to default hours if database entry not found
+async function getSlotsForDay(date: DateTime, location: string, partyDuration: number = PARTY_DURATION_MINUTES): Promise<string[]> {
   const dayOfWeek = date.weekday % 7; // luxon: 1=Mon, 7=Sun -> convert to 0=Sun, 1=Mon, etc.
-  const slots = DAILY_SLOTS_BY_DAY[dayOfWeek];
-  if (slots) return slots;
-  // Fallback to Monday slots
+
+  try {
+    const storeHours = await StoreHoursRepository.findByLocationAndDay(location, dayOfWeek);
+
+    if (storeHours && !storeHours.is_closed) {
+      return generateSlots(storeHours.open_time, storeHours.close_time, partyDuration);
+    }
+
+    // Location is closed on this day
+    if (storeHours?.is_closed) {
+      return [];
+    }
+  } catch (error) {
+    // Log error but continue with fallback
+    console.error('Error fetching store hours from database:', error);
+  }
+
+  // Fallback to default hours
+  const defaultHours = DEFAULT_STORE_HOURS[dayOfWeek];
+  if (defaultHours) {
+    return generateSlots(defaultHours.open, defaultHours.close, partyDuration);
+  }
+
+  // Ultimate fallback
   return ['10:00', '12:30', '15:00', '17:30'];
 }
 
@@ -123,7 +149,7 @@ async function getAddOnDefinitions(): Promise<Record<string, { id: string; label
       id: addOn.code,
       label: addOn.label,
       price: addOn.price,
-      type: addOn.price_type,
+      type: addOn.price_type as 'flat' | 'perChild' | 'duration',
     };
   }
 
@@ -164,7 +190,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
   const existingChildren = await ChildRepository.findByCustomerId(guardian.customer_id);
   const validChildIds = existingChildren.map(c => c.child_id);
   const invalidChildren = childIds.filter(id => !validChildIds.includes(id));
-  
+
   if (invalidChildren.length > 0) {
     throw new AppError('One or more children are invalid for this guardian', 400);
   }
@@ -174,9 +200,14 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     throw new AppError('Invalid start time', 400);
   }
 
+  if (startDateTime <= DateTime.now().setZone('America/New_York')) {
+    throw new AppError('Event date must be in the future', 400);
+  }
+
   const addOnDetails = await buildAddOnDetails(input.addOns);
+  const baseDuration = (partyPackage.base_room_hours ?? 2) * 60;
   const durationMinutes =
-    PARTY_DURATION_MINUTES + (addOnDetails.hasExtraHour ? EXTRA_HOUR_MINUTES : 0);
+    baseDuration + (addOnDetails.hasExtraHour ? EXTRA_HOUR_MINUTES : 0);
   const partyEndDateTime = startDateTime.plus({ minutes: durationMinutes });
   // Include cleaning time in the scheduled slot (for blocking purposes)
   const scheduledEndDateTime = partyEndDateTime.plus({ minutes: CLEANING_BUFFER_MINUTES });
@@ -193,33 +224,45 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       maxGuests: partyPackage.base_children,
     },
     guests: input.guests,
+    extraAdults: (input as { extraAdults?: number }).extraAdults ?? 0,
     addOnDetails,
+    cleaningFeeOverride: (partyPackage as any).cleaning_fee,
   });
 
-  const reference = `BK-${DateTime.now().toFormat('yyyyLLddHHmm')}-${randomUUID().slice(0, 8).toUpperCase()}`;
-
-  const booking = await PartyBookingRepository.create({
-    package_id: partyPackage.package_id,
-    customer_id: guardian.customer_id,
-    scheduled_start: startDateTime.toISO(),
-    scheduled_end: scheduledEndDateTime.toISO(),
-    reference,
-    location_name: input.location,
-    event_date: startDateTime.startOf('day').toISODate() ?? undefined,
-    start_time: startDateTime.toFormat('HH:mm'),
-    end_time: partyEndDateTime.toFormat('HH:mm'),
-    guests: input.guests,
-    notes: input.notes,
-    add_ons: addOnDetails.selected,
-    subtotal: pricing.subtotal,
-    cleaning_fee: pricing.cleaningFee,
-    total: pricing.total,
-    deposit_amount: pricing.depositAmount,
-    balance_remaining: pricing.balanceRemaining,
-    payment_status: 'awaiting_deposit',
-    status: 'Pending',
-    child_ids: childIds,
-  });
+  // Retry booking creation with new reference on unique constraint collision
+  let booking: any;
+  let reference: string = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    reference = generateBookingReference();
+    try {
+      booking = await PartyBookingRepository.create({
+        package_id: partyPackage.package_id,
+        customer_id: guardian.customer_id,
+        scheduled_start: startDateTime.toISO(),
+        scheduled_end: scheduledEndDateTime.toISO(),
+        reference,
+        location_name: input.location,
+        event_date: startDateTime.startOf('day').toISODate() ?? undefined,
+        start_time: startDateTime.toFormat('HH:mm'),
+        end_time: partyEndDateTime.toFormat('HH:mm'),
+        guests: input.guests,
+        notes: input.notes,
+        add_ons: addOnDetails.selected,
+        subtotal: pricing.subtotal,
+        cleaning_fee: pricing.cleaningFee,
+        total: pricing.total,
+        deposit_amount: pricing.depositAmount,
+        balance_remaining: pricing.balanceRemaining,
+        payment_status: PAYMENT_STATUS.AWAITING_DEPOSIT,
+        status: 'Pending',
+        child_ids: childIds,
+      });
+      break; // Success
+    } catch (err: any) {
+      if (err?.code === '23505' && attempt < 2) continue; // Unique constraint violation, retry
+      throw err;
+    }
+  }
 
   publishAdminEvent('booking.created', {
     bookingId: booking.booking_id,
@@ -261,7 +304,7 @@ export async function listBookingsForGuardian(guardianId: string) {
     addOns: b.add_ons,
     subtotal: b.subtotal,
     cleaningFee: b.cleaning_fee,
-    total: b.total,
+    totalAmount: b.total,
     depositAmount: b.deposit_amount,
     balanceRemaining: b.balance_remaining,
     paymentStatus: b.payment_status,
@@ -348,13 +391,13 @@ export async function rescheduleBooking(
   }
 
   // Check if new slot is in the future
-  if (newStart <= DateTime.now()) {
+  if (newStart <= DateTime.now().setZone('America/New_York')) {
     throw new AppError('New date must be in the future', 400);
   }
 
   // Calculate duration based on booking's package
   const pkg = booking.party_packages;
-  const baseDuration = pkg?.duration_minutes ?? PARTY_DURATION_MINUTES;
+  const baseDuration = (pkg?.base_room_hours ?? 2) * 60;
   // Check if booking has extra hour add-on
   const addOns = (booking.add_ons ?? []) as Array<{ productName?: string }>;
   const hasExtraHour = addOns.some((a) => a.productName?.toLowerCase().includes('extra hour'));
@@ -364,7 +407,7 @@ export async function rescheduleBooking(
 
   // Check availability (ignore current booking)
   const available = await isSlotAvailable({
-    location: booking.location ?? 'Main',
+    location: booking.location_name ?? 'Albany',
     start: newStart,
     end: newEnd,
     ignoreBookingId: bookingIdNum,
@@ -412,8 +455,9 @@ export async function checkBookingAvailability(
     throw new AppError('Invalid start time', 400);
   }
 
-  // Include cleaning time (30 min) in availability check
-  const duration = PARTY_DURATION_MINUTES + CLEANING_BUFFER_MINUTES;
+  // Include extra hour and cleaning time in availability check
+  const extraHour = input.hasExtraHour ? EXTRA_HOUR_MINUTES : 0;
+  const duration = PARTY_DURATION_MINUTES + extraHour + CLEANING_BUFFER_MINUTES;
   const end = start.plus({ minutes: duration });
 
   const ignoreBookingId = input.ignoreBookingId ? parseInt(input.ignoreBookingId, 10) : undefined;
@@ -432,19 +476,50 @@ export async function listAvailableSlots(query: BookingSlotsQuery) {
     throw new AppError('Location is not supported', 400);
   }
 
-  const date = DateTime.fromJSDate(query.eventDate).startOf('day');
+  // Use Eastern Time for the store location
+  const ET_ZONE = 'America/New_York';
+  const now = DateTime.now().setZone(ET_ZONE);
+  // Parse the date as a calendar date in ET (not as a UTC timestamp)
+  // This prevents midnight UTC from becoming the previous day in ET
+  const isoString = query.eventDate.toISOString();
+  const dateString = isoString.substring(0, 10); // Extract YYYY-MM-DD
+  const date = DateTime.fromISO(dateString, { zone: ET_ZONE });
   if (!date.isValid) {
     throw new AppError('Invalid event date', 400);
   }
 
-  const dailySlots = getSlotsForDay(date);
+  // Look up package duration if packageId is provided
+  let baseDuration = PARTY_DURATION_MINUTES;
+  if (query.packageId) {
+    const pkg = await PartyPackageRepository.findById(parseInt(query.packageId, 10));
+    if (pkg) baseDuration = (pkg.base_room_hours ?? 2) * 60;
+  }
+
+  const dailySlots = await getSlotsForDay(date, query.location, baseDuration);
+  const isToday = date.hasSame(now, 'day');
 
   const slots = await Promise.all(
     dailySlots.map(async startTime => {
-      const start = combineDateAndTime(date.toJSDate(), startTime);
+      // Combine date and time in ET timezone
+      const [hour, minute] = startTime.split(':').map(Number);
+      const start = date.set({ hour, minute, second: 0, millisecond: 0 });
+
+      // For today, filter out slots that have already passed
+      // Require at least 30 minutes advance booking for same-day
+      if (isToday) {
+        const minBookingTime = now.plus({ minutes: 30 });
+        if (start <= minBookingTime) {
+          return {
+            startTime,
+            available: false,
+            supportsExtraHour: false,
+          };
+        }
+      }
+
       // Include cleaning time (30 min) in availability check
-      const endWithCleaning = start.plus({ minutes: PARTY_DURATION_MINUTES + CLEANING_BUFFER_MINUTES });
-      const extendedEndWithCleaning = start.plus({ minutes: PARTY_DURATION_MINUTES + EXTRA_HOUR_MINUTES + CLEANING_BUFFER_MINUTES });
+      const endWithCleaning = start.plus({ minutes: baseDuration + CLEANING_BUFFER_MINUTES });
+      const extendedEndWithCleaning = start.plus({ minutes: baseDuration + EXTRA_HOUR_MINUTES + CLEANING_BUFFER_MINUTES });
 
       const available = await isSlotAvailable({ location: query.location, start, end: endWithCleaning });
       const supportsExtraHour =
@@ -484,17 +559,20 @@ export async function estimateBookingPrice(input: BookingEstimateInput) {
       maxGuests: partyPackage.base_children,
     },
     guests: input.guests,
+    extraAdults: (input as { extraAdults?: number }).extraAdults ?? 0,
     addOnDetails,
+    cleaningFeeOverride: (partyPackage as any).cleaning_fee,
   });
 
   return {
     basePrice: partyPackage.price_usd,
-    extraGuestCount: pricing.extraGuestCount,
-    extraGuestFee: pricing.extraGuestFee,
-    extraGuestTotal: pricing.extraGuestTotal,
+    extraAdultCount: pricing.extraAdultCount,
+    extraAdultFee: pricing.extraAdultFee,
+    extraAdultTotal: pricing.extraAdultTotal,
     addOns: addOnDetails.selected,
     cleaningFee: pricing.cleaningFee,
     subtotal: pricing.subtotal,
+    tax: pricing.tax,
     total: pricing.total,
     currency: 'USD',
   };
@@ -535,9 +613,6 @@ export async function listAllBookings() {
   }));
 }
 
-export async function initiateBookingDepositPayment(guardianId: string, bookingId: string) {
-  return createBookingDepositPaymentIntent(guardianId, bookingId);
-}
 
 /**
  * Recalculate and update pricing for a booking that has null pricing values
@@ -574,6 +649,7 @@ export async function recalculateBookingPricing(bookingId: string) {
       maxGuests,
     },
     guests: booking.guests ?? 10,
+    extraAdults: (booking as { extra_adults?: number }).extra_adults ?? 0,
     addOnDetails,
   });
 
@@ -591,19 +667,13 @@ export async function recalculateBookingPricing(bookingId: string) {
     basePrice,
     subtotal: pricing.subtotal,
     cleaningFee: pricing.cleaningFee,
+    tax: pricing.tax,
     total: pricing.total,
     depositAmount: pricing.depositAmount,
     balanceRemaining: pricing.balanceRemaining,
   };
 }
 
-export async function completeBookingDepositPayment(
-  guardianId: string,
-  bookingId: string,
-  paymentIntentId: string,
-) {
-  return confirmBookingDepositPayment(guardianId, bookingId, paymentIntentId);
-}
 
 export async function updateBookingStatus(bookingId: string, input: UpdateBookingStatusInput) {
   const bookingIdNum = parseInt(bookingId, 10);
@@ -703,17 +773,23 @@ async function buildAddOnDetails(addOns?: BookingAddOnInput[]) {
 async function calculateBookingPricing(params: {
   partyPackage: { basePrice: number; maxGuests: number };
   guests: number;
+  extraAdults: number;
   addOnDetails: { selected: { id: string; price: number; quantity: number }[] };
+  cleaningFeeOverride?: number | null;
 }) {
-  const [cleaningFee, addOnDefinitions, depositPercentage] = await Promise.all([
+  const [globalCleaningFee, addOnDefinitions, depositPercentage, taxRate] = await Promise.all([
     getCleaningFee(),
     getAddOnDefinitions(),
     getDepositPercentage(),
+    getTaxRate(),
   ]);
 
-  const extraGuestCount = Math.max(0, params.guests - params.partyPackage.maxGuests);
-  const extraGuestFee = addOnDefinitions['extra_child']?.price ?? 40;
-  const extraGuestTotal = extraGuestCount * extraGuestFee;
+  // Use per-package cleaning fee if set (even if 0), otherwise use global
+  const cleaningFee = params.cleaningFeeOverride != null ? params.cleaningFeeOverride : globalCleaningFee;
+
+  const extraAdultCount = params.extraAdults;
+  const extraAdultFee = addOnDefinitions['extra_adult']?.price ?? 10;
+  const extraAdultTotal = extraAdultCount * extraAdultFee;
 
   const addOnTotal = params.addOnDetails.selected.reduce((sum, item) => {
     const def = addOnDefinitions[item.id];
@@ -728,8 +804,10 @@ async function calculateBookingPricing(params: {
     return sum + def.price * item.quantity;
   }, 0);
 
-  const subtotal = params.partyPackage.basePrice + extraGuestTotal + addOnTotal;
-  const total = subtotal + cleaningFee;
+  const subtotal = params.partyPackage.basePrice + extraAdultTotal + addOnTotal;
+  const taxableAmount = subtotal + cleaningFee;
+  const tax = roundCurrency(taxableAmount * taxRate);
+  const total = roundCurrency(taxableAmount + tax);
   // Full payment required - no deposits
   const depositAmount = total;
   const balanceRemaining = 0;
@@ -737,17 +815,22 @@ async function calculateBookingPricing(params: {
   return {
     subtotal,
     cleaningFee,
+    tax,
     total,
-    extraGuestCount,
-    extraGuestFee,
-    extraGuestTotal,
+    extraAdultCount,
+    extraAdultFee,
+    extraAdultTotal,
     depositAmount,
     balanceRemaining,
   };
 }
 
 function combineDateAndTime(date: Date, time: string) {
-  const eventDate = DateTime.fromJSDate(date instanceof Date ? date : new Date(date));
+  const ET_ZONE = 'America/New_York';
+  const eventDate = DateTime.fromJSDate(
+    date instanceof Date ? date : new Date(date),
+    { zone: ET_ZONE }
+  );
   const [hour, minute] = time.split(':').map(Number);
   return eventDate.set({
     hour: Number.isFinite(hour) ? hour : NaN,
@@ -837,9 +920,14 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
     throw new AppError('Invalid start time', 400);
   }
 
+  if (startDateTime <= DateTime.now().setZone('America/New_York')) {
+    throw new AppError('Event date must be in the future', 400);
+  }
+
   const addOnDetails = await buildAddOnDetails(input.addOns);
+  const baseDuration = (partyPackage.base_room_hours ?? 2) * 60;
   const durationMinutes =
-    PARTY_DURATION_MINUTES + (addOnDetails.hasExtraHour ? EXTRA_HOUR_MINUTES : 0);
+    baseDuration + (addOnDetails.hasExtraHour ? EXTRA_HOUR_MINUTES : 0);
   const partyEndDateTime = startDateTime.plus({ minutes: durationMinutes });
   // Include cleaning time in the scheduled slot (for blocking purposes)
   const scheduledEndDateTime = partyEndDateTime.plus({ minutes: CLEANING_BUFFER_MINUTES });
@@ -856,46 +944,57 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
       maxGuests: partyPackage.base_children,
     },
     guests: input.guests,
+    extraAdults: (input as { extraAdults?: number }).extraAdults ?? 0,
     addOnDetails,
+    cleaningFeeOverride: (partyPackage as any).cleaning_fee,
   });
-
-  const reference = `BK-${DateTime.now().toFormat('yyyyLLddHHmm')}-${randomUUID().slice(0, 8).toUpperCase()}`;
 
   // Calculate payment amounts
   const onlineAmount = calculateDepositAmount(pricing.total, input.paymentOption, input.onlinePaymentAmount);
   const venueAmount = pricing.total - onlineAmount;
 
-  // Create booking without customer_id (guest booking)
-  const booking = await PartyBookingRepository.create({
-    package_id: partyPackage.package_id,
-    customer_id: null, // Guest booking - no customer account yet
-    scheduled_start: startDateTime.toISO(),
-    scheduled_end: scheduledEndDateTime.toISO(),
-    reference,
-    location_name: input.location,
-    event_date: startDateTime.startOf('day').toISODate() ?? undefined,
-    start_time: startDateTime.toFormat('HH:mm'),
-    end_time: partyEndDateTime.toFormat('HH:mm'),
-    guests: input.guests,
-    notes: buildGuestBookingNotes(input),
-    add_ons: addOnDetails.selected,
-    subtotal: pricing.subtotal,
-    cleaning_fee: pricing.cleaningFee,
-    total: pricing.total,
-    deposit_amount: onlineAmount,
-    balance_remaining: venueAmount,
-    payment_status: input.paymentOption === 'full' ? 'awaiting_full_payment' : 'awaiting_deposit',
-    status: 'Pending',
-    child_ids: [],
-    // Payment tracking fields
-    payment_option: input.paymentOption || 'full',
-    online_payment_amount: onlineAmount,
-    venue_payment_amount: venueAmount,
-    // Guest contact info (separate columns for easy admin lookup)
-    guest_name: `${input.guestFirstName} ${input.guestLastName}`.trim(),
-    guest_email: input.guestEmail,
-    guest_phone: input.guestPhone,
-  });
+  // Retry guest booking creation with new reference on unique constraint collision
+  let booking: any;
+  let reference: string = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    reference = generateBookingReference();
+    try {
+      booking = await PartyBookingRepository.create({
+        package_id: partyPackage.package_id,
+        customer_id: null, // Guest booking - no customer account yet
+        scheduled_start: startDateTime.toISO(),
+        scheduled_end: scheduledEndDateTime.toISO(),
+        reference,
+        location_name: input.location,
+        event_date: startDateTime.startOf('day').toISODate() ?? undefined,
+        start_time: startDateTime.toFormat('HH:mm'),
+        end_time: partyEndDateTime.toFormat('HH:mm'),
+        guests: input.guests,
+        notes: buildGuestBookingNotes(input),
+        add_ons: addOnDetails.selected,
+        subtotal: pricing.subtotal,
+        cleaning_fee: pricing.cleaningFee,
+        total: pricing.total,
+        deposit_amount: onlineAmount,
+        balance_remaining: venueAmount,
+        payment_status: input.paymentOption === 'full' ? PAYMENT_STATUS.AWAITING_FULL_PAYMENT : PAYMENT_STATUS.AWAITING_DEPOSIT,
+        status: 'Pending',
+        child_ids: [],
+        // Payment tracking fields
+        payment_option: input.paymentOption || 'full',
+        online_payment_amount: onlineAmount,
+        venue_payment_amount: venueAmount,
+        // Guest contact info (separate columns for easy admin lookup)
+        guest_name: `${input.guestFirstName} ${input.guestLastName}`.trim(),
+        guest_email: input.guestEmail,
+        guest_phone: input.guestPhone,
+      });
+      break; // Success
+    } catch (err: any) {
+      if (err?.code === '23505' && attempt < 2) continue; // Unique constraint violation, retry
+      throw err;
+    }
+  }
 
   publishAdminEvent('booking.created', {
     bookingId: booking.booking_id,

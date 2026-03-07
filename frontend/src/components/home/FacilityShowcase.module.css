@@ -1,18 +1,53 @@
 /* Facility Showcase Section */
 .section {
-  padding: 4rem 0;
+  padding: 5rem 0;
   background: linear-gradient(
     180deg,
-    rgba(255, 251, 247, 0) 0%,
-    rgba(254, 243, 255, 0.5) 50%,
-    rgba(255, 251, 247, 0) 100%
+    rgba(124, 58, 237, 0.04) 0%,
+    rgba(124, 58, 237, 0.08) 50%,
+    rgba(124, 58, 237, 0.04) 100%
   );
+  position: relative;
+  overflow: hidden;
+}
+
+.visible {
+  /* triggers staggered card animations */
+}
+
+/* Floating decorative blobs */
+.section::before {
+  content: '';
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.08), transparent 70%);
+  top: -80px;
+  right: -80px;
+  pointer-events: none;
+  animation: floatBlob 8s ease-in-out infinite;
+}
+
+.section::after {
+  content: '';
+  position: absolute;
+  width: 250px;
+  height: 250px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 107, 157, 0.06), transparent 70%);
+  bottom: -60px;
+  left: -60px;
+  pointer-events: none;
+  animation: floatBlob 7s ease-in-out infinite reverse;
 }
 
 .inner {
   max-width: var(--max-width);
   margin: 0 auto;
   padding: 0 1.5rem;
+  position: relative;
+  z-index: 1;
 }
 
 .header {
@@ -36,6 +71,7 @@
   font-size: 0.8rem;
   border: 2px dashed rgba(6, 182, 212, 0.2);
   margin-bottom: 1rem;
+  animation: wiggle 3s ease-in-out infinite;
 }
 
 .header h2 {
@@ -63,6 +99,7 @@
   gap: 1.5rem;
 }
 
+/* Staggered card entrance */
 .card {
   background: linear-gradient(
     135deg,
@@ -71,18 +108,34 @@
   );
   border-radius: var(--radius-xl);
   overflow: hidden;
-  border: 2px solid rgba(6, 182, 212, 0.1);
+  border: 2px solid transparent;
   box-shadow:
     0 8px 24px rgba(6, 182, 212, 0.08),
     0 4px 0 rgba(6, 182, 212, 0.05);
   transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0;
+  transform: translateY(40px);
+  animation: cardSlideUp 0.6s ease forwards;
+  animation-play-state: paused;
 }
 
+.visible .card {
+  animation-play-state: running;
+}
+
+.card:nth-child(1) { animation-delay: 0s; }
+.card:nth-child(2) { animation-delay: 0.1s; }
+.card:nth-child(3) { animation-delay: 0.2s; }
+.card:nth-child(4) { animation-delay: 0.3s; }
+.card:nth-child(5) { animation-delay: 0.4s; }
+.card:nth-child(6) { animation-delay: 0.5s; }
+
 .card:hover {
-  transform: translateY(-8px) scale(1.02);
+  transform: translateY(-10px) scale(1.03);
+  border-color: rgba(6, 182, 212, 0.35);
   box-shadow:
-    0 16px 40px rgba(6, 182, 212, 0.15),
-    0 8px 0 rgba(6, 182, 212, 0.08);
+    0 20px 50px rgba(6, 182, 212, 0.18),
+    0 0 0 3px rgba(6, 182, 212, 0.08);
 }
 
 .imageWrapper {
@@ -96,29 +149,26 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.5s ease;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .card:hover .imageWrapper img {
-  transform: scale(1.08);
+  transform: scale(1.1);
 }
 
 .overlay {
   position: absolute;
-  inset: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, 0.6) 0%,
-    rgba(0, 0, 0, 0) 50%
+    rgba(0, 0, 0, 0.65) 0%,
+    rgba(0, 0, 0, 0) 100%
   );
   display: flex;
   align-items: flex-end;
-  padding: 1rem;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.card:hover .overlay {
+  padding: 1.25rem;
   opacity: 1;
 }
 
@@ -127,6 +177,7 @@
   font-family: 'Fredoka', sans-serif;
   font-size: 1rem;
   font-weight: 600;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 .cardContent {
@@ -146,6 +197,29 @@
   font-size: 0.9rem;
   margin: 0;
   line-height: 1.5;
+}
+
+@keyframes cardSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floatBlob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(15px, -10px) scale(1.05); }
+  66% { transform: translate(-10px, 8px) scale(0.95); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-2deg); }
+  75% { transform: rotate(2deg); }
 }
 
 /* Responsive */
@@ -206,5 +280,42 @@
 
   .cardContent p {
     font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .inner {
+    padding: 0 0.75rem;
+  }
+
+  .header h2 {
+    font-size: 1.35rem;
+  }
+
+  .card {
+    border-radius: 16px;
+  }
+
+  .overlayTitle {
+    font-size: 0.9rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    opacity: 1;
+    transform: none;
+    animation: none;
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+
+  .tag,
+  .section::before,
+  .section::after {
+    animation: none;
   }
 }

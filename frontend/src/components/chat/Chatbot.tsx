@@ -324,6 +324,7 @@ export function Chatbot() {
               }}
               placeholder="Ask anything about Playfunia..."
               rows={1}
+              maxLength={2000}
               disabled={isSending}
             />
             <button type="submit" disabled={isSending}>

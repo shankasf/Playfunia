@@ -1,5 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
 
 import { appConfig } from '../config/env';
 import { supabaseAuthGuard, requireRoles, ROLES, type SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
@@ -142,8 +143,33 @@ import {
   // Exports
   exportWaiversHandler,
   exportContactsHandler,
+
+  // Job Applications
+  listJobApplicationsHandler,
+  getJobApplicationHandler,
+  updateJobApplicationStatusHandler,
+  deleteJobApplicationHandler,
+  listJobListingsForFilterHandler,
+
+  // Event Photos & Posters
+  uploadEventPosterHandler,
+  uploadEventPhotosHandler,
+  getEventPhotosHandler,
+  deleteEventPhotoHandler,
 } from '../controllers/admin.controller';
 import { AppError } from '../utils/app-error';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB (for videos)
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image and video files are allowed'));
+    }
+  },
+});
 
 export const adminRouter = Router();
 
@@ -187,6 +213,12 @@ adminRouter.get('/events/:id', getEventHandler);
 adminRouter.post('/events', createEventHandler);
 adminRouter.patch('/events/:id', updateEventHandler);
 adminRouter.delete('/events/:id', deleteEventHandler);
+
+// Event Photos & Posters
+adminRouter.post('/events/:id/poster', upload.single('poster'), uploadEventPosterHandler);
+adminRouter.post('/events/:id/photos', upload.array('photos', 50), uploadEventPhotosHandler);
+adminRouter.get('/events/:id/photos', getEventPhotosHandler);
+adminRouter.delete('/events/photos/:photoId', deleteEventPhotoHandler);
 
 // Membership Plans CRUD
 adminRouter.get('/membership-plans', listMembershipPlansHandler);
@@ -297,6 +329,13 @@ adminRouter.get('/resources/:id', getResourceHandler);
 adminRouter.post('/resources', createResourceHandler);
 adminRouter.patch('/resources/:id', updateResourceHandler);
 adminRouter.delete('/resources/:id', deleteResourceHandler);
+
+// Job Applications
+adminRouter.get('/job-applications', listJobApplicationsHandler);
+adminRouter.get('/job-applications/:id', getJobApplicationHandler);
+adminRouter.patch('/job-applications/:id/status', updateJobApplicationStatusHandler);
+adminRouter.delete('/job-applications/:id', deleteJobApplicationHandler);
+adminRouter.get('/job-listings/all', listJobListingsForFilterHandler);
 
 // Event Reconciliation (admin only)
 // POST /api/admin/reconciliation/run?hours=24

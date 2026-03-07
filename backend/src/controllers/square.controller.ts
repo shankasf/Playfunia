@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { ZodError } from 'zod';
 
-import type { AuthenticatedRequest } from '../middleware/auth.middleware';
+import type { SupabaseAuthenticatedRequest as AuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 import {
   getSquareAppId,
   getSquareLocation

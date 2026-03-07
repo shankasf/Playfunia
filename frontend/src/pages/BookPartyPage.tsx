@@ -1,14 +1,10 @@
-import { FormEvent, useEffect, useMemo, useState, useCallback } from 'react';
+import { FormEvent, useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCheckout } from '../context/CheckoutContext';
 import {
   formatTime,
-  formatDateWithWeekday,
   formatMonthYear,
-  formatDate,
-  formatWeekday,
-  formatDayNumber,
 } from '../lib/dateUtils';
 import {
   formatNameInput,
@@ -21,24 +17,108 @@ import {
 import {
   BookingEstimate,
   BookingSlotsResponse,
-  BookingAddOnSelection,
-  CreateBookingPayload,
-  CreateGuestBookingPayload,
   fetchPartyPackages,
   fetchBookingSlots,
   estimateBooking,
-  createBooking,
-  createGuestBooking,
   PartyPackageDto,
 } from '../api/bookings';
 import { getPartyAddOns, getPricingConfig, type PartyAddOnPricing, type PricingConfig } from '../api/pricing';
-import { fetchMyWaivers, type GuardianWaiver } from '../api/waivers';
-import { addChild } from '../api/users';
 import styles from './BookPartyPage.module.css';
 
 const PARTY_LOCATIONS = ['Albany'] as const;
-const DAYS_TO_SHOW = 5;
 const BOOKING_STATE_KEY = 'playfunia_booking_state';
+
+/** Format a Date to YYYY-MM-DD using local date components (avoids toISOString UTC shift) */
+function toLocalISODate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+// FAQ data for birthday parties
+const PARTY_FAQS = [
+  {
+    question: 'Do you offer private birthday parties?',
+    answer: 'Yes. You will have exclusive access to the party room for 2 hours. The play area remains open to the public during your event.',
+  },
+  {
+    question: 'Can we arrive early to decorate for a Mini Fun party?',
+    answer: 'No. Party room access begins at your scheduled start time only.',
+  },
+  {
+    question: 'Can we bring balloons to our party?',
+    answer: 'Yes for Mini Fun. You may bring balloons and use our in-room decor such as the backdrop, cake stand, and party tables.',
+  },
+  {
+    question: 'Do you provide party supplies?',
+    answer: 'Yes. Super Fun and Mega Fun packages include party supplies. We decorate the room and set up the tables for you.',
+  },
+  {
+    question: 'What party themes do you offer?',
+    answer: 'For Super Fun, tableware themes are available in blue, pink, or white. Mega Fun includes custom themed balloon decor based on your child\'s favorite colors or characters.',
+  },
+  {
+    question: 'What ages are the parties suitable for?',
+    answer: 'Our parties are designed for children ages 1-13. For baby showers or special events, please contact us for a custom quote.',
+  },
+  {
+    question: 'Is food included in the party package?',
+    answer: 'Yes for Super Fun and Mega Fun. Each child receives one slice of cheese pizza, bottled water, juice, and a shared snack tray with cookies and chips.',
+  },
+  {
+    question: 'Can parents stay during the party?',
+    answer: 'Yes. Parental supervision is required at all times.',
+  },
+  {
+    question: 'How long is the party, and can we extend it?',
+    answer: 'All party packages include 2 hours in the party room. Additional time may be purchased during checkout. One extra hour is $100.',
+  },
+  {
+    question: 'Is there a cleaning fee?',
+    answer: 'Yes. A $50 cleaning fee is added to all party reservations.',
+  },
+  {
+    question: 'Can we bring our own cake or desserts?',
+    answer: 'Yes, if you have booked a birthday party package. Outside cakes are not permitted for open play visits in the cafe or seating areas.',
+  },
+  {
+    question: 'How many adults are included in the package?',
+    answer: 'One adult per child is included. Additional guests are $10 each.',
+  },
+  {
+    question: 'Can we add more children after booking?',
+    answer: 'Please contact us directly if you need to adjust the number of children for your party.',
+  },
+  {
+    question: 'Can I host a birthday without booking a party package?',
+    answer: 'You\'re welcome to visit for open play, but cakes and celebrations in seating areas are only allowed with a booked party package.',
+  },
+  {
+    question: 'What is your cancellation and refund policy?',
+    answer: 'Cancellation more than 10 days prior receives 75% refund; within 10 days receives 50% refund; within 72 hours no refund. Please review our full policy on the Refund Policy page.',
+  },
+  {
+    question: 'I\'m an adult not playing in the structure. Do I still need to remove my shoes?',
+    answer: 'Yes. Grip socks are required for both adults and children to maintain a clean and safe environment for all guests.',
+  },
+  {
+    question: 'Are waivers required for party guests?',
+    answer: 'Yes. Every child entering the facility must have a waiver signed for the day of the visit.',
+  },
+  {
+    question: 'Can we leave and re-enter during the party?',
+    answer: 'Yes. Re-entry is allowed while your party is in progress.',
+  },
+  {
+    question: 'Is the entire facility closed during our party?',
+    answer: 'No. Your group will have exclusive use of the party room, but the play floor remains open to other guests.',
+  },
+];
+
+// Modal state type
+type ModalState = {
+  isOpen: boolean;
+  step: 'calendar' | 'confirm';
+  selectedPackage: PartyPackageDto | null;
+};
 
 type GuestChild = {
   id: string;
@@ -52,7 +132,6 @@ type SavedBookingState = {
   selectedSlot: string | null;
   selectedPackageId: string | null;
   packageQty: number;
-  extraChildQty: number;
   extraAdultQty: number;
   addOns: AddOnState;
   notes: string;
@@ -111,7 +190,6 @@ function clearBookingState() {
 // Add-on display configuration (type determines UI behavior)
 const ADD_ON_UI_CONFIG: Record<string, { type: 'toggle' | 'quantity' }> = {
   extra_hour: { type: 'toggle' },
-  extra_child: { type: 'quantity' },
   face_painting: { type: 'toggle' },
   photo_video: { type: 'toggle' },
   balloon_artist: { type: 'toggle' },
@@ -131,14 +209,12 @@ function buildAddOnOptions(addOns: PartyAddOnPricing[]) {
 
 type AddOnState = {
   extraHour: boolean;
-  extraChildCount: number;
   facePainting: boolean;
   photoVideo: boolean;
 };
 
 const DEFAULT_ADD_ON_STATE: AddOnState = {
   extraHour: false,
-  extraChildCount: 0,
   facePainting: false,
   photoVideo: false,
 };
@@ -155,7 +231,26 @@ export function BookPartyPage() {
   const [searchParams] = useSearchParams();
   const packageFromUrl = searchParams.get('package');
 
-  const hasValidWaiver = user?.hasValidWaiver ?? false;
+  // Ref for navigation timeout cleanup on unmount
+  const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => { if (navTimerRef.current) clearTimeout(navTimerRef.current); };
+  }, []);
+
+
+  // Additional terms tooltip toggle (by package id)
+  const [openTermsId, setOpenTermsId] = useState<string | null>(null);
+  const [dismissedTermsId, setDismissedTermsId] = useState<string | null>(null);
+  const toggleTerms = useCallback((e: React.MouseEvent, pkgId: string) => {
+    e.stopPropagation();
+    setDismissedTermsId(null);
+    setOpenTermsId((prev) => (prev === pkgId ? null : pkgId));
+  }, []);
+  const closeTerms = useCallback((e: React.MouseEvent, pkgId: string) => {
+    e.stopPropagation();
+    setOpenTermsId(null);
+    setDismissedTermsId(pkgId);
+  }, []);
 
   // Package state
   const [packages, setPackages] = useState<PartyPackageDto[]>([]);
@@ -163,7 +258,6 @@ export function BookPartyPage() {
 
   // Booking state
   const [location, setLocation] = useState<(typeof PARTY_LOCATIONS)[number]>('Albany');
-  const [dateOffset, setDateOffset] = useState(0);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [slots, setSlots] = useState<BookingSlotsResponse | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -172,7 +266,6 @@ export function BookPartyPage() {
 
   // Ticket quantities (for display)
   const [packageQty, setPackageQty] = useState(0);
-  const [extraChildQty, setExtraChildQty] = useState(0);
   const [extraAdultQty, setExtraAdultQty] = useState(0);
 
   // Add-ons
@@ -189,12 +282,8 @@ export function BookPartyPage() {
   const addOnOptions = useMemo(() => buildAddOnOptions(addOnPricing), [addOnPricing]);
 
   // Add child form state
-  const [showAddChildForm, setShowAddChildForm] = useState(false);
-  const [newChildFirstName, setNewChildFirstName] = useState('');
-  const [newChildLastName, setNewChildLastName] = useState('');
-  const [newChildBirthDate, setNewChildBirthDate] = useState('');
-  const [addingChild, setAddingChild] = useState(false);
-  const [addChildError, setAddChildError] = useState<string | null>(null);
+
+
 
   // Children and notes
   const [childSelections, setChildSelections] = useState<Record<string, boolean>>({});
@@ -210,27 +299,39 @@ export function BookPartyPage() {
   const [guestChildren, setGuestChildren] = useState<GuestChild[]>([]);
   const [guestWaiverAgreed, setGuestWaiverAgreed] = useState(false);
 
-  // Waiver
-  const [waiverAgreement, setWaiverAgreement] = useState(false);
-  const [waiverConfirmed, setWaiverConfirmed] = useState(false);
-  const [waivers, setWaivers] = useState<GuardianWaiver[]>([]);
-  const [waiverLoading, setWaiverLoading] = useState(false);
-  const [waiverError, setWaiverError] = useState<string | null>(null);
-  const [showWaiverDetails, setShowWaiverDetails] = useState(false);
-
   // Submission
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'success' | 'error' | 'info'; message?: string }>({ type: 'idle' });
 
   // Estimate
   const [estimate, setEstimate] = useState<BookingEstimate | null>(null);
-
-  // Payment option: 'full' = pay full amount online, 'split' = pay partial online, rest at venue
-  const [paymentOption, setPaymentOption] = useState<'full' | 'split'>('full');
-  const [onlinePaymentAmount, setOnlinePaymentAmount] = useState<number>(0);
+  const [estimateLoading, setEstimateLoading] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
 
   // Track if state has been restored from sessionStorage
   const [stateRestored, setStateRestored] = useState(false);
+
+  // Modal state
+  const [modal, setModal] = useState<ModalState>({
+    isOpen: false,
+    step: 'calendar',
+    selectedPackage: null,
+  });
+
+  // Calendar month offset for modal calendar navigation
+  const [calendarMonthOffset, setCalendarMonthOffset] = useState(0);
+
+  // Policy checkboxes state
+  const [refundPolicyAgreed, setRefundPolicyAgreed] = useState(false);
+  const [guestPolicyAgreed, setGuestPolicyAgreed] = useState(false);
+  const [waiverPolicyAgreed, setWaiverPolicyAgreed] = useState(false);
+
+  // FAQ accordion state
+  const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
+
+  const toggleFaq = (index: number) => {
+    setExpandedFaq(expandedFaq === index ? null : index);
+  };
 
   // Restore saved state on mount
   useEffect(() => {
@@ -238,14 +339,13 @@ export function BookPartyPage() {
     if (saved) {
       setLocation(saved.location as typeof location);
       if (saved.selectedDate) {
-        setSelectedDate(new Date(saved.selectedDate));
+        setSelectedDate(new Date(saved.selectedDate + 'T12:00:00'));
       }
       setSelectedSlot(saved.selectedSlot);
       if (saved.selectedPackageId) {
         setSelectedPackageId(saved.selectedPackageId);
       }
       setPackageQty(saved.packageQty);
-      setExtraChildQty(saved.extraChildQty);
       setExtraAdultQty(saved.extraAdultQty);
       setAddOns(saved.addOns);
       setNotes(saved.notes);
@@ -258,8 +358,6 @@ export function BookPartyPage() {
       setGuestChildBirthDate(saved.guestChildBirthDate);
       setGuestChildren(saved.guestChildren || []);
       setGuestWaiverAgreed(saved.guestWaiverAgreed);
-      setWaiverAgreement(saved.waiverAgreement);
-      setWaiverConfirmed(saved.waiverConfirmed);
     }
     setStateRestored(true);
   }, []);
@@ -294,11 +392,10 @@ export function BookPartyPage() {
     if (!stateRestored) return; // Don't save until we've restored
     saveBookingState({
       location,
-      selectedDate: selectedDate?.toISOString() ?? null,
+      selectedDate: selectedDate ? toLocalISODate(selectedDate) : null,
       selectedSlot,
       selectedPackageId,
       packageQty,
-      extraChildQty,
       extraAdultQty,
       addOns,
       notes,
@@ -311,8 +408,8 @@ export function BookPartyPage() {
       guestChildBirthDate,
       guestChildren,
       guestWaiverAgreed,
-      waiverAgreement,
-      waiverConfirmed,
+      waiverAgreement: false,
+      waiverConfirmed: false,
       timestamp: Date.now(),
     });
   }, [
@@ -322,7 +419,6 @@ export function BookPartyPage() {
     selectedSlot,
     selectedPackageId,
     packageQty,
-    extraChildQty,
     extraAdultQty,
     addOns,
     notes,
@@ -335,8 +431,6 @@ export function BookPartyPage() {
     guestChildBirthDate,
     guestChildren,
     guestWaiverAgreed,
-    waiverAgreement,
-    waiverConfirmed,
   ]);
 
   // Sort packages by price ascending
@@ -350,33 +444,12 @@ export function BookPartyPage() {
     [packages, selectedPackageId]
   );
 
-  const latestWaiver = useMemo(() => (waivers.length > 0 ? waivers[0] : null), [waivers]);
-
   const selectedChildIds = useMemo(
     () => (user?.children ?? []).filter((child) => childSelections[child.id]).map((child) => child.id),
     [childSelections, user]
   );
 
   const addOnPayload = useMemo(() => buildAddOnPayload(addOns), [addOns]);
-
-  // Generate dates for horizontal picker
-  const visibleDates = useMemo(() => {
-    const dates: Date[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    for (let i = 0; i < DAYS_TO_SHOW; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + dateOffset + i + 1); // Start from tomorrow
-      dates.push(d);
-    }
-    return dates;
-  }, [dateOffset]);
-
-  const currentMonth = useMemo(() => {
-    if (visibleDates.length === 0) return '';
-    return formatMonthYear(visibleDates[0]).toUpperCase();
-  }, [visibleDates]);
 
   // Load packages
   useEffect(() => {
@@ -389,8 +462,10 @@ export function BookPartyPage() {
         // Use package from URL if provided and valid, otherwise use first package
         if (packageFromUrl && result.some(p => p.id === packageFromUrl)) {
           setSelectedPackageId(packageFromUrl);
+          setPackageQty(1); // Auto-add to cart
         } else if (result.length > 0 && !selectedPackageId) {
           setSelectedPackageId(result[0].id);
+          setPackageQty(1); // Auto-add to cart
         }
       } catch (error) {
         console.error('Failed to load packages', error);
@@ -422,49 +497,6 @@ export function BookPartyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle adding a child manually
-  const handleAddChild = useCallback(async () => {
-    const firstName = newChildFirstName.trim();
-    if (!firstName) {
-      setAddChildError('First name is required');
-      return;
-    }
-    if (!isValidName(firstName)) {
-      setAddChildError('First name can only contain letters, spaces, hyphens, and apostrophes');
-      return;
-    }
-    if (newChildLastName.trim() && !isValidName(newChildLastName)) {
-      setAddChildError('Last name can only contain letters, spaces, hyphens, and apostrophes');
-      return;
-    }
-    if (newChildBirthDate && !isValidChildDOB(newChildBirthDate)) {
-      setAddChildError('Child must be between 0-13 years old');
-      return;
-    }
-
-    setAddingChild(true);
-    setAddChildError(null);
-
-    try {
-      await addChild({
-        firstName,
-        lastName: newChildLastName.trim() || undefined,
-        birthDate: newChildBirthDate || undefined,
-      });
-      // Refresh profile to get updated children list
-      await refreshProfile();
-      // Reset form
-      setNewChildFirstName('');
-      setNewChildLastName('');
-      setNewChildBirthDate('');
-      setShowAddChildForm(false);
-    } catch (error) {
-      setAddChildError(error instanceof Error ? error.message : 'Failed to add child');
-    } finally {
-      setAddingChild(false);
-    }
-  }, [newChildFirstName, newChildLastName, newChildBirthDate, refreshProfile]);
-
   // Load slots when date changes
   useEffect(() => {
     if (!selectedDate) {
@@ -478,10 +510,10 @@ export function BookPartyPage() {
       setSlotsError(null);
       setSelectedSlot(null);
 
-      const eventDate = selectedDate!.toISOString().slice(0, 10);
+      const eventDate = toLocalISODate(selectedDate!);
 
       try {
-        const result = await fetchBookingSlots({ location, eventDate });
+        const result = await fetchBookingSlots({ location, eventDate, packageId: modal.selectedPackage?.id });
         if (!active) return;
         setSlots(result);
       } catch (error) {
@@ -493,93 +525,153 @@ export function BookPartyPage() {
     }
     loadSlots();
     return () => { active = false; };
-  }, [location, selectedDate]);
+  }, [location, selectedDate, modal.selectedPackage?.id]);
 
-  // Calculate estimate
+  // Calculate estimate - fetches pricing from database
   useEffect(() => {
     if (!selectedPackageId) {
       setEstimate(null);
+      setEstimateError(null);
       return;
     }
 
     let active = true;
     async function calculateEstimate() {
+      setEstimateLoading(true);
+      setEstimateError(null);
       try {
         const result = await estimateBooking({
           partyPackageId: selectedPackageId!,
           location,
-          guests: Math.max(packageQty * (selectedPackage?.maxGuests ?? 12) + extraChildQty, 1),
+          guests: Math.max(packageQty * (selectedPackage?.maxGuests ?? 12), 1),
+          extraAdults: extraAdultQty,
           addOns: addOnPayload.length > 0 ? addOnPayload : undefined,
         });
         if (!active) return;
         setEstimate(result);
-      } catch {
+        setEstimateError(null);
+      } catch (err) {
         if (!active) return;
         setEstimate(null);
+        setEstimateError('Unable to load pricing. Please try again.');
+        console.error('Failed to load pricing estimate:', err);
+      } finally {
+        if (active) {
+          setEstimateLoading(false);
+        }
       }
     }
     calculateEstimate();
     return () => { active = false; };
-  }, [selectedPackageId, location, packageQty, extraChildQty, addOnPayload, selectedPackage?.maxGuests]);
+  }, [selectedPackageId, location, packageQty, extraAdultQty, addOnPayload, selectedPackage?.maxGuests]);
 
-  // Reset waiver when auth changes
-  useEffect(() => {
-    if (!hasValidWaiver) {
-      setWaiverAgreement(false);
-      setWaiverConfirmed(false);
-      setWaivers([]);
-      setWaiverError(null);
-      setShowWaiverDetails(false);
-    }
-  }, [hasValidWaiver]);
+  // Generate calendar days for the modal monthly calendar
+  const calendarDays = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  // Fetch most recent waiver when one is on file
-  useEffect(() => {
-    if (!hasValidWaiver) return;
+    // Calculate the month to display
+    const displayMonth = new Date(today.getFullYear(), today.getMonth() + calendarMonthOffset, 1);
+    const year = displayMonth.getFullYear();
+    const month = displayMonth.getMonth();
 
-    let active = true;
-    setWaiverLoading(true);
-    setWaiverError(null);
+    // First day of the month
+    const firstDay = new Date(year, month, 1);
 
-    fetchMyWaivers()
-      .then(data => {
-        if (!active) return;
-        const sorted = [...data].sort((a, b) => new Date(b.signedAt).getTime() - new Date(a.signedAt).getTime());
-        setWaivers(sorted);
-      })
-      .catch(error => {
-        if (!active) return;
-        setWaiverError(getErrorMessage(error, 'Unable to load your waiver.'));
-      })
-      .finally(() => {
-        if (active) setWaiverLoading(false);
+    // Start from Sunday of the first week
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
+
+    const days: { date: Date; isCurrentMonth: boolean; isPast: boolean }[] = [];
+    const current = new Date(startDate);
+
+    // Generate 42 days (6 weeks) to fill the calendar grid
+    for (let i = 0; i < 42; i++) {
+      days.push({
+        date: new Date(current),
+        isCurrentMonth: current.getMonth() === month,
+        isPast: current < today,
       });
+      current.setDate(current.getDate() + 1);
+    }
 
-    return () => {
-      active = false;
+    return {
+      days,
+      monthLabel: displayMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      canGoPrev: calendarMonthOffset > 0,
     };
-  }, [hasValidWaiver]);
+  }, [calendarMonthOffset]);
+
+  // Modal handlers
+  const openModal = (pkg: PartyPackageDto) => {
+    setModal({
+      isOpen: true,
+      step: 'calendar',
+      selectedPackage: pkg,
+    });
+    setSelectedPackageId(pkg.id);
+    setPackageQty(1);
+    // Reset all booking-specific state so previous selections don't carry over
+    setExtraAdultQty(0);
+    setAddOns(DEFAULT_ADD_ON_STATE);
+    setSelectedDate(null);
+    setSelectedSlot(null);
+    setNotes('');
+    setRefundPolicyAgreed(false);
+    setGuestPolicyAgreed(false);
+    setWaiverPolicyAgreed(false);
+    setEstimate(null);
+    setEstimateError(null);
+    setStatus({ type: 'idle' });
+    // Reset calendar to current month
+    setCalendarMonthOffset(0);
+  };
+
+  const closeModal = () => {
+    setModal({
+      isOpen: false,
+      step: 'calendar',
+      selectedPackage: null,
+    });
+  };
+
+  const goToConfirmStep = () => {
+    setModal(prev => ({ ...prev, step: 'confirm' }));
+  };
+
+  const goBackToCalendarStep = () => {
+    setModal(prev => ({ ...prev, step: 'calendar' }));
+  };
 
   // Handlers
-  const handleDateNav = (direction: 'prev' | 'next') => {
-    setDateOffset((prev) => direction === 'next' ? prev + DAYS_TO_SHOW : Math.max(0, prev - DAYS_TO_SHOW));
-  };
-
-  const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
-  };
-
-  const handleWaiverConfirm = () => {
-    if (waiverAgreement) {
-      setWaiverConfirmed(true);
+  const handleCalendarDateSelect = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (date >= today) {
+      setSelectedDate(date);
+      setSelectedSlot(null);
     }
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleSubmit = async (event?: FormEvent<HTMLFormElement>) => {
+    if (event) {
+      event.preventDefault();
+    }
 
     if (!selectedPackageId || !selectedSlot || !selectedDate) {
       setStatus({ type: 'error', message: 'Choose a package, date, and time slot before booking.' });
+      return;
+    }
+
+    // Ensure pricing data has loaded from the database
+    if (!estimate) {
+      setStatus({ type: 'error', message: 'Pricing data is still loading. Please wait a moment and try again.' });
+      return;
+    }
+
+    // Policy agreement validation
+    if (!refundPolicyAgreed || !guestPolicyAgreed || !waiverPolicyAgreed) {
+      setStatus({ type: 'error', message: 'Please agree to all policies before continuing.' });
       return;
     }
 
@@ -627,7 +719,7 @@ export function BookPartyPage() {
       }
       // Validate child birth date if provided
       if (guestChildBirthDate && !isValidChildDOB(guestChildBirthDate)) {
-        setStatus({ type: 'error', message: 'Please enter a valid birth date. Child must be between 1-13 years old.' });
+        setStatus({ type: 'error', message: 'Please enter a valid birth date. Child must be between 0-13 years old.' });
         return;
       }
       // Check additional children have valid names and DOBs
@@ -641,13 +733,9 @@ export function BookPartyPage() {
           return;
         }
         if (child.birthDate && !isValidChildDOB(child.birthDate)) {
-          setStatus({ type: 'error', message: 'Please enter valid birth dates. Children must be between 1-13 years old.' });
+          setStatus({ type: 'error', message: 'Please enter valid birth dates. Children must be between 0-13 years old.' });
           return;
         }
-      }
-      if (!guestWaiverAgreed) {
-        setStatus({ type: 'error', message: 'Please agree to the waiver terms.' });
-        return;
       }
     } else {
       // Authenticated user validation
@@ -655,17 +743,29 @@ export function BookPartyPage() {
         setStatus({ type: 'error', message: 'Select at least one child for this celebration.' });
         return;
       }
-
-      if (!hasValidWaiver || !waiverConfirmed) {
-        setStatus({ type: 'error', message: 'Please complete and confirm your waiver.' });
-        return;
-      }
     }
 
+    setSubmitting(true);
+
+    // Bug fix #15: Wrap in try/catch so setSubmitting is reset on error
+    try {
+
     // Standard e-commerce: Add to cart only (no database record until payment)
-    const totalAmount = estimate?.total ?? cartTotal; // total already includes cleaning fee
-    const guestCount = Math.max(packageQty * (selectedPackage?.maxGuests ?? 12) + extraChildQty, 1);
+    // Store pre-tax total - tax is calculated at checkout
+    const totalAmount = (estimate?.subtotal ?? cartSubtotal) + (estimate?.cleaningFee ?? cleaningFee);
+    const guestCount = Math.max(packageQty * (selectedPackage?.maxGuests ?? 12), 1);
     const cartItemId = `booking-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Build add-on details with names for display
+    const addOnDetailsForCart = estimate?.addOns?.map(a => {
+      const option = addOnOptions.find(opt => opt.id === a.id);
+      return {
+        id: a.id,
+        name: option?.label ?? a.id,
+        price: a.price,
+        quantity: a.quantity,
+      };
+    }) ?? [];
 
     if (!user) {
       // Guest booking - store guest info in cart
@@ -675,10 +775,20 @@ export function BookPartyPage() {
         packageId: selectedPackageId,
         packageName: selectedPackage?.name ?? 'Party Package',
         location,
-        eventDate: selectedDate.toISOString().slice(0, 10),
+        eventDate: toLocalISODate(selectedDate),
         startTime: selectedSlot,
         guestCount,
         total: totalAmount,
+        // Pricing breakdown for display
+        durationMinutes: selectedPackage?.durationMinutes,
+        basePrice: estimate?.basePrice ?? selectedPackage?.basePrice,
+        extraAdultCount: extraAdultQty,
+        extraAdultFee: estimate?.extraAdultFee,
+        extraAdultTotal: estimate?.extraAdultTotal,
+        addOnDetails: addOnDetailsForCart.length > 0 ? addOnDetailsForCart : undefined,
+        cleaningFee: estimate?.cleaningFee ?? cleaningFee,
+        subtotal: estimate?.subtotal ?? cartSubtotal,
+        tax: estimate?.tax ?? tax,
         notes: notes.trim() || undefined,
         addOns: addOnPayload.length ? addOnPayload : undefined,
         guestInfo: {
@@ -694,11 +804,6 @@ export function BookPartyPage() {
         },
         status: 'pending',
       });
-      clearBookingState();
-      setStatus({
-        type: 'success',
-        message: 'Party added to cart! Click the cart icon to complete payment.'
-      });
     } else {
       // Authenticated booking - store user's selected children
       addBookingDepositItem({
@@ -707,1016 +812,675 @@ export function BookPartyPage() {
         packageId: selectedPackageId,
         packageName: selectedPackage?.name ?? 'Party Package',
         location,
-        eventDate: selectedDate.toISOString().slice(0, 10),
+        eventDate: toLocalISODate(selectedDate),
         startTime: selectedSlot,
         guestCount,
         total: totalAmount,
+        // Pricing breakdown for display
+        durationMinutes: selectedPackage?.durationMinutes,
+        basePrice: estimate?.basePrice ?? selectedPackage?.basePrice,
+        extraAdultCount: extraAdultQty,
+        extraAdultFee: estimate?.extraAdultFee,
+        extraAdultTotal: estimate?.extraAdultTotal,
+        addOnDetails: addOnDetailsForCart.length > 0 ? addOnDetailsForCart : undefined,
+        cleaningFee: estimate?.cleaningFee ?? cleaningFee,
+        subtotal: estimate?.subtotal ?? cartSubtotal,
+        tax: estimate?.tax ?? tax,
         childIds: selectedChildIds,
         notes: notes.trim() || undefined,
         addOns: addOnPayload.length ? addOnPayload : undefined,
         status: 'pending',
       });
-      clearBookingState();
-      setStatus({ type: 'success', message: 'Party added to cart! Click the cart icon to complete payment.' });
+    }
+
+    // Clear state and show success
+    clearBookingState();
+    setStatus({ type: 'success', message: 'Party added to cart!' });
+
+    // Redirect to cart after brief delay (cleanup on unmount via navTimerRef)
+    navTimerRef.current = setTimeout(() => {
+      setSubmitting(false);
+      closeModal();
+      navigate('/cart');
+    }, 1500);
+
+    } catch (err) {
+      // Bug fix #15: Reset submitting state so user can retry
+      setSubmitting(false);
+      const message = err instanceof Error ? err.message : 'Failed to add party to cart. Please try again.';
+      setStatus({ type: 'error', message });
     }
   };
 
-  const hasCartItems = packageQty > 0 || extraChildQty > 0 || extraAdultQty > 0;
-  // Use subtotal (without cleaning fee) for display, cleaning fee shown separately
+  // All values from estimate API - no hardcoded fallbacks
   const cartSubtotal = estimate?.subtotal ?? 0;
-  const cleaningFee = estimate?.cleaningFee ?? 50;
-  const cartTotal = cartSubtotal + cleaningFee;
+  const cleaningFee = estimate?.cleaningFee ?? 0;
+  const tax = estimate?.tax ?? 0;
+
+  // Calculate end time from start time and duration
+  const getEndTime = (startTime: string, durationMinutes: number) => {
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + durationMinutes;
+    const endHours = Math.floor(totalMinutes / 60) % 24;
+    const endMins = totalMinutes % 60;
+    return `${endHours.toString().padStart(2, '0')}:${endMins.toString().padStart(2, '0')}`;
+  };
+
+  // Check if confirm button should be enabled
+  const canConfirmBooking = () => {
+    // Pricing must be loaded from database
+    if (!estimate) return false;
+    if (!refundPolicyAgreed || !guestPolicyAgreed || !waiverPolicyAgreed) return false;
+    if (!user) {
+      // Guest validation
+      if (!guestFirstName.trim() || !guestLastName.trim() || !guestEmail.trim() || !guestPhone.trim() || !guestChildName.trim()) return false;
+    } else {
+      // Auth user validation
+      if (selectedChildIds.length === 0) return false;
+    }
+    return true;
+  };
 
   return (
     <section className={styles.page}>
-      <form className={styles.mainLayout} onSubmit={handleSubmit}>
-        {/* Left Column - Booking Form */}
-        <div className={styles.bookingColumn}>
-          {/* Package Header */}
-          <div className={styles.packageHeader}>
-            <button type="button" className={styles.backButton} onClick={() => navigate(-1)}>
-              <span className={styles.backArrow}>←</span>
-            </button>
+      <div className={styles.mainLayout}>
+        {/* Page Header */}
+        <div className={styles.pageHeader}>
+          <button type="button" className={styles.backButton} onClick={() => navigate(-1)}>
+            <span className={styles.backArrow}>←</span>
+            <span>Back</span>
+          </button>
+          <h1>Book a Party</h1>
+        </div>
 
-            <div className={styles.packageInfo}>
-              <h1>{selectedPackage?.name ?? 'Select a Party Package'}</h1>
-              {selectedPackage && (
-                <>
-                  <ul className={styles.packageFeatures}>
-                    <li>Admission for up to {selectedPackage.maxGuests / 2} children and {selectedPackage.maxGuests / 2} adults</li>
-                    <li>Party Host</li>
-                    <li>Setup with 4 tables (1 cake table, 2 food & beverage tables, 1 kids' table)</li>
-                    <li>Celebration banner and solid color tablecloths</li>
-                    <li>2-hour room...</li>
-                  </ul>
-                  <button type="button" className={styles.readMore}>Read more</button>
-                </>
-              )}
-            </div>
-
-            <img
-              src="/images/parties/birthday-parties.jpg"
-              alt="Birthday party setup"
-              className={styles.packageImage}
-              loading="lazy"
-            />
+        {/* Location Selector */}
+        <div className={styles.locationSelector}>
+          <h2>Select location</h2>
+          <div className={styles.locationButtons}>
+            {PARTY_LOCATIONS.map((loc) => (
+              <button
+                key={loc}
+                type="button"
+                className={`${styles.locationButton} ${location === loc ? styles.locationActive : ''}`}
+                onClick={() => setLocation(loc)}
+              >
+                {loc} Mall
+              </button>
+            ))}
           </div>
+        </div>
 
-          {/* Location Selector */}
-          <div className={styles.locationSelector}>
-            <h2>Select location</h2>
-            <div className={styles.locationButtons}>
-              {PARTY_LOCATIONS.map((loc) => (
-                <button
-                  key={loc}
-                  type="button"
-                  className={`${styles.locationButton} ${location === loc ? styles.locationActive : ''}`}
-                  onClick={() => setLocation(loc)}
-                >
-                  {loc} Mall
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Package Selection */}
+        {sortedPackages.length > 0 && (
+          <div className={styles.section}>
+            <h2>Choose your package</h2>
+            <p className={styles.sectionHint}>Click a package to start booking</p>
+            <div className={styles.packageGrid}>
+              {sortedPackages.map((pkg) => {
+                // Use features from API, fallback to empty array
+                const features = pkg.features ?? [];
+                const additionalTerms = pkg.additionalTerms ?? [];
+                const extraAdultPrice = pkg.extraAdultPrice ?? 10;
 
-          {/* Package Selection */}
-          {sortedPackages.length > 0 && (
-            <div className={styles.section}>
-              <h2>Choose package type</h2>
-              <div className={styles.packageGrid}>
-                {sortedPackages.map((pkg) => (
+                return (
                   <button
                     key={pkg.id}
                     type="button"
-                    className={`${styles.packageCard} ${pkg.id === selectedPackageId ? styles.packageCardSelected : ''}`}
-                    onClick={() => {
-                      setSelectedPackageId(pkg.id);
-                      if (packageQty === 0) setPackageQty(1);
-                    }}
+                    className={styles.packageCard}
+                    onClick={() => openModal(pkg)}
                   >
                     <div className={styles.packageCardHeader}>
                       <h3>{pkg.name}</h3>
                       <span className={styles.packageCardPrice}>${pkg.basePrice}</span>
                     </div>
-                    {pkg.description && <p className={styles.packageCardDesc}>{pkg.description}</p>}
-                    <div className={styles.packageCardMeta}>
-                      <span>{pkg.durationMinutes} min</span>
-                      <span>Up to {pkg.maxGuests} guests</span>
+                    <div className={styles.packageCardSubheader}>
+                      <span>Up to {pkg.maxGuests} Children</span>
+                      <span>Additional guest (13+ years old) is ${extraAdultPrice}</span>
+                    </div>
+                    {features.length > 0 && (
+                      <ul className={styles.packageCardFeatureList}>
+                        {features.map((feature, idx) => (
+                          <li key={idx}>{feature}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {additionalTerms.length > 0 && (
+                      <div
+                        className={styles.additionalTermsRow}
+                        onClick={(e) => toggleTerms(e, pkg.id)}
+                        role="button"
+                        tabIndex={0}
+                      >
+                        <span>Additional Terms</span>
+                        <div className={`${styles.tooltipWrapper}${dismissedTermsId === pkg.id ? ` ${styles.tooltipDismissed}` : ''}`}>
+                          <span className={styles.tooltipIcon}>?</span>
+                          <div className={`${styles.tooltipContent}${openTermsId === pkg.id ? ` ${styles.tooltipOpen}` : ''}`}>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className={styles.tooltipClose}
+                              onClick={(e) => closeTerms(e, pkg.id)}
+                              aria-label="Close"
+                            >
+                              &times;
+                            </span>
+                            <strong>Additional Terms</strong>
+                            <ol>
+                              {additionalTerms.map((term, idx) => (
+                                <li key={idx}><strong>{term.title}</strong> — {term.description}</li>
+                              ))}
+                            </ol>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className={styles.packageCardAction}>
+                      Select Package
                     </div>
                   </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Date Selector */}
-          <div className={styles.section}>
-            <div className={styles.sectionHeader}>
-              <h2>Select a date</h2>
-              <button type="button" className={styles.calendarToggle} title="Open calendar">
-                📅
-              </button>
-            </div>
-
-            <p className={styles.monthLabel}>{currentMonth}</p>
-
-            <div className={styles.dateStrip}>
-              <button
-                type="button"
-                className={styles.dateNav}
-                onClick={() => handleDateNav('prev')}
-                disabled={dateOffset === 0}
-              >
-                ←
-              </button>
-
-              <div className={styles.dateList}>
-                {visibleDates.map((date) => {
-                  const isSelected = selectedDate?.toDateString() === date.toDateString();
-                  const dayName = formatWeekday(date);
-                  const dayNum = formatDayNumber(date);
-
-                  return (
-                    <button
-                      key={date.toISOString()}
-                      type="button"
-                      className={`${styles.dateItem} ${isSelected ? styles.dateItemSelected : ''}`}
-                      onClick={() => handleDateSelect(date)}
-                    >
-                      <span className={styles.dateItemDay}>{dayName}</span>
-                      <span className={styles.dateItemNumber}>{dayNum}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <button
-                type="button"
-                className={styles.dateNav}
-                onClick={() => handleDateNav('next')}
-              >
-                →
-              </button>
-            </div>
-          </div>
-
-          {/* Time Selector */}
-          <div className={styles.section}>
-            <h2>Select a time</h2>
-
-            {!selectedDate ? (
-              <p className={styles.slotsEmpty}>Select a date above to see available times.</p>
-            ) : slotsLoading ? (
-              <p className={styles.slotsLoading}>Loading available times...</p>
-            ) : slotsError ? (
-              <div className={styles.slotsErrorBox}>
-                <p>{slotsError.message}</p>
-                {slotsError.requiresAuth && (
-                  <div className={styles.authPrompt}>
-                    <Link to="/account?return=/book-party" className={styles.authButton}>
-                      Sign in
-                    </Link>
-                    <span className={styles.authOr}>or</span>
-                    <Link to="/account?return=/book-party&signup=true" className={styles.authButtonSecondary}>
-                      Create account
-                    </Link>
-                  </div>
-                )}
-              </div>
-            ) : slots && slots.slots.length > 0 ? (
-              <div className={styles.timeSlots}>
-                {slots.slots.map((slot) => {
-                  const isSelected = slot.startTime === selectedSlot;
-                  const requiresExtraHour = addOns.extraHour;
-                  const slotSupportsExtraHour = slot.supportsExtraHour ?? true;
-                  const blockedByExtraHour = requiresExtraHour && !slotSupportsExtraHour;
-                  const disabled = !slot.available || blockedByExtraHour;
-
-                  return (
-                    <button
-                      key={slot.startTime}
-                      type="button"
-                      className={`${styles.timeSlot} ${isSelected ? styles.timeSlotSelected : ''}`}
-                      onClick={() => !disabled && setSelectedSlot(slot.startTime)}
-                      disabled={disabled}
-                    >
-                      {formatTime(slot.startTime)}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className={styles.slotsEmpty}>No slots available. Try another date.</p>
-            )}
-          </div>
-
-          {/* Party Package Count */}
-          <div className={styles.ticketSection}>
-            <h2>Select party package count</h2>
-            <div className={styles.ticketList}>
-              {/* Base Package */}
-              <div className={styles.ticketRow}>
-                <div className={styles.ticketInfo}>
-                  <h3>{selectedPackage?.name ?? 'Party Package'}</h3>
-                  <span className={styles.ticketPrice}>
-                    ${(selectedPackage?.basePrice ?? 0).toLocaleString()}.00
-                  </span>
-                  <span className={styles.ticketHint}>
-                    Includes {selectedPackage?.maxGuests ?? 24} guests
-                  </span>
-                </div>
-                <div className={styles.quantityControl}>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={() => setPackageQty(Math.max(0, packageQty - 1))}
-                  >
-                    −
-                  </button>
-                  <span className={styles.quantityValue}>{packageQty}</span>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={() => setPackageQty(packageQty + 1)}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Additional Child */}
-              <div className={styles.ticketRow}>
-                <div className={styles.ticketInfo}>
-                  <h3>Additional Child</h3>
-                  <span className={styles.ticketPrice}>$20.00 /guest</span>
-                </div>
-                <div className={styles.quantityControl}>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={() => setExtraChildQty(Math.max(0, extraChildQty - 1))}
-                  >
-                    −
-                  </button>
-                  <span className={styles.quantityValue}>{extraChildQty}</span>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={() => setExtraChildQty(extraChildQty + 1)}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {/* Additional Adult */}
-              <div className={styles.ticketRow}>
-                <div className={styles.ticketInfo}>
-                  <h3>Additional Adult</h3>
-                  <span className={styles.ticketPrice}>$10.00 /guest</span>
-                </div>
-                <div className={styles.quantityControl}>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={() => setExtraAdultQty(Math.max(0, extraAdultQty - 1))}
-                  >
-                    −
-                  </button>
-                  <span className={styles.quantityValue}>{extraAdultQty}</span>
-                  <button
-                    type="button"
-                    className={styles.quantityBtn}
-                    onClick={() => setExtraAdultQty(extraAdultQty + 1)}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Add-ons */}
-          <div className={styles.addOnsSection}>
-            <h2>Party upgrades</h2>
-            <div className={styles.addOnsList}>
-              {addOnOptions.filter(o => o.type === 'toggle').map((option) => {
-                const isActive = getToggleState(addOns, option.id);
-                return (
-                  <div
-                    key={option.id}
-                    className={`${styles.addOnItem} ${isActive ? styles.addOnActive : ''}`}
-                  >
-                    <div className={styles.addOnInfo}>
-                      <h3>{option.label} <span className={styles.addOnPrice}>+${option.price}</span></h3>
-                      <p>{option.description}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className={`${styles.addOnToggle} ${isActive ? styles.addOnToggleActive : ''}`}
-                      onClick={() =>
-                        setAddOns((current) => updateAddOn(current, option.id, !isActive, 'toggle'))
-                      }
-                      aria-pressed={isActive}
-                    />
-                  </div>
                 );
               })}
             </div>
           </div>
+        )}
 
-          {/* Children Section - Different for authenticated vs guest */}
-          {user ? (
-            <div className={styles.childrenSection}>
-              <h2>Children celebrating</h2>
-
-              {(user.children?.length ?? 0) > 0 && (
-                <div className={styles.childrenList}>
-                  {(user.children ?? []).map((child) => (
-                    <label key={child.id} className={styles.childCheckbox}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(childSelections[child.id])}
-                        onChange={() =>
-                          setChildSelections((prev) => ({ ...prev, [child.id]: !prev[child.id] }))
-                        }
-                      />
-                      <span>
-                        {child.firstName} {child.lastName ?? ''}
-                        {child.birthDate && ` (${formatBirthDate(child.birthDate)})`}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {(user.children?.length ?? 0) === 0 && !showAddChildForm && (
-                <div className={styles.emptyChildren}>
-                  <p>No children added yet. Add a child to continue.</p>
-                </div>
-              )}
-
-              {/* Add Child Form */}
-              {showAddChildForm ? (
-                <div className={styles.addChildForm}>
-                  <h3>Add a child</h3>
-                  <div className={styles.formRow}>
-                    <label>
-                      <span>First name *</span>
-                      <input
-                        type="text"
-                        value={newChildFirstName}
-                        onChange={(e) => setNewChildFirstName(formatNameInput(e.target.value))}
-                        placeholder="First name"
-                        disabled={addingChild}
-                        maxLength={100}
-                      />
-                    </label>
-                    <label>
-                      <span>Last name</span>
-                      <input
-                        type="text"
-                        value={newChildLastName}
-                        onChange={(e) => setNewChildLastName(formatNameInput(e.target.value))}
-                        placeholder="Last name (optional)"
-                        disabled={addingChild}
-                        maxLength={100}
-                      />
-                    </label>
-                  </div>
-                  <div className={styles.formRow}>
-                    <label>
-                      <span>Birth date (0-13 yrs)</span>
-                      <input
-                        type="date"
-                        value={newChildBirthDate}
-                        onChange={(e) => setNewChildBirthDate(e.target.value)}
-                        disabled={addingChild}
-                      />
-                    </label>
-                  </div>
-                  {addChildError && (
-                    <div className={styles.addChildError}>{addChildError}</div>
-                  )}
-                  <div className={styles.addChildActions}>
-                    <button
-                      type="button"
-                      className={styles.addChildCancel}
-                      onClick={() => {
-                        setShowAddChildForm(false);
-                        setNewChildFirstName('');
-                        setNewChildLastName('');
-                        setNewChildBirthDate('');
-                        setAddChildError(null);
-                      }}
-                      disabled={addingChild}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.addChildSubmit}
-                      onClick={handleAddChild}
-                      disabled={addingChild || !newChildFirstName.trim()}
-                    >
-                      {addingChild ? 'Adding...' : 'Add child'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className={styles.addChildOptions}>
-                  <button
-                    type="button"
-                    className={styles.addChildButton}
-                    onClick={() => setShowAddChildForm(true)}
-                  >
-                    + Add child
-                  </button>
-                  <Link to="/waiver?return=/book-party" className={styles.waiverLink}>
-                    Or complete waiver to add children
-                  </Link>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Guest Booking Form */
-            <div className={styles.guestFormSection}>
-              <h2>Your contact information</h2>
-              <p className={styles.guestFormHint}>
-                We&apos;ll use this to contact you about your booking.
-                <Link to="/account" className={styles.signInLink}> Already have an account? Sign in</Link>
-              </p>
-
-              <div className={styles.formRow}>
-                <label>
-                  <span>First name *</span>
-                  <input
-                    type="text"
-                    value={guestFirstName}
-                    onChange={(e) => setGuestFirstName(formatNameInput(e.target.value))}
-                    placeholder="Your first name"
-                    required
-                    maxLength={100}
-                  />
-                </label>
-                <label>
-                  <span>Last name *</span>
-                  <input
-                    type="text"
-                    value={guestLastName}
-                    onChange={(e) => setGuestLastName(formatNameInput(e.target.value))}
-                    placeholder="Your last name"
-                    required
-                    maxLength={100}
-                  />
-                </label>
-              </div>
-
-              <div className={styles.formRow}>
-                <label>
-                  <span>Email *</span>
-                  <input
-                    type="email"
-                    value={guestEmail}
-                    onChange={(e) => setGuestEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Phone * (10 digits)</span>
-                  <input
-                    type="tel"
-                    value={guestPhone}
-                    onChange={(e) => setGuestPhone(formatPhoneInput(e.target.value))}
-                    placeholder="5551234567"
-                    required
-                    maxLength={10}
-                  />
-                </label>
-              </div>
-
-              <h3 className={styles.guestChildHeader}>Children celebrating</h3>
-
-              {/* First/primary child */}
-              <div className={styles.guestChildCard}>
-                <div className={styles.guestChildCardHeader}>
-                  <span className={styles.guestChildBadge}>Birthday Child</span>
-                </div>
-                <div className={styles.formRow}>
-                  <label>
-                    <span>Child&apos;s name *</span>
-                    <input
-                      type="text"
-                      value={guestChildName}
-                      onChange={(e) => setGuestChildName(formatNameInput(e.target.value))}
-                      placeholder="Child's full name"
-                      required
-                      maxLength={100}
-                    />
-                  </label>
-                  <label>
-                    <span>Birth date (optional, 0-13 yrs)</span>
-                    <input
-                      type="date"
-                      value={guestChildBirthDate}
-                      onChange={(e) => setGuestChildBirthDate(e.target.value)}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Additional children */}
-              {guestChildren.map((child, index) => (
-                <div key={child.id} className={styles.guestChildCard}>
-                  <div className={styles.guestChildCardHeader}>
-                    <span className={styles.guestChildBadge}>Child {index + 2}</span>
-                    <button
-                      type="button"
-                      className={styles.removeChildBtn}
-                      onClick={() => setGuestChildren(prev => prev.filter(c => c.id !== child.id))}
-                      aria-label="Remove child"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <div className={styles.formRow}>
-                    <label>
-                      <span>Child&apos;s name *</span>
-                      <input
-                        type="text"
-                        value={child.name}
-                        onChange={(e) => setGuestChildren(prev =>
-                          prev.map(c => c.id === child.id ? { ...c, name: formatNameInput(e.target.value) } : c)
-                        )}
-                        placeholder="Child's full name"
-                        required
-                        maxLength={100}
-                      />
-                    </label>
-                    <label>
-                      <span>Birth date (optional, 0-13 yrs)</span>
-                      <input
-                        type="date"
-                        value={child.birthDate}
-                        onChange={(e) => setGuestChildren(prev =>
-                          prev.map(c => c.id === child.id ? { ...c, birthDate: e.target.value } : c)
-                        )}
-                      />
-                    </label>
-                  </div>
-                </div>
-              ))}
-
-              {/* Add another child button */}
-              <button
-                type="button"
-                className={styles.addGuestChildBtn}
-                onClick={() => setGuestChildren(prev => [
-                  ...prev,
-                  { id: crypto.randomUUID(), name: '', birthDate: '' }
-                ])}
+        {/* FAQ Section */}
+        <div className={styles.faqSection}>
+          <h2 className={styles.faqTitle}>Frequently Asked Questions</h2>
+          <p className={styles.faqSubtitle}>Everything you need to know about birthday parties at Playfunia</p>
+          <div className={styles.faqList}>
+            {PARTY_FAQS.map((faq, index) => (
+              <div
+                key={index}
+                className={`${styles.faqItem} ${expandedFaq === index ? styles.faqItemExpanded : ''}`}
               >
-                + Add another child
-              </button>
-
-              <label className={styles.guestWaiverCheckbox}>
-                <input
-                  type="checkbox"
-                  checked={guestWaiverAgreed}
-                  onChange={(e) => setGuestWaiverAgreed(e.target.checked)}
-                />
-                <span>
-                  I agree to the <Link to="/waiver" target="_blank">liability waiver</Link> and understand I&apos;ll need to complete it before the party.
-                </span>
-              </label>
-            </div>
-          )}
-
-          {/* Notes */}
-          <div className={styles.notesSection}>
-            <h2>Special requests</h2>
-            <textarea
-              className={styles.notesInput}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Let us know about themes, allergies, or special requests..."
-            />
-          </div>
-        </div>
-
-        {/* Right Column - Cart */}
-        <aside className={styles.cartColumn}>
-          <div className={styles.cartHeader}>
-            <span className={styles.cartIcon}>🛒</span>
-            <h2>Your cart</h2>
-          </div>
-
-          {!hasCartItems ? (
-            <div className={styles.cartEmpty}>
-              <span className={styles.cartEmptyIcon}>🛒</span>
-              <p>Your cart is empty.</p>
-              <p>Add some items to get started</p>
-            </div>
-          ) : (
-            <div className={styles.cartContent}>
-              {/* Cart Items */}
-              {packageQty > 0 && (
-                <div className={styles.cartItem}>
-                  <div className={styles.cartItemHeader}>
-                    <h3>{selectedPackage?.name}</h3>
-                    <span className={styles.cartItemPrice}>
-                      ${((selectedPackage?.basePrice ?? 0) * packageQty).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className={styles.cartItemDetails}>
-                    <span>Qty: {packageQty}</span>
-                    {selectedDate && <span>{formatDisplayDate(selectedDate)}</span>}
-                    {selectedSlot && <span>{formatTime(selectedSlot)}</span>}
-                    <span>{location} Mall</span>
-                  </div>
-                </div>
-              )}
-
-              {extraChildQty > 0 && (
-                <div className={styles.cartItem}>
-                  <div className={styles.cartItemHeader}>
-                    <h3>Additional Child</h3>
-                    <span className={styles.cartItemPrice}>${extraChildQty * 20}</span>
-                  </div>
-                  <div className={styles.cartItemDetails}>
-                    <span>{extraChildQty} × $20.00</span>
-                  </div>
-                </div>
-              )}
-
-              {extraAdultQty > 0 && (
-                <div className={styles.cartItem}>
-                  <div className={styles.cartItemHeader}>
-                    <h3>Additional Adult</h3>
-                    <span className={styles.cartItemPrice}>${extraAdultQty * 10}</span>
-                  </div>
-                  <div className={styles.cartItemDetails}>
-                    <span>{extraAdultQty} × $10.00</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Add-ons in cart */}
-              {addOns.extraHour && (
-                <div className={styles.cartItem}>
-                  <div className={styles.cartItemHeader}>
-                    <h3>Extra hour</h3>
-                    <span className={styles.cartItemPrice}>$100</span>
-                  </div>
-                </div>
-              )}
-              {addOns.facePainting && (
-                <div className={styles.cartItem}>
-                  <div className={styles.cartItemHeader}>
-                    <h3>Face painting</h3>
-                    <span className={styles.cartItemPrice}>$100</span>
-                  </div>
-                </div>
-              )}
-              {addOns.photoVideo && (
-                <div className={styles.cartItem}>
-                  <div className={styles.cartItemHeader}>
-                    <h3>Photo & video</h3>
-                    <span className={styles.cartItemPrice}>$250</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Summary */}
-              <div className={styles.cartSummary}>
-                <div className={styles.cartLine}>
-                  <span>Subtotal</span>
-                  <span>${cartSubtotal.toLocaleString()}</span>
-                </div>
-                <div className={styles.cartLine}>
-                  <span>Cleaning fee</span>
-                  <span>${cleaningFee}</span>
-                </div>
-                <div className={styles.cartTotal}>
-                  <span>Total</span>
-                  <span>${cartTotal.toLocaleString()}</span>
-                </div>
-              </div>
-
-              {/* Payment Options */}
-              <div className={styles.paymentOptions}>
-                <h3 className={styles.paymentOptionsTitle}>How would you like to pay?</h3>
-
-                <label className={`${styles.paymentOption} ${paymentOption === 'full' ? styles.paymentOptionSelected : ''}`}>
-                  <input
-                    type="radio"
-                    name="paymentOption"
-                    checked={paymentOption === 'full'}
-                    onChange={() => setPaymentOption('full')}
-                  />
-                  <div className={styles.paymentOptionContent}>
-                    <span className={styles.paymentOptionLabel}>Pay full amount online</span>
-                    <span className={styles.paymentOptionAmount}>${(cartTotal).toLocaleString()}</span>
-                  </div>
-                </label>
-
-                <label className={`${styles.paymentOption} ${paymentOption === 'split' ? styles.paymentOptionSelected : ''}`}>
-                  <input
-                    type="radio"
-                    name="paymentOption"
-                    checked={paymentOption === 'split'}
-                    onChange={() => {
-                      setPaymentOption('split');
-                      // Default to 50% online
-                      setOnlinePaymentAmount(Math.round((cartTotal) / 2));
-                    }}
-                  />
-                  <div className={styles.paymentOptionContent}>
-                    <span className={styles.paymentOptionLabel}>Split payment</span>
-                    <span className={styles.paymentOptionHint}>Pay partial online, rest at venue</span>
-                  </div>
-                </label>
-
-                {paymentOption === 'split' && (
-                  <div className={styles.splitPaymentConfig}>
-                    <div className={styles.splitQuickButtons}>
-                      <span className={styles.splitQuickLabel}>Quick select:</span>
-                      <button
-                        type="button"
-                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal) * 0.25) ? styles.splitQuickBtnActive : ''}`}
-                        onClick={() => setOnlinePaymentAmount(Math.max(100, Math.round((cartTotal) * 0.25)))}
-                      >
-                        25%
-                      </button>
-                      <button
-                        type="button"
-                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal) * 0.5) ? styles.splitQuickBtnActive : ''}`}
-                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal) * 0.5))}
-                      >
-                        50%
-                      </button>
-                      <button
-                        type="button"
-                        className={`${styles.splitQuickBtn} ${onlinePaymentAmount === Math.round((cartTotal) * 0.75) ? styles.splitQuickBtnActive : ''}`}
-                        onClick={() => setOnlinePaymentAmount(Math.round((cartTotal) * 0.75))}
-                      >
-                        75%
-                      </button>
-                    </div>
-                    <div className={styles.splitAmountEditor}>
-                      <label className={styles.splitAmountLabel}>Enter amount to pay online:</label>
-                      <div className={styles.splitAmountInputRow}>
-                        <span className={styles.splitCurrencyLarge}>$</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={cartTotal}
-                          step={1}
-                          value={onlinePaymentAmount}
-                          onChange={(e) => setOnlinePaymentAmount(Math.max(1, Math.min(cartTotal, Number(e.target.value) || 0)))}
-                          className={styles.splitAmountInput}
-                        />
-                      </div>
-                    </div>
-                    <div className={styles.splitBreakdown}>
-                      <div className={styles.splitRow}>
-                        <span>Online payment</span>
-                        <span className={styles.splitOnline}>${onlinePaymentAmount.toLocaleString()}</span>
-                      </div>
-                      <div className={styles.splitRow}>
-                        <span>Due at venue (cash/card)</span>
-                        <span className={styles.splitVenue}>${(cartTotal - onlinePaymentAmount).toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <p className={styles.splitNote}>Minimum online payment: $100</p>
+                <button
+                  type="button"
+                  className={styles.faqQuestion}
+                  onClick={() => toggleFaq(index)}
+                  aria-expanded={expandedFaq === index}
+                >
+                  <span>{faq.question}</span>
+                  <span className={styles.faqIcon}>{expandedFaq === index ? '−' : '+'}</span>
+                </button>
+                {expandedFaq === index && (
+                  <div className={styles.faqAnswer}>
+                    <p>{faq.answer}</p>
                   </div>
                 )}
-
-                <div className={styles.paymentDue}>
-                  <span>Due now</span>
-                  <span className={styles.paymentDueAmount}>
-                    ${paymentOption === 'full' ? (cartTotal).toLocaleString() : onlinePaymentAmount.toLocaleString()}
-                  </span>
-                </div>
               </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
-              {/* Waiver Status - only for authenticated users */}
-              {user && (
+      {/* Booking Modal */}
+      {modal.isOpen && modal.selectedPackage && (
+        <div className={styles.modalOverlay} onClick={closeModal}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className={styles.modalHeader}>
+              <div>
+                <h2 className={styles.modalTitle}>
+                  {modal.step === 'calendar' ? modal.selectedPackage.name : 'Confirm booking'}
+                </h2>
+                {modal.step === 'calendar' && (
+                  <p className={styles.modalSubtitle}>
+                    <span className={styles.durationIcon}>⏱</span>
+                    {Math.floor(modal.selectedPackage.durationMinutes / 60)} hours
+                  </p>
+                )}
+                {modal.step === 'confirm' && (
+                  <p className={styles.modalSubtitle}>{modal.selectedPackage.name}</p>
+                )}
+              </div>
+              <button
+                type="button"
+                className={styles.modalClose}
+                onClick={closeModal}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className={styles.modalBody}>
+              {modal.step === 'calendar' && (
                 <>
-                  {!hasValidWaiver ? (
-                    <div className={`${styles.waiverCard} ${styles.waiverNeeded}`}>
-                      <div className={styles.waiverCardHeader}>
-                        <h3>⚠️ Waiver required</h3>
+                  {/* Calendar Step */}
+                  <div className={styles.calendarTimeContainer}>
+                    {/* Monthly Calendar */}
+                    <div className={styles.calendarSection}>
+                      <div className={styles.calendarHeader}>
+                        <h3 className={styles.calendarMonthLabel}>{calendarDays.monthLabel}</h3>
+                        <div className={styles.calendarNav}>
+                          <button
+                            type="button"
+                            className={styles.calendarNavBtn}
+                            onClick={() => setCalendarMonthOffset(prev => Math.max(0, prev - 1))}
+                            disabled={!calendarDays.canGoPrev}
+                          >
+                            ‹
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.calendarNavBtn}
+                            onClick={() => setCalendarMonthOffset(prev => Math.min(12, prev + 1))}
+                            disabled={calendarMonthOffset >= 12}
+                          >
+                            ›
+                          </button>
+                        </div>
                       </div>
-                      <p>You must sign the liability waiver before booking.</p>
-                      <Link to="/waiver?return=/book-party" className={styles.waiverButton + ' ' + styles.waiverButtonPrimary}>
-                        Sign waiver now
-                      </Link>
+                      <div className={styles.calendarGrid}>
+                        <div className={styles.calendarWeekdays}>
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
+                            <div key={day} className={styles.calendarWeekday}>{day}</div>
+                          ))}
+                        </div>
+                        <div className={styles.calendarDays}>
+                          {calendarDays.days.map((day, index) => {
+                            const isSelected = selectedDate?.toDateString() === day.date.toDateString();
+                            const isDisabled = day.isPast || !day.isCurrentMonth;
+                            return (
+                              <button
+                                key={index}
+                                type="button"
+                                className={`${styles.calendarDay} ${isSelected ? styles.calendarDaySelected : ''} ${!day.isCurrentMonth ? styles.calendarDayOtherMonth : ''} ${day.isPast ? styles.calendarDayDisabled : ''}`}
+                                onClick={() => !isDisabled && handleCalendarDateSelect(day.date)}
+                                disabled={isDisabled}
+                              >
+                                {day.date.getDate()}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div className={`${styles.waiverCard} ${styles.waiverComplete}`}>
-                      <div className={styles.waiverCardHeader}>
-                        <h3>✓ Waiver on file</h3>
-                      </div>
-                      <p>Your waiver is valid for 5 years.</p>
-                      {waiverLoading && <p className={styles.waiverNote}>Loading your waiver…</p>}
-                      {waiverError && <p className={styles.statusError}>{waiverError}</p>}
-                      {latestWaiver && (
-                        <div className={styles.waiverPreview}>
-                          <div className={styles.waiverPreviewHeader}>
-                            <div>
-                              <div className={styles.waiverPreviewTitle}>Signed {formatIsoDate(latestWaiver.signedAt)}</div>
-                              <div className={styles.waiverPreviewMeta}>
-                                Expires {formatIsoDate(latestWaiver.expiresAt ?? undefined) ?? '—'}
-                              </div>
+
+                    {/* Time Slots */}
+                    <div className={styles.timeSlotsSection}>
+                      {selectedDate ? (
+                        <>
+                          <h3 className={styles.timeSlotsTitle}>
+                            {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                          </h3>
+                          {slotsLoading ? (
+                            <p className={styles.slotsLoading}>Loading available times...</p>
+                          ) : slotsError ? (
+                            <div className={styles.slotsErrorBox}>
+                              <p>{slotsError.message}</p>
                             </div>
-                            <button
-                              type="button"
-                              className={styles.waiverPreviewToggle}
-                              onClick={() => setShowWaiverDetails((prev) => !prev)}
-                            >
-                              {showWaiverDetails ? 'Hide details' : 'Show details'}
-                            </button>
-                          </div>
-
-                          {showWaiverDetails && (
-                            <div className={styles.waiverPreviewBody}>
-                              <div className={styles.waiverPreviewGrid}>
-                                <div>
-                                  <span className={styles.waiverLabel}>Guardian</span>
-                                  <div className={styles.waiverValue}>
-                                    {latestWaiver.guardianName}
-                                    {latestWaiver.guardianEmail ? ` · ${latestWaiver.guardianEmail}` : ''}
-                                  </div>
-                                </div>
-                                <div>
-                                  <span className={styles.waiverLabel}>Phone</span>
-                                  <div className={styles.waiverValue}>{latestWaiver.guardianPhone || '—'}</div>
-                                </div>
-                                <div>
-                                  <span className={styles.waiverLabel}>Guardian DOB</span>
-                                  <div className={styles.waiverValue}>{formatIsoDate(latestWaiver.guardianDateOfBirth ?? undefined)}</div>
-                                </div>
-                                <div>
-                                  <span className={styles.waiverLabel}>Relationship</span>
-                                  <div className={styles.waiverValue}>{latestWaiver.relationshipToChildren || latestWaiver.relationshipToMinor || '—'}</div>
-                                </div>
-                                <div>
-                                  <span className={styles.waiverLabel}>Marketing opt-in</span>
-                                  <div className={styles.waiverValue}>{latestWaiver.marketingOptIn ? 'Yes' : 'No'}</div>
-                                </div>
-                              </div>
-
-                              {latestWaiver.children && latestWaiver.children.length > 0 && (
-                                <div className={styles.waiverChildrenSection}>
-                                  <div className={styles.waiverLabel}>Children</div>
-                                  <div className={styles.waiverChildrenGrid}>
-                                    {latestWaiver.children.map((child) => (
-                                      <div key={`${child.name}-${child.birthDate}`} className={styles.waiverChildCard}>
-                                        <div className={styles.waiverValue}>{child.name}</div>
-                                        <div className={styles.waiverSubValue}>
-                                          DOB: {formatIsoDate(child.birthDate)}
-                                          {child.gender ? ` · ${child.gender}` : ''}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {latestWaiver.acceptedPolicies?.length ? (
-                                <div className={styles.waiverPolicies}>
-                                  <div className={styles.waiverLabel}>Accepted policies</div>
-                                  <ul>
-                                    {latestWaiver.acceptedPolicies.map((policy) => (
-                                      <li key={policy}>{policy}</li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              ) : null}
+                          ) : slots && slots.slots.length > 0 ? (
+                            <div className={styles.timeSlotsList}>
+                              {slots.slots.map((slot) => {
+                                const isSelected = slot.startTime === selectedSlot;
+                                const disabled = !slot.available;
+                                const endTime = getEndTime(slot.startTime, modal.selectedPackage?.durationMinutes ?? 120);
+                                return (
+                                  <button
+                                    key={slot.startTime}
+                                    type="button"
+                                    className={`${styles.timeSlotItem} ${isSelected ? styles.timeSlotItemSelected : ''}`}
+                                    onClick={() => !disabled && setSelectedSlot(slot.startTime)}
+                                    disabled={disabled}
+                                  >
+                                    {formatTime(slot.startTime)} - {formatTime(endTime)}
+                                  </button>
+                                );
+                              })}
                             </div>
+                          ) : (
+                            <p className={styles.slotsEmpty}>No slots available for this date.</p>
                           )}
+                          {!selectedSlot && slots && slots.slots.length > 0 && (
+                            <p className={styles.selectTimeHint}>Please select a time slot</p>
+                          )}
+                        </>
+                      ) : (
+                        <div className={styles.selectDatePrompt}>
+                          <p>Select a date to see available times</p>
                         </div>
                       )}
-                      <label className={styles.waiverCheckboxLabel}>
-                        <input
-                          type="checkbox"
-                          checked={waiverAgreement}
-                          onChange={(e) => {
-                            setWaiverAgreement(e.target.checked);
-                            if (!e.target.checked) setWaiverConfirmed(false);
-                          }}
-                        />
-                        <span>I agree to the Playfunia terms & conditions.</span>
-                      </label>
-                      <button
-                        type="button"
-                        className={`${styles.waiverButton} ${waiverConfirmed ? styles.waiverConfirmedBtn : styles.waiverConfirmBtn}`}
-                        onClick={handleWaiverConfirm}
-                        disabled={!waiverAgreement}
-                      >
-                        {waiverConfirmed ? '✓ Waiver confirmed' : 'Confirm waiver'}
-                      </button>
-                      <Link to="/waiver?return=/book-party" className={styles.waiverModifyLink}>
-                        Modify waiver details
-                      </Link>
                     </div>
-                  )}
+                  </div>
                 </>
               )}
 
-              {/* Status Messages */}
-              {status.type === 'error' && (
-                <div className={`${styles.statusMessage} ${styles.statusError}`}>
-                  {status.message}
-                </div>
-              )}
-              {status.type === 'success' && (
-                <div className={`${styles.statusMessage} ${styles.statusSuccess}`}>
-                  {status.message}
-                </div>
-              )}
-              {status.type === 'info' && (
-                <div className={`${styles.statusMessage} ${styles.statusInfo}`}>
-                  {status.message}
-                </div>
-              )}
+              {modal.step === 'confirm' && (
+                <>
+                  {/* Confirm Step */}
+                  <div className={styles.confirmContent}>
+                    {/* Booking Summary */}
+                    <div className={styles.bookingSummaryBar}>
+                      <div className={styles.bookingSummaryItem}>
+                        <span className={styles.bookingSummaryIcon}>📅</span>
+                        <span>
+                          {formatTime(selectedSlot ?? '')} - {formatTime(getEndTime(selectedSlot ?? '', (modal.selectedPackage?.durationMinutes ?? 120) + (addOns.extraHour ? 60 : 0)))} | {selectedDate?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                    </div>
 
-              {/* Checkout Button */}
-              <button
-                type="submit"
-                className={styles.checkoutButton}
-                disabled={
-                  submitting ||
-                  !selectedPackageId ||
-                  !selectedSlot ||
-                  !selectedDate ||
-                  packageQty === 0 ||
-                  (user ? (!hasValidWaiver || !waiverConfirmed) : !guestWaiverAgreed)
-                }
-              >
-                {submitting ? (
-                  <>
-                    <span className={styles.buttonSpinner} />
-                    Processing...
-                  </>
-                ) : user ? (
-                  '💌 Reserve this party!'
-                ) : (
-                  '💌 Request booking'
-                )}
-              </button>
+                    {/* Add-ons Section */}
+                    <div className={styles.confirmSection}>
+                      <h3>Take a look at other services</h3>
+                      <div className={styles.addOnsGrid}>
+                        {/* Additional Adult */}
+                        <div className={styles.addOnCard}>
+                          <div className={styles.addOnCardInfo}>
+                            <div className={styles.addOnCardIcon}>+1👤</div>
+                            <div>
+                              <h4>Additional Guest (13+ years old)</h4>
+                              <span className={styles.addOnCardPrice}>${estimate?.extraAdultFee ?? 10}</span>
+                            </div>
+                          </div>
+                          <div className={styles.addOnCardControls}>
+                            <button type="button" onClick={() => setExtraAdultQty(Math.max(0, extraAdultQty - 1))}>−</button>
+                            <span>{extraAdultQty}</span>
+                            <button type="button" onClick={() => setExtraAdultQty(Math.min(20, extraAdultQty + 1))} disabled={extraAdultQty >= 20}>+</button>
+                          </div>
+                        </div>
+
+                        {/* Extra Hour */}
+                        <div className={`${styles.addOnCard} ${styles.addOnCardWide}`}>
+                          <div className={styles.addOnCardInfo}>
+                            <div className={styles.addOnCardIcon}>⏰</div>
+                            <div>
+                              <h4>Extra 1 Hour</h4>
+                              <span className={styles.addOnCardPrice}>${addOnOptions.find(a => a.id === 'extra_hour')?.price ?? 100}</span>
+                              <span className={styles.addOnCardMeta}>+60 minutes</span>
+                            </div>
+                          </div>
+                          <div className={styles.addOnCardControls}>
+                            <button type="button" onClick={() => setAddOns(s => ({ ...s, extraHour: false }))}>
+                              −
+                            </button>
+                            <span>{addOns.extraHour ? 1 : 0}</span>
+                            <button type="button" onClick={() => setAddOns(s => ({ ...s, extraHour: true }))}>+</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Info Banner */}
+                    <div className={styles.infoBanner}>
+                      <span className={styles.infoBannerIcon}>ℹ</span>
+                      <div>
+                        <strong>Booking will be confirmed after checkout.</strong>
+                        <p>You will receive an email confirmation with appointment details after checking out.</p>
+                      </div>
+                    </div>
+
+                    {/* Children Section - For authenticated users */}
+                    {user && (
+                      <div className={styles.confirmSection}>
+                        <h3>Children celebrating</h3>
+                        {(user.children?.length ?? 0) > 0 ? (
+                          <div className={styles.childrenCheckboxList}>
+                            {(user.children ?? []).map((child) => (
+                              <label key={child.id} className={styles.childCheckboxItem}>
+                                <input
+                                  type="radio"
+                                  name="celebratingChild"
+                                  checked={Boolean(childSelections[child.id])}
+                                  onChange={() =>
+                                    setChildSelections({ [child.id]: true })
+                                  }
+                                />
+                                <span>
+                                  {child.firstName} {child.lastName ?? ''}
+                                  {child.birthDate && ` (${formatMonthYear(child.birthDate)})`}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className={styles.noChildrenMsg}>No children on your account.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Contact Form - For guests */}
+                    {!user && (
+                      <div className={styles.confirmSection}>
+                        <h3>Your contact information</h3>
+                        <p className={styles.guestFormNote}>
+                          <Link to="/account?redirect=/book-party">Already have an account? Sign in</Link>
+                        </p>
+                        <div className={styles.contactFormGrid}>
+                          <div className={styles.formField}>
+                            <label>First Name: *</label>
+                            <input
+                              type="text"
+                              value={guestFirstName}
+                              onChange={(e) => setGuestFirstName(formatNameInput(e.target.value))}
+                              placeholder="First name"
+                              required
+                              maxLength={100}
+                              pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                              title="Letters, spaces, hyphens, and apostrophes only"
+                              autoComplete="given-name"
+                            />
+                          </div>
+                          <div className={styles.formField}>
+                            <label>Last Name: *</label>
+                            <input
+                              type="text"
+                              value={guestLastName}
+                              onChange={(e) => setGuestLastName(formatNameInput(e.target.value))}
+                              placeholder="Last name"
+                              required
+                              maxLength={100}
+                              pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                              title="Letters, spaces, hyphens, and apostrophes only"
+                              autoComplete="family-name"
+                            />
+                          </div>
+                          <div className={styles.formField}>
+                            <label>Email: *</label>
+                            <input
+                              type="email"
+                              value={guestEmail}
+                              onChange={(e) => setGuestEmail(e.target.value.trim())}
+                              placeholder="your@email.com"
+                              required
+                              maxLength={255}
+                              autoComplete="email"
+                            />
+                          </div>
+                          <div className={styles.formField}>
+                            <label>Phone: *</label>
+                            <input
+                              type="tel"
+                              inputMode="numeric"
+                              value={guestPhone}
+                              onChange={(e) => setGuestPhone(formatPhoneInput(e.target.value))}
+                              placeholder="5551234567"
+                              required
+                              maxLength={10}
+                              pattern="\d{10}"
+                              title="10-digit phone number"
+                              autoComplete="tel"
+                            />
+                          </div>
+                        </div>
+
+                        <h4 className={styles.childSubheader}>Birthday child</h4>
+                        <div className={styles.contactFormGrid}>
+                          <div className={styles.formField}>
+                            <label>Child&apos;s name: *</label>
+                            <input
+                              type="text"
+                              value={guestChildName}
+                              onChange={(e) => setGuestChildName(formatNameInput(e.target.value))}
+                              placeholder="Child's full name"
+                              required
+                              maxLength={100}
+                              pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                              title="Letters, spaces, hyphens, and apostrophes only"
+                            />
+                          </div>
+                          <div className={styles.formField}>
+                            <label>Birth date:</label>
+                            <input
+                              type="date"
+                              value={guestChildBirthDate}
+                              onChange={(e) => setGuestChildBirthDate(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Special Requests */}
+                    <div className={styles.confirmSection}>
+                      <h3>Special requests</h3>
+                      <textarea
+                        className={styles.notesTextarea}
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Let us know about themes, allergies, or special requests..."
+                        rows={3}
+                        maxLength={500}
+                      />
+                    </div>
+
+                    {/* Policy Checkboxes */}
+                    <div className={styles.confirmSection}>
+                      <h3>Policies &amp; Agreements</h3>
+                      <div className={styles.policiesSection}>
+                        <label className={styles.policyCheckbox}>
+                          <input
+                            type="checkbox"
+                            checked={refundPolicyAgreed}
+                            onChange={(e) => setRefundPolicyAgreed(e.target.checked)}
+                          />
+                          <div className={styles.policyContent}>
+                            <span className={styles.policyTitle}>
+                              Party Booking Refund Policy (<Link to="/refund-policy" target="_blank">see here</Link>) *
+                            </span>
+                            <p className={styles.policyText}>
+                              I agree to the refund policy: cancellation more than 10 days prior receives 75% refund; within 10 days receives 50% refund; within 72 hours no refund.
+                            </p>
+                          </div>
+                        </label>
+
+                        <label className={styles.policyCheckbox}>
+                          <input
+                            type="checkbox"
+                            checked={guestPolicyAgreed}
+                            onChange={(e) => setGuestPolicyAgreed(e.target.checked)}
+                          />
+                          <div className={styles.policyContent}>
+                            <span className={styles.policyTitle}>
+                              Guest Policy (<Link to="/guest-policy" target="_blank">see here</Link>) *
+                            </span>
+                            <p className={styles.policyText}>
+                              I agree to pay for any additional guests or services if the number of attendees exceeds my package.
+                            </p>
+                          </div>
+                        </label>
+
+                        <label className={styles.policyCheckbox}>
+                          <input
+                            type="checkbox"
+                            checked={waiverPolicyAgreed}
+                            onChange={(e) => setWaiverPolicyAgreed(e.target.checked)}
+                          />
+                          <div className={styles.policyContent}>
+                            <span className={styles.policyTitle}>
+                              Waiver Policy (<Link to="/waiver-policy" target="_blank">see here</Link>) *
+                            </span>
+                            <p className={styles.policyText}>
+                              I understand all children must have a waiver signed by their parent/guardian before participating.
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Status Messages */}
+                    {status.type === 'error' && (
+                      <div className={`${styles.statusMessage} ${styles.statusError}`}>
+                        {status.message}
+                      </div>
+                    )}
+                    {status.type === 'success' && (
+                      <div className={`${styles.statusMessage} ${styles.statusSuccess}`}>
+                        {status.message}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          )}
-        </aside>
-      </form>
+
+            {/* Modal Footer */}
+            <div className={styles.modalFooter}>
+              {modal.step === 'confirm' ? (
+                <div className={styles.modalTotal}>
+                  <span className={styles.modalTotalLabel}>Deposit Due Today</span>
+                  {estimateLoading || !estimate ? (
+                    <span className={styles.modalTotalAmount}>Loading...</span>
+                  ) : estimateError ? (
+                    <span className={styles.modalTotalAmount} style={{ color: '#dc2626' }}>Error</span>
+                  ) : (
+                    <span className={styles.modalTotalAmount}>${estimate.total.toFixed(2)}</span>
+                  )}
+                </div>
+              ) : (
+                <div />
+              )}
+              {modal.step === 'confirm' && estimateError && (
+                <div className={styles.pricingError}>{estimateError}</div>
+              )}
+              <div className={styles.modalActions}>
+                {modal.step === 'confirm' && (
+                  <button
+                    type="button"
+                    className={styles.modalBackBtn}
+                    onClick={goBackToCalendarStep}
+                  >
+                    ← Back
+                  </button>
+                )}
+                {modal.step === 'calendar' && (
+                  <button
+                    type="button"
+                    className={styles.modalNextBtn}
+                    onClick={goToConfirmStep}
+                    disabled={!selectedDate || !selectedSlot}
+                  >
+                    Next →
+                  </button>
+                )}
+                {modal.step === 'confirm' && (
+                  <button
+                    type="button"
+                    className={styles.modalConfirmBtn}
+                    onClick={() => handleSubmit()}
+                    disabled={submitting || !canConfirmBooking() || estimateLoading}
+                  >
+                    {submitting ? 'Processing...' : estimateLoading ? 'Loading pricing...' : 'Confirm Booking'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
 // Helper functions
-function formatDisplayDate(date: Date) {
-  return formatDateWithWeekday(date);
-}
-
-function formatBirthDate(value: string) {
-  return formatMonthYear(value);
-}
-
-function formatIsoDate(value?: string) {
-  return formatDate(value);
-}
-
 function buildAddOnPayload(state: AddOnState): Array<{ id: string; quantity: number }> {
   const items: Array<{ id: string; quantity: number }> = [];
   if (state.extraHour) items.push({ id: 'extra_hour', quantity: 1 });
-  if (state.extraChildCount > 0) items.push({ id: 'extra_child', quantity: state.extraChildCount });
   if (state.facePainting) items.push({ id: 'face_painting', quantity: 1 });
   if (state.photoVideo) items.push({ id: 'photo_video', quantity: 1 });
   return items;
-}
-
-function getToggleState(state: AddOnState, addOnId: string) {
-  switch (addOnId) {
-    case 'extra_hour': return state.extraHour;
-    case 'face_painting': return state.facePainting;
-    case 'photo_video': return state.photoVideo;
-    default: return false;
-  }
-}
-
-function updateAddOn(state: AddOnState, addOnId: string, value: boolean | number, type: 'toggle' | 'quantity') {
-  if (type === 'quantity') {
-    return { ...state, extraChildCount: typeof value === 'number' && value > 0 ? Math.floor(value) : 0 };
-  }
-  const applied = Boolean(value);
-  switch (addOnId) {
-    case 'extra_hour': return { ...state, extraHour: applied };
-    case 'face_painting': return { ...state, facePainting: applied };
-    case 'photo_video': return { ...state, photoVideo: applied };
-    default: return state;
-  }
 }
 
 function getErrorMessage(error: unknown, fallback: string) {

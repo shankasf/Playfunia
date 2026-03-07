@@ -1,9 +1,9 @@
 # Kidz 4 Fun – Waiver Retention & Export Policy
 
-This repository implements a minimum five-year retention policy for all digitally signed waivers. The following practices are in place to satisfy legal requirements and operational auditing.
+This repository implements a minimum seven-year retention policy for all digitally signed waivers. The following practices are in place to satisfy legal requirements and operational auditing.
 
 ## Storage Guarantees
-- Each waiver record persists `signedAt`, optional `expiresAt`, and `archiveUntil` timestamps. (`archiveUntil` defaults to five years after signature.)
+- Each waiver record persists `signedAt`, optional `expiresAt`, and `archiveUntil` timestamps. (`archiveUntil` defaults to seven years after signature.)
 - Waivers are never deleted by automated processes. Any archival or purge must be explicitly initiated by an administrator following legal review.
 - Guardian and child metadata are stored in MongoDB, replicated according to the deployment’s database strategy (Atlas cluster or self-hosted replica set).
 
@@ -15,7 +15,7 @@ This repository implements a minimum five-year retention policy for all digitall
   3. Log each export in the organization’s compliance tracker (date, operator, destination).
 
 ## Disaster Recovery Checklist
-1. Verify MongoDB backup snapshots or point-in-time restore windows cover at least 5 years.
+1. Verify database backup snapshots or point-in-time restore windows cover at least 7 years.
 2. Ensure CSV exports are accessible and can be re-imported for audits.
 3. Run the export endpoint in staging after each release to confirm no regressions.
 

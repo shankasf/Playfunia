@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 
 import { useAuth } from '../../context/AuthContext';
 import { PrimaryButton } from '../common/PrimaryButton';
@@ -9,17 +9,24 @@ import styles from './Header.module.css';
 const navLinks = [
   { label: 'Home', to: '/' },
   { label: 'Memberships', to: '/membership' },
-  { label: 'Parties', to: '/parties' },
+  { label: 'Parties', to: '/book-party' },
   { label: 'Events', to: '/events' },
   { label: 'Testimonials', to: '/testimonials' },
   { label: 'FAQ', to: '/faq' },
   { label: 'Contact', to: '/contact' },
   { label: 'Waiver', to: '/waiver' },
+  { label: 'Careers', to: '/careers' },
 ];
 
 export function Header() {
   const { user, isTeamMember } = useAuth();
   const [open, setOpen] = useState(false);
+  const location = useLocation();
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
 
   const closeMenu = () => setOpen(false);
   const toggleMenu = () => setOpen((prev) => !prev);
@@ -31,14 +38,11 @@ export function Header() {
         <div className={styles.primaryRow}>
           <NavLink to="/" className={styles.brand} onClick={closeMenu}>
             <img
-              src="/images/logo.png"
+              src="/images/logo-text.png"
               alt="Playfunia"
-              className={styles.brandLogo}
+              className={styles.brandSticker}
             />
-            <div className={styles.brandText}>
-              <span className={styles.brandTitle}>Playfunia</span>
-              <span className={styles.brandTagline}>Indoor Play & Adventure Club</span>
-            </div>
+            <span className={styles.brandTagline}>Indoor Play & Adventure Club</span>
           </NavLink>
 
           <div className={styles.actions}>

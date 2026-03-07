@@ -47,6 +47,38 @@
   flex-wrap: wrap;
 }
 
+/* Tab Bar */
+.tabBar {
+  max-width: 1200px;
+  margin: 0 auto 1.5rem;
+  padding: 0 1.5rem;
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.tabButton {
+  padding: 0.65rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #64748b;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tabButton:hover {
+  color: #475569;
+}
+
+.tabActive {
+  color: #6366f1;
+  border-bottom-color: #6366f1;
+}
+
 /* Buttons */
 .signOutButton {
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -149,7 +181,7 @@
   max-width: 1200px;
   margin: 0 auto 2rem;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 1rem;
 }
 
@@ -165,9 +197,19 @@
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.summaryCardClickable {
+  cursor: pointer;
+  user-select: none;
+}
+
 .summaryCard:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+}
+
+.summaryCardClickable:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 
 .summaryCard span {
@@ -183,6 +225,15 @@
   font-weight: 700;
   color: #1e293b;
   line-height: 1.1;
+}
+
+.valueLabel {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  margin-top: -0.25rem;
 }
 
 .summaryCard p {
@@ -2103,7 +2154,7 @@
 /* Large Tablets & Small Laptops */
 @media (max-width: 1100px) {
   .summaryGrid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 

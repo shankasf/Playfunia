@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 
 import {
   getAllPricing,
@@ -14,96 +14,89 @@ import {
  * Get all pricing information
  * Public endpoint - no authentication required
  */
-export async function getAllPricingHandler(_req: Request, res: Response) {
+export async function getAllPricingHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const pricing = await getAllPricing();
     res.json(pricing);
   } catch (error) {
-    console.error('Error fetching pricing:', error);
-    res.status(500).json({ message: 'Failed to fetch pricing' });
+    next(error);
   }
 }
 
 /**
  * Get ticket bundles only
  */
-export async function getTicketBundlesHandler(_req: Request, res: Response) {
+export async function getTicketBundlesHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const bundles = await getTicketBundles();
     res.json({ bundles });
   } catch (error) {
-    console.error('Error fetching ticket bundles:', error);
-    res.status(500).json({ message: 'Failed to fetch ticket bundles' });
+    next(error);
   }
 }
 
 /**
  * Get party packages only
  */
-export async function getPartyPackagesHandler(_req: Request, res: Response) {
+export async function getPartyPackagesHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const packages = await getPartyPackages();
     res.json({ packages });
   } catch (error) {
-    console.error('Error fetching party packages:', error);
-    res.status(500).json({ message: 'Failed to fetch party packages' });
+    next(error);
   }
 }
 
 /**
  * Get party add-ons only
  */
-export async function getPartyAddOnsHandler(_req: Request, res: Response) {
+export async function getPartyAddOnsHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const addOns = await getPartyAddOns();
     res.json({ addOns });
   } catch (error) {
-    console.error('Error fetching party add-ons:', error);
-    res.status(500).json({ message: 'Failed to fetch party add-ons' });
+    next(error);
   }
 }
 
 /**
  * Get membership plans only
  */
-export async function getMembershipPlansHandler(_req: Request, res: Response) {
+export async function getMembershipPlansHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const plans = await getMembershipPlans();
     res.json({ plans });
   } catch (error) {
-    console.error('Error fetching membership plans:', error);
-    res.status(500).json({ message: 'Failed to fetch membership plans' });
+    next(error);
   }
 }
 
 /**
  * Get pricing config only
  */
-export async function getPricingConfigHandler(_req: Request, res: Response) {
+export async function getPricingConfigHandler(_req: Request, res: Response, next: NextFunction) {
   try {
     const config = await getPricingConfig();
     res.json({ config });
   } catch (error) {
-    console.error('Error fetching pricing config:', error);
-    res.status(500).json({ message: 'Failed to fetch pricing config' });
+    next(error);
   }
 }
 
 /**
  * Calculate ticket pricing for a given quantity
  */
-export async function calculateTicketPricingHandler(req: Request, res: Response) {
+export async function calculateTicketPricingHandler(req: Request, res: Response, next: NextFunction) {
   try {
     const quantity = parseInt(req.query.quantity as string, 10);
-    if (isNaN(quantity) || quantity < 1) {
-      res.status(400).json({ message: 'Invalid quantity' });
+    if (isNaN(quantity) || quantity < 1 || quantity > 100) {
+      res.status(400).json({ message: 'Quantity must be between 1 and 100' });
       return;
     }
 
     const pricing = await calculateTicketPricing(quantity);
     res.json(pricing);
   } catch (error) {
-    console.error('Error calculating ticket pricing:', error);
-    res.status(500).json({ message: 'Failed to calculate pricing' });
+    next(error);
   }
 }

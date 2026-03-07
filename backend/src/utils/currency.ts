@@ -143,7 +143,7 @@ export const PAYMENT_LIMITS = {
   /** Minimum payment amount in dollars (Square requirement) */
   MIN_USD: 0.50,
   /** Maximum payment amount in dollars (business rule) */
-  MAX_USD: 50000,
+  MAX_USD: 1000,
 };
 
 /**

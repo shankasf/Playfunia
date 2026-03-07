@@ -1,11 +1,55 @@
+/* Instagram Feed Section */
 .section {
-  padding: 5rem 1.5rem;
-  background: linear-gradient(180deg, #fef9f5 0%, #ffffff 100%);
+  padding: 5rem 0;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    160deg,
+    rgba(192, 38, 211, 0.04) 0%,
+    rgba(255, 107, 157, 0.05) 40%,
+    rgba(124, 58, 237, 0.06) 100%
+  );
 }
 
+/* Floating decorative blobs */
+.section::before {
+  content: '';
+  position: absolute;
+  width: 350px;
+  height: 350px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(192, 38, 211, 0.08), transparent 70%);
+  top: -100px;
+  right: -100px;
+  pointer-events: none;
+  animation: driftBlob 9s ease-in-out infinite;
+}
+
+.section::after {
+  content: '';
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 107, 157, 0.07), transparent 70%);
+  bottom: -80px;
+  left: -80px;
+  pointer-events: none;
+  animation: driftBlob 7s ease-in-out infinite reverse;
+}
+
+.inner {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* Header */
 .header {
   text-align: center;
-  max-width: 640px;
+  max-width: 600px;
   margin: 0 auto 3rem;
 }
 
@@ -13,151 +57,362 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 1rem;
+  padding: 0.5rem 1.25rem;
   border-radius: 999px;
-  background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
-  color: #fff;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  background: linear-gradient(135deg, rgba(192, 38, 211, 0.15), rgba(255, 107, 157, 0.12));
+  color: #c026d3;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
   text-transform: uppercase;
-  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  border: 2px dashed rgba(192, 38, 211, 0.25);
   margin-bottom: 1rem;
+  animation: wiggleTag 3s ease-in-out infinite;
 }
 
 .header h2 {
   margin: 0 0 0.75rem;
-  font-size: clamp(1.8rem, 4vw, 2.4rem);
-  color: #1d2a5b;
+  font-family: 'Fredoka', 'Poppins', sans-serif;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.15;
+  background: linear-gradient(135deg, var(--color-text) 30%, #c026d3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .header p {
   margin: 0;
-  color: #5d6a8c;
-  line-height: 1.6;
+  color: var(--color-text-muted);
+  line-height: 1.65;
+  font-size: 1.05rem;
 }
 
 .header a {
-  color: #bc1888;
-  font-weight: 600;
+  color: #c026d3;
+  font-weight: 700;
   text-decoration: none;
+  transition: color 0.2s ease;
 }
 
 .header a:hover {
+  color: #7c3aed;
   text-decoration: underline;
 }
 
-.grid {
+/* Reel grid */
+.reelGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
-  max-width: 1100px;
+  max-width: 1000px;
   margin: 0 auto;
 }
 
-.card {
+/* Card */
+.reelCard {
   position: relative;
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(254, 243, 255, 0.95)
+  );
+  box-shadow:
+    0 8px 28px rgba(192, 38, 211, 0.08),
+    0 4px 0 rgba(255, 107, 157, 0.05);
   overflow: hidden;
-  background: #fff;
-  box-shadow: 0 8px 24px rgba(31, 60, 136, 0.1);
-  text-decoration: none;
   transition:
-    transform 0.25s ease,
-    box-shadow 0.25s ease;
-  display: flex;
-  flex-direction: column;
+    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.4s ease;
+  opacity: 0;
+  transform: translateY(30px);
+  animation: cardReveal 0.6s ease forwards;
+  animation-play-state: paused;
 }
 
-.card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 40px rgba(31, 60, 136, 0.15);
+.visible .reelCard {
+  animation-play-state: running;
 }
 
-.image {
-  aspect-ratio: 1;
-  background-size: cover;
-  background-position: center;
-  background-color: #f0f2f5;
-}
+.reelCard:nth-child(1) { animation-delay: 0s; }
+.reelCard:nth-child(2) { animation-delay: 0.15s; }
+.reelCard:nth-child(3) { animation-delay: 0.3s; }
 
-.videoIcon {
+.reelCard::before {
+  content: '';
   position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
-  background: rgba(0, 0, 0, 0.6);
-  border-radius: 50%;
+  inset: 0;
+  border-radius: var(--radius-xl);
+  padding: 2.5px;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 107, 157, 0.5),
+    rgba(192, 38, 211, 0.4),
+    rgba(124, 58, 237, 0.3),
+    transparent 70%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.reelCard:hover {
+  transform: translateY(-10px) rotate(-0.5deg);
+  box-shadow:
+    0 24px 56px rgba(192, 38, 211, 0.15),
+    0 0 0 3px rgba(192, 38, 211, 0.06);
+}
+
+.reelInner {
+  overflow: hidden;
+}
+
+/* Crop wrapper - hides Instagram header & footer UI */
+.reelCrop {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+}
+
+.reelFrame {
+  display: block;
+  border: none;
+  background: #f8f8fa;
+  position: absolute;
+  top: -60px;
+  left: 0;
+  width: 100%;
+  height: calc(100% + 360px);
+}
+
+/* Play button overlay */
+.playOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 0.75rem;
+  background: rgba(0, 0, 0, 0.15);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.25s ease;
 }
 
-.caption {
-  padding: 1rem;
-  margin: 0;
-  font-size: 0.9rem;
-  color: #4a5568;
-  line-height: 1.5;
-  flex: 1;
+.playOverlay:hover {
+  background: rgba(0, 0, 0, 0.25);
 }
 
+.playOverlay:hover .playButton {
+  transform: scale(1.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.playButton {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1e1b4b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 3px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  transition:
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s ease;
+}
+
+/* Loading skeleton */
 .skeleton {
-  aspect-ratio: 1;
-  border-radius: 16px;
-  background: linear-gradient(90deg, #f0f2f5 25%, #e8eaed 50%, #f0f2f5 75%);
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  background: linear-gradient(
+    110deg,
+    #f3f0ff 25%,
+    #ece6ff 37%,
+    #f3f0ff 50%
+  );
   background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
+/* Follow CTA */
 .followCta {
   text-align: center;
-  margin-top: 2.5rem;
+  margin-top: 3rem;
 }
 
 .followButton {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.9rem 1.8rem;
+  gap: 0.6rem;
+  padding: 0.9rem 2.25rem;
   border-radius: 999px;
-  background: linear-gradient(135deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  background: linear-gradient(135deg, #ff6b9d, #c026d3, #7c3aed);
   color: #fff;
-  font-weight: 700;
-  font-size: 1rem;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
   text-decoration: none;
+  letter-spacing: 0.01em;
+  box-shadow:
+    0 6px 20px rgba(192, 38, 211, 0.3),
+    0 2px 0 rgba(255, 107, 157, 0.15);
   transition:
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.3s ease;
 }
 
 .followButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(188, 24, 136, 0.3);
+  transform: translateY(-4px) scale(1.02);
+  box-shadow:
+    0 12px 32px rgba(192, 38, 211, 0.35),
+    0 0 0 3px rgba(192, 38, 211, 0.08);
+}
+
+.followButton:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+.igIcon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* Animations */
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes driftBlob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(15px, -10px) scale(1.05); }
+  66% { transform: translate(-10px, 8px) scale(0.95); }
+}
+
+@keyframes wiggleTag {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-2deg); }
+  75% { transform: rotate(2deg); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .reelGrid {
+    gap: 1rem;
+  }
+
+  .reelCard {
+    border-radius: 20px;
+  }
+
+  .reelCard::before {
+    border-radius: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .section {
+    padding: 3.5rem 0;
+  }
+
+  .header {
+    margin-bottom: 2rem;
+  }
 }
 
 @media (max-width: 640px) {
   .section {
-    padding: 3rem 1rem;
+    padding: 3rem 0 2.5rem;
   }
 
-  .grid {
+  .inner {
+    padding: 0 1rem;
+  }
+
+  .reelGrid {
     grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
+    max-width: 100%;
   }
 
-  .caption {
-    display: none;
+  .followButton {
+    font-size: 0.9rem;
+    padding: 0.8rem 1.6rem;
+  }
+
+  .followCta {
+    margin-top: 2rem;
+  }
+}
+
+@media (max-width: 420px) {
+  .inner {
+    padding: 0 0.75rem;
+  }
+
+  .reelGrid {
+    grid-template-columns: 1fr;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+
+  .tag {
+    font-size: 0.7rem;
+    padding: 0.4rem 1rem;
+  }
+
+  .followButton {
+    font-size: 0.85rem;
+    padding: 0.75rem 1.4rem;
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reelCard {
+    opacity: 1;
+    transform: none;
+    animation: none;
+    transition: none;
+  }
+
+  .reelCard:hover {
+    transform: none;
+  }
+
+  .tag {
+    animation: none;
+  }
+
+  .section::before,
+  .section::after {
+    animation: none;
+  }
+
+  .skeleton {
+    animation: none;
   }
 }

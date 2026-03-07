@@ -43,16 +43,15 @@ export function formatDateWithWeekday(value?: string | Date | null): string {
  * Format time string (HH:mm) to display time in ET
  */
 export function formatTime(time: string): string {
-  const [hoursStr, minutes] = time.split(':');
-  const hours = Number(hoursStr);
+  const [hoursStr, minutesStr] = time.split(':');
+  let hours = Number(hoursStr);
   if (!Number.isFinite(hours)) return time;
-  const date = new Date();
-  date.setHours(hours, Number(minutes) || 0, 0, 0);
-  return date.toLocaleTimeString('en-US', {
-    timeZone: ET_TIMEZONE,
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  // Handle 24:00 as midnight
+  if (hours === 24) hours = 0;
+  const mins = (minutesStr || '0').padStart(2, '0');
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+  return `${displayHour}:${mins} ${period}`;
 }
 
 /**
@@ -111,12 +110,13 @@ export function formatBirthDate(value?: string | null): string {
     });
   }
 
-  // Fallback for other formats
+  // Fallback for other formats - use UTC to avoid timezone shift
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return 'Birth date not provided';
   }
   return date.toLocaleDateString('en-US', {
+    timeZone: 'UTC',
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -128,8 +128,8 @@ export function formatBirthDate(value?: string | null): string {
  */
 export function getCurrentDateET(): string {
   const now = new Date();
-  const etDate = new Date(now.toLocaleString('en-US', { timeZone: ET_TIMEZONE }));
-  return etDate.toISOString().split('T')[0];
+  // Use Intl formatter to get YYYY-MM-DD directly in ET without double-conversion
+  return now.toLocaleDateString('en-CA', { timeZone: ET_TIMEZONE });
 }
 
 /**
@@ -159,4 +159,21 @@ export function formatDayNumber(date: Date): number {
     day: 'numeric',
   });
   return parseInt(etDateStr, 10);
+}
+
+/**
+ * Convert a date string (ISO, YYYY-MM-DD, etc.) to YYYY-MM-DD for <input type="date">.
+ * Avoids timezone shifts by extracting the date portion directly from the string.
+ */
+export function toDateInputValue(value?: string): string {
+  if (!value) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const dateMatch = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (dateMatch) return dateMatch[1];
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }

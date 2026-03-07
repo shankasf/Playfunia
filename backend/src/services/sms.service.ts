@@ -170,6 +170,24 @@ export async function sendMembershipConfirmationSms(data: MembershipSmsData): Pr
   });
 }
 
+// Queued membership confirmation data interface
+export interface QueuedMembershipSmsData {
+  phone: string;
+  customerName: string;
+  tierName: string;
+  queuedStartDate: string;
+  currentExpiryDate: string;
+  monthlyPrice: number;
+}
+
+// Send queued membership confirmation SMS (when user already has active membership of same tier)
+export async function sendQueuedMembershipConfirmationSms(data: QueuedMembershipSmsData): Promise<boolean> {
+  return sendSms({
+    to: data.phone,
+    body: `Playfunia ${data.tierName} Membership Queued! Hi ${data.customerName}, you already have an active membership. Your new membership will start on ${data.queuedStartDate} (after current expires on ${data.currentExpiryDate}). $${data.monthlyPrice.toFixed(2)}/month.`,
+  });
+}
+
 // Order confirmation data interface
 export interface OrderSmsData {
   phone: string;
@@ -216,5 +234,23 @@ export async function sendMembershipExpiryReminderSms(data: {
   return sendSms({
     to: data.phone,
     body: `Playfunia Membership Alert! Hi ${data.customerName}, your ${data.tierName} membership expires on ${data.expiryDate} (${data.daysRemaining} days). Renew now to keep your benefits!`,
+  });
+}
+
+// Waiver confirmation SMS data interface
+export interface WaiverSmsData {
+  phone: string;
+  guardianName: string;
+  childCount: number;
+  waiverCode: string;
+  signedAt: string;
+}
+
+// Send waiver confirmation SMS
+export async function sendWaiverConfirmationSms(data: WaiverSmsData): Promise<boolean> {
+  const childLabel = data.childCount === 1 ? 'child' : 'children';
+  return sendSms({
+    to: data.phone,
+    body: `Playfunia Waiver Confirmed! Hi ${data.guardianName}, waiver ${data.waiverCode} for ${data.childCount} ${childLabel} is recorded. REMINDER: Waivers must be completed on the same day as your visit. See you soon!`,
   });
 }

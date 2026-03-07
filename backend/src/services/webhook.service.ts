@@ -12,6 +12,7 @@ import { supabaseAny } from '../config/supabase';
 import { appConfig } from '../config/env';
 import { logger } from '../utils/logger';
 import { OrderRepository, PaymentRepository, PartyBookingRepository } from '../repositories';
+import { PAYMENT_STATUS } from '../utils/payment-statuses';
 
 export interface WebhookEvent {
   id: number;
@@ -141,6 +142,7 @@ export async function storeWebhookEvent(
   payload: Record<string, unknown>
 ): Promise<WebhookEvent | null> {
   try {
+    // Bug fix #2: Use ignoreDuplicates: true to avoid overwriting already-processed events
     const { data, error } = await supabaseAny
       .from('webhook_events')
       .upsert(
@@ -150,15 +152,16 @@ export async function storeWebhookEvent(
           payload,
           status: 'processing',
         },
-        { onConflict: 'event_id', ignoreDuplicates: false }
+        { onConflict: 'event_id', ignoreDuplicates: true }
       )
       .select()
       .single();
 
     if (error) {
-      // Unique constraint violation = already exists
-      if (error.code === '23505') {
-        logger.info({ eventId }, 'Webhook event already exists');
+      // When ignoreDuplicates is true and a duplicate exists, Supabase returns no rows
+      // which causes a PGRST116 (no rows found) error from .single()
+      if (error.code === 'PGRST116') {
+        logger.info({ eventId }, 'Webhook event already exists, skipping');
         return null;
       }
       throw error;
@@ -317,6 +320,19 @@ async function handlePaymentUpdated(payload: SquareWebhookPayload): Promise<void
         await reconcileOrder(orderId, paymentId, status);
       }
     }
+
+    // Bug fix #7: Also handle failed booking payments (not just orders)
+    if (referenceId?.startsWith('booking_')) {
+      const bookingId = parseInt(referenceId.replace('booking_', ''), 10);
+      if (!isNaN(bookingId)) {
+        await supabaseAny
+          .from('party_bookings')
+          .update({ payment_status: 'failed' })
+          .eq('booking_id', bookingId)
+          .in('payment_status', ['pending', 'awaiting_deposit']);
+        logger.info({ bookingId, paymentId, status }, 'Booking payment marked as failed via webhook');
+      }
+    }
   }
 }
 
@@ -426,27 +442,34 @@ async function handleRefundEvent(payload: SquareWebhookPayload): Promise<void> {
 
   // If refund is completed, potentially update related order/booking
   if (dbStatus === 'completed') {
-    // Try to find associated order by payment ID and update status
-    const { data: payments } = await supabaseAny
+    // Bug fix #8: Check if this is a full or partial refund before updating order status
+    const { data: refunds } = await supabaseAny
+      .from('refunds')
+      .select('amount_cents')
+      .eq('square_payment_id', squarePaymentId)
+      .eq('status', 'completed');
+
+    const { data: paymentData } = await supabaseAny
       .from('payments')
-      .select('order_id')
-      .eq('provider_payment_id', squarePaymentId);
+      .select('amount_cents, order_id')
+      .eq('provider_payment_id', squarePaymentId)
+      .single();
 
-    if (payments && payments.length > 0) {
-      for (const payment of payments) {
-        if (payment.order_id) {
-          const { error: orderUpdateError } = await supabaseAny
-            .from('orders')
-            .update({ status: 'Refunded' })
-            .eq('order_id', payment.order_id)
-            .in('status', ['Completed', 'Pending', 'Processing']);
+    if (paymentData?.order_id) {
+      const totalRefunded = refunds?.reduce((sum: number, r: { amount_cents: number }) => sum + r.amount_cents, 0) ?? 0;
+      const isFullRefund = totalRefunded >= (paymentData.amount_cents ?? 0);
+      const newStatus = isFullRefund ? 'Refunded' : 'Partially Refunded';
 
-          if (orderUpdateError) {
-            logger.error({ error: orderUpdateError, orderId: payment.order_id }, 'Error updating order status to Refunded');
-          } else {
-            logger.info({ orderId: payment.order_id }, 'Order marked as Refunded via webhook');
-          }
-        }
+      const { error: orderUpdateError } = await supabaseAny
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('order_id', paymentData.order_id)
+        .in('status', ['Completed', 'Pending', 'Processing', 'Partially Refunded']);
+
+      if (orderUpdateError) {
+        logger.error({ error: orderUpdateError, orderId: paymentData.order_id }, `Error updating order status to ${newStatus}`);
+      } else {
+        logger.info({ orderId: paymentData.order_id, newStatus, totalRefunded }, `Order marked as ${newStatus} via webhook`);
       }
     }
   }
@@ -525,21 +548,21 @@ async function reconcileBookingPayment(
     }
 
     // If payment completed and booking not yet confirmed, confirm it
-    if (status === 'COMPLETED' && booking.payment_status !== 'deposit_paid' && booking.payment_status !== 'paid') {
+    if (status === 'COMPLETED' && booking.payment_status !== PAYMENT_STATUS.DEPOSIT_PAID && booking.payment_status !== PAYMENT_STATUS.PAID) {
       await PartyBookingRepository.update(bookingId, {
-        payment_status: 'deposit_paid',
+        payment_status: PAYMENT_STATUS.DEPOSIT_PAID,
         status: 'Confirmed',
         deposit_paid_at: new Date().toISOString(),
-        latest_payment_intent_id: squarePaymentId,
+        latest_payment_id: squarePaymentId,
       });
       logger.info({ bookingId, squarePaymentId }, 'Booking confirmed via webhook');
     }
 
     // If payment failed, mark booking accordingly
     if (status === 'FAILED' || status === 'CANCELED') {
-      if (booking.payment_status === 'pending') {
+      if (booking.payment_status === PAYMENT_STATUS.PENDING) {
         await PartyBookingRepository.update(bookingId, {
-          payment_status: 'failed',
+          payment_status: PAYMENT_STATUS.FAILED,
           notes: `Payment failed: ${status}`,
         });
         logger.info({ bookingId, status }, 'Booking payment marked as failed via webhook');
@@ -576,10 +599,16 @@ export async function retryFailedWebhooks(maxRetries: number = 3): Promise<numbe
       try {
         logger.info({ eventId: event.event_id, attempt: event.retry_count + 1 }, 'Retrying failed webhook');
 
-        await supabaseAny
+        // Bug fix #9: Optimistic locking - only update if still in 'failed' status
+        const { data: updated } = await supabaseAny
           .from('webhook_events')
           .update({ status: 'processing' })
-          .eq('id', event.id);
+          .eq('id', event.id)
+          .eq('status', 'failed')
+          .select()
+          .single();
+
+        if (!updated) continue; // Another process already picked this up
 
         await processWebhookEvent(event.payload as SquareWebhookPayload);
         retriedCount++;

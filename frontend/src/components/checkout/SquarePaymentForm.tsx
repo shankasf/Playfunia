@@ -165,9 +165,9 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
     }
 
     return () => {
-      // Only destroy if not in the middle of tokenization (Fix #14)
-      // Destroying during tokenization can interrupt the payment
-      if (card && cardAttachedRef.current && !isTokenizingRef.current) {
+      // Always destroy card on cleanup to prevent iframe leaks (Fix #14 + leak fix)
+      // Even during tokenization, the card must be cleaned up if the component unmounts
+      if (card && cardAttachedRef.current) {
         card.destroy().catch(console.error);
         cardAttachedRef.current = false;
       }
@@ -176,6 +176,12 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    // Bug fix #13: Block submission when reservation has expired (disabled prop)
+    if (disabled) {
+      setErrorMessage("Your reservation has expired. Please go back and try again.");
+      return;
+    }
 
     // Double-guard: ref + state for reliable duplicate prevention
     // The ref provides immediate blocking even before React state updates
@@ -196,6 +202,9 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
 
     // Mark tokenization as in progress (Fix #14)
     isTokenizingRef.current = true;
+
+    // Bug fix #12: Track whether token was sent to backend to prevent double-charge
+    let tokenSentToBackend = false;
 
     try {
       // Build verification details for SCA/3DS (per Square standard)
@@ -234,6 +243,8 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
           ? getErrorMessage(errorResult.errors)
           : 'Card tokenization failed. Please try again.';
         setErrorMessage(errorMsg);
+        // Bug fix: Reset submission lock so user can retry after tokenization failure
+        submissionInProgressRef.current = false;
         setIsSubmitting(false);
         return;
       }
@@ -244,13 +255,17 @@ export function SquarePaymentForm(props: SquarePaymentFormProps) {
       // is performed inline by Square, and the resulting token already contains
       // the verification. The verificationToken parameter is kept for backwards
       // compatibility but is undefined when using inline verification.
+      tokenSentToBackend = true;
       await onSuccess(tokenResult.token);
     } catch (error) {
       console.error('[Square] Submit error:', error);
       const message = error instanceof Error ? error.message : "Payment failed. Please try again.";
       setErrorMessage(message);
-      // Re-enable submission on error so user can retry
-      submissionInProgressRef.current = false;
+      // Bug fix #12: Only re-enable submission if token was NOT sent to backend.
+      // If token was sent, payment may have succeeded server-side even if onSuccess threw.
+      if (!tokenSentToBackend) {
+        submissionInProgressRef.current = false;
+      }
     } finally {
       setIsSubmitting(false);
       isTokenizingRef.current = false; // Reset tokenization flag (Fix #14)

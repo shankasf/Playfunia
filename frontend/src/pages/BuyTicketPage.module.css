@@ -8,14 +8,16 @@
   max-width: 960px;
   margin: 0 auto;
   display: grid;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
+/* Hero Section */
 .hero {
   background: #ffffff;
   border-radius: 24px;
   padding: 2.5rem 3rem;
   box-shadow: 0 20px 40px rgba(31, 102, 255, 0.12);
+  text-align: center;
 }
 
 .tag {
@@ -34,139 +36,93 @@
 
 .hero h1 {
   margin-top: 1rem;
-  font-size: clamp(2rem, 3vw, 2.6rem);
+  font-size: clamp(1.75rem, 4vw, 2.6rem);
   color: #1a265a;
 }
 
 .hero p {
   margin-top: 0.75rem;
-  font-size: 1.05rem;
+  font-size: clamp(0.95rem, 2vw, 1.05rem);
   color: #4b5a7d;
   line-height: 1.6;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1.5rem;
-}
-
-.card {
-  background: #ffffff;
-  border-radius: 20px;
-  padding: 1.9rem;
-  box-shadow: 0 15px 32px rgba(31, 60, 136, 0.08);
-  display: grid;
-  gap: 1.3rem;
-}
-
-.card h2 {
-  margin: 0;
-  font-size: 1.4rem;
-  color: #1a265a;
-}
-
-.field {
-  display: grid;
-  gap: 0.6rem;
-}
-
-.field label {
-  font-weight: 600;
-  color: #1a265a;
-}
-
-.field input,
-.field select {
-  border: 1px solid rgba(31, 60, 136, 0.15);
-  border-radius: 12px;
-  padding: 0.85rem 1rem;
-  font-size: 1rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.field input:focus,
-.field select:focus {
-  outline: none;
-  border-color: #1f66ff;
-  box-shadow: 0 0 0 4px rgba(31, 102, 255, 0.12);
-}
-
-.bundleList {
-  display: grid;
-  gap: 1rem;
-}
-
-.bundleOption {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.5rem;
-  align-items: center;
-  padding: 1.1rem 1.2rem;
-  border-radius: 16px;
-  border: 1px solid rgba(31, 102, 255, 0.18);
-  background: rgba(31, 102, 255, 0.06);
-}
-
-.bundleOption span:last-child {
-  font-weight: 700;
-  color: #1a265a;
-}
-
-.savings {
-  color: #1aa45d;
-  font-weight: 600;
-  font-size: 0.9em;
-}
-
-.pricingNotes {
-  background: rgba(31, 102, 255, 0.06);
-  border-radius: 12px;
-  padding: 1rem 1.25rem;
-  border-left: 3px solid #1f66ff;
-}
-
-.pricingNotes p {
-  margin: 0;
+/* Guest Sign-in Hint */
+.guestFormHint {
+  text-align: center;
   font-size: 0.95rem;
   color: #4b5a7d;
-  line-height: 1.6;
+  margin: 0;
 }
 
-.pricingNotes p:not(:last-child) {
+.signInLink {
+  color: #1f66ff;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.signInLink:hover {
+  text-decoration: underline;
+}
+
+/* Featured Card (General Admission) */
+.featuredCard {
+  background: linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+  border: 2px solid #1f66ff;
+  border-radius: 20px;
+  padding: 1.75rem;
+  box-shadow: 0 15px 32px rgba(31, 60, 136, 0.1);
+}
+
+.featuredHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 0.5rem;
 }
 
-/* Extra Adults Section */
-.extraAdultsSection {
-  background: rgba(31, 102, 255, 0.04);
-  border: 1px solid rgba(31, 102, 255, 0.15);
-  border-radius: 12px;
-  padding: 1rem 1.25rem;
-}
-
-.extraAdultsHeader {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-  font-weight: 600;
+.featuredHeader h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
   color: #1a265a;
 }
 
-.extraAdultsNote {
-  font-weight: 400;
-  font-size: 0.85rem;
+.featuredPrice {
+  font-size: clamp(1.1rem, 2.5vw, 1.3rem);
+  font-weight: 700;
+  color: #1f66ff;
+}
+
+.featuredDescription {
+  margin: 0 0 1.25rem;
+  font-size: 0.95rem;
   color: #4b5a7d;
 }
 
-.extraAdultsControls {
+/* Quantity Row */
+.quantityRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
-.adultBtn {
+.quantityControls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  background: rgba(31, 102, 255, 0.06);
+  border-radius: 14px;
+  border: 1px solid rgba(31, 102, 255, 0.15);
+}
+
+.quantityBtn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -183,17 +139,17 @@
   box-shadow: 0 3px 10px rgba(31, 102, 255, 0.2);
 }
 
-.adultBtn:hover:not(:disabled) {
+.quantityBtn:hover:not(:disabled) {
   transform: scale(1.08);
   box-shadow: 0 4px 14px rgba(31, 102, 255, 0.3);
 }
 
-.adultBtn:disabled {
+.quantityBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.adultCount {
+.quantityDisplay {
   min-width: 40px;
   text-align: center;
   font-size: 1.25rem;
@@ -201,158 +157,175 @@
   color: #1a265a;
 }
 
-.adultPrice {
-  margin-left: auto;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #1aa45d;
-}
-
-.summary {
-  background: rgba(31, 102, 255, 0.08);
-  border-radius: 16px;
-  padding: 1.2rem 1.4rem;
-  display: grid;
-  gap: 0.6rem;
-}
-
-.summaryRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 1rem;
-  color: #1a265a;
-}
-
-.summaryTotal {
-  font-size: 1.4rem;
-  font-weight: 700;
-}
-
-.status {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-.statusError {
-  color: #d7263d;
-}
-
-.statusSuccess {
-  color: #1aa45d;
-}
-
-.codeGrid {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.codeCard {
-  border: 1px dashed rgba(31, 102, 255, 0.4);
-  border-radius: 14px;
-  padding: 1rem 1.2rem;
+/* Bundles Section */
+.bundlesSection {
   background: #ffffff;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: 600;
-  color: #1a265a;
+  border-radius: 20px;
+  padding: 1.75rem;
+  box-shadow: 0 15px 32px rgba(31, 60, 136, 0.08);
 }
 
-.helper {
+.bundlesSection h2 {
+  margin: 0;
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+  color: #1a265a;
+  text-align: center;
+}
+
+.bundlesSubtitle {
+  margin: 0.25rem 0 1.25rem;
   font-size: 0.95rem;
   color: #4b5a7d;
-  line-height: 1.5;
+  text-align: center;
 }
 
-.waiverReminder {
-  background: rgba(255, 170, 51, 0.15);
-  border-radius: 14px;
-  padding: 1rem 1.2rem;
-  font-size: 0.95rem;
-  color: #684200;
+.loadingState {
+  text-align: center;
+  padding: 2rem;
+  color: #4b5a7d;
+}
+
+/* Bundle Grid */
+.bundleGrid {
   display: grid;
-  gap: 0.75rem;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
 }
 
-@media (max-width: 720px) {
-  .hero {
-    padding: 2rem;
-  }
-
-  .bundleOption {
-    grid-template-columns: 1fr;
-    text-align: left;
-  }
-}
-
-/* Guest Form Section */
-.guestFormSection {
-  margin-bottom: 1.5rem;
-  padding: 1.5rem;
+.bundleCard {
   background: rgba(31, 102, 255, 0.04);
+  border: 1px solid rgba(31, 102, 255, 0.15);
   border-radius: 16px;
-  border: 1px solid rgba(31, 102, 255, 0.12);
+  padding: 1.25rem;
+  text-align: center;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.guestFormSection h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.2rem;
+.bundleCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(31, 102, 255, 0.15);
+  border-color: rgba(31, 102, 255, 0.3);
+}
+
+.bundleTitle {
+  font-size: 1.1rem;
   font-weight: 700;
+  color: #1a265a;
+  margin-bottom: 0.5rem;
+}
+
+.bundlePrice {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f66ff;
+  margin-bottom: 0.25rem;
+}
+
+.bundleSavings {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1aa45d;
+  background: rgba(26, 164, 93, 0.1);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  display: inline-block;
+  margin-bottom: 0.75rem;
+}
+
+.bundleAddBtn {
+  display: block;
+  width: 100%;
+  padding: 0.65rem 1rem;
+  background: linear-gradient(135deg, #1f66ff, #1a56db);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 4px 12px rgba(31, 102, 255, 0.25);
+}
+
+.bundleAddBtn:hover {
+  transform: scale(1.03);
+  box-shadow: 0 6px 16px rgba(31, 102, 255, 0.35);
+}
+
+/* Add-on Card */
+.addonCard {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 1.75rem;
+  box-shadow: 0 15px 32px rgba(31, 60, 136, 0.08);
+}
+
+.addonHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.addonHeader h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.5vw, 1.3rem);
   color: #1a265a;
 }
 
-.guestFormHint {
+.addonPrice {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1aa45d;
+}
+
+.addonDescription {
   margin: 0 0 1.25rem;
   font-size: 0.95rem;
   color: #4b5a7d;
 }
 
-.signInLink {
-  color: #1f66ff;
-  text-decoration: none;
+/* Info Notice */
+.infoNotice {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 170, 51, 0.12);
+  border: 1px solid rgba(255, 170, 51, 0.3);
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  color: #7a5200;
+}
+
+.infoNotice strong {
   font-weight: 600;
 }
 
-.signInLink:hover {
-  text-decoration: underline;
-}
-
-.inputRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.inputRow:last-child {
-  margin-bottom: 0;
-}
-
-@media (max-width: 600px) {
-  .inputRow {
-    grid-template-columns: 1fr;
-    gap: 0.75rem;
-  }
+/* Waiver Section */
+.waiverSection {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 1.25rem;
+  box-shadow: 0 10px 24px rgba(31, 60, 136, 0.06);
 }
 
 .guestWaiverCheckbox {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  margin-top: 1.25rem;
-  padding: 1rem;
-  background: #fff;
-  border: 1px solid rgba(31, 102, 255, 0.15);
-  border-radius: 12px;
   cursor: pointer;
 }
 
 .guestWaiverCheckbox input {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   margin-top: 2px;
   accent-color: #1f66ff;
+  flex-shrink: 0;
 }
 
 .guestWaiverCheckbox span {
@@ -366,290 +339,296 @@
   text-decoration: underline;
 }
 
-@media (max-width: 480px) {
-  .page {
-    padding: 2rem 0.75rem;
-  }
-
-  .hero {
-    padding: 1.5rem;
-    border-radius: 18px;
-  }
-
-  .hero h1 {
-    font-size: clamp(1.5rem, 5vw, 2rem);
-  }
-
-  .hero p {
-    font-size: 0.95rem;
-  }
-
-  .tag {
-    font-size: 0.75rem;
-    padding: 0.35rem 0.75rem;
-  }
-
-  .card {
-    padding: 1.5rem;
-    border-radius: 16px;
-  }
-
-  .card h2 {
-    font-size: 1.2rem;
-  }
-
-  .field input,
-  .field select {
-    padding: 0.75rem;
-    font-size: 0.95rem;
-  }
-
-  .bundleOption {
-    padding: 1rem;
-    border-radius: 12px;
-  }
-
-  .summary {
-    padding: 1rem;
-    border-radius: 12px;
-  }
-
-  .summaryTotal {
-    font-size: 1.2rem;
-  }
-
-  .codeCard {
-    padding: 0.85rem 1rem;
-    font-size: 0.9rem;
-  }
-
-  .waiverReminder {
-    padding: 0.85rem;
-    font-size: 0.9rem;
-  }
-
-  .guestFormSection {
-    padding: 1.25rem;
-    border-radius: 14px;
-  }
-
-  .guestFormSection h2 {
-    font-size: 1.1rem;
-  }
-}
-
-/* Payment section styles */
-.paymentSection {
-  display: grid;
-  gap: 1.25rem;
-  padding: 1.5rem;
-  background: linear-gradient(135deg, rgba(31, 102, 255, 0.04), rgba(255, 107, 157, 0.04));
-  border: 2px solid rgba(31, 102, 255, 0.15);
-  border-radius: 16px;
-  margin-top: 0.5rem;
-}
-
-.paymentSection h3 {
-  font-size: 1.15rem;
-  color: #1a265a;
-  margin: 0;
-  text-align: center;
-}
-
-.backLink {
-  background: none;
-  border: none;
-  color: #6b7280;
-  font-size: 0.9rem;
-  cursor: pointer;
-  text-decoration: underline;
-  padding: 0.5rem;
-  transition: color 0.2s;
-}
-
-.backLink:hover {
-  color: #1f66ff;
-}
-
-/* Quantity controls for cart */
-.quantityControls {
+.waiverSigned {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.75rem;
   padding: 0.5rem;
-  background: linear-gradient(135deg, rgba(31, 102, 255, 0.08), rgba(31, 102, 255, 0.04));
-  border-radius: 16px;
-  border: 2px solid rgba(31, 102, 255, 0.15);
-}
-
-.quantityBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #1f66ff, #1a56db);
-  color: #ffffff;
-  font-size: 1.5rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
-  box-shadow: 0 4px 12px rgba(31, 102, 255, 0.25);
-}
-
-.quantityBtn:hover:not(:disabled) {
-  transform: scale(1.08);
-  box-shadow: 0 6px 16px rgba(31, 102, 255, 0.35);
-}
-
-.quantityBtn:active:not(:disabled) {
-  transform: scale(0.95);
-}
-
-.quantityBtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.quantityDisplay {
-  min-width: 60px;
-  text-align: center;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #1a265a;
-}
-
-.cartLink {
-  color: #1f66ff;
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.cartLink:hover {
-  text-decoration: underline;
-}
-
-/* Cart Summary */
-.cartSummary {
-  margin-top: 1rem;
-  padding: 1.25rem;
-  background: linear-gradient(135deg, rgba(26, 164, 93, 0.08), rgba(26, 164, 93, 0.04));
-  border: 2px solid rgba(26, 164, 93, 0.2);
-  border-radius: 16px;
-}
-
-.cartSummary h3 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1a265a;
-}
-
-.cartList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 0.5rem;
-}
-
-.cartItem {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  background: #ffffff;
+  background: rgba(26, 164, 93, 0.08);
   border-radius: 10px;
-  font-size: 0.95rem;
-  color: #1a265a;
 }
 
-.cartItem span:first-child {
-  font-weight: 500;
-}
-
-.cartItem span:nth-child(2) {
-  font-weight: 600;
-  color: #1aa45d;
-}
-
-.removeBtn {
+.waiverCheckmark {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: none;
-  border-radius: 8px;
-  background: rgba(215, 38, 61, 0.1);
-  color: #d7263d;
-  font-size: 1.2rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s, transform 0.15s;
+  background: #1aa45d;
+  color: #ffffff;
+  border-radius: 50%;
+  font-size: 1rem;
+  font-weight: 700;
 }
 
-.removeBtn:hover {
-  background: rgba(215, 38, 61, 0.2);
-  transform: scale(1.1);
-}
-
-.cartTotal {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid rgba(26, 164, 93, 0.2);
-  font-weight: 600;
-  color: #1a265a;
-}
-
-.cartTotal span:last-child {
-  font-size: 1.15rem;
+.waiverSigned span:last-child {
+  font-size: 0.95rem;
+  font-weight: 500;
   color: #1aa45d;
 }
 
-.viewCartBtn {
-  display: block;
-  margin-top: 1rem;
-  padding: 0.85rem 1.5rem;
-  background: linear-gradient(135deg, #1aa45d, #158c4e);
-  color: #ffffff;
-  text-align: center;
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 1rem;
+.waiverNeeded {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(255, 170, 51, 0.12);
   border-radius: 12px;
-  transition: transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 4px 12px rgba(26, 164, 93, 0.25);
+  color: #7a5200;
+  font-size: 0.95rem;
 }
 
-.viewCartBtn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(26, 164, 93, 0.35);
+/* Popup Modal */
+.popupOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn 0.2s ease;
+  padding: 1rem;
 }
 
+.popupCard {
+  background: #fff;
+  border-radius: 24px;
+  padding: 2.5rem 2rem 2rem;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.popupIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.popupSuccess .popupIcon {
+  background: rgba(26, 164, 93, 0.12);
+  color: #1aa45d;
+}
+
+.popupError .popupIcon {
+  background: rgba(215, 38, 61, 0.1);
+  color: #d7263d;
+}
+
+.popupMessage {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1a265a;
+  line-height: 1.4;
+}
+
+.popupBtn {
+  display: block;
+  width: 100%;
+  padding: 0.85rem;
+  border: none;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  margin-top: 0.25rem;
+}
+
+.popupSuccess .popupBtn {
+  background: linear-gradient(135deg, #1aa45d, #16894e);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(26, 164, 93, 0.3);
+}
+
+.popupError .popupBtn {
+  background: linear-gradient(135deg, #d7263d, #b91c30);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(215, 38, 61, 0.3);
+}
+
+.popupBtn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Tablet (768px and below) */
+@media (max-width: 768px) {
+  .page {
+    padding: 2rem 1rem;
+  }
+
+  .hero {
+    padding: 2rem 1.5rem;
+    border-radius: 20px;
+  }
+
+  .bundleGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .quantityRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .quantityControls {
+    justify-content: center;
+  }
+}
+
+/* Mobile (480px and below) */
 @media (max-width: 480px) {
-  .cartItem {
-    grid-template-columns: 1fr auto auto;
-    gap: 0.5rem;
-    padding: 0.6rem 0.75rem;
+  .page {
+    padding: 1.5rem 0.75rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .inner {
+    gap: 1rem;
+  }
+
+  .hero {
+    padding: 1.5rem 1rem;
+    border-radius: 16px;
+  }
+
+  .hero h1 {
+    font-size: 1.5rem;
+  }
+
+  .hero p {
     font-size: 0.9rem;
   }
 
-  .removeBtn {
-    width: 26px;
-    height: 26px;
-    font-size: 1rem;
+  .tag {
+    font-size: 0.75rem;
+    padding: 0.35rem 0.7rem;
   }
 
-  .viewCartBtn {
-    padding: 0.75rem 1.25rem;
-    font-size: 0.95rem;
+  .featuredCard,
+  .bundlesSection,
+  .addonCard {
+    padding: 1.25rem 1rem;
+    border-radius: 16px;
+  }
+
+  .bundleGrid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .bundleCard {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    text-align: left;
+  }
+
+  .bundleTitle {
+    font-size: 1rem;
+    margin-bottom: 0;
+  }
+
+  .bundlePrice {
+    font-size: 1.15rem;
+    margin-bottom: 0;
+  }
+
+  .bundleSavings {
+    margin-bottom: 0;
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+  }
+
+  .bundleAddBtn {
+    width: auto;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.85rem;
+  }
+
+  .quantityBtn {
+    width: 36px;
+    height: 36px;
+    font-size: 1.2rem;
+  }
+
+  .quantityDisplay {
+    min-width: 32px;
+    font-size: 1.1rem;
+  }
+
+  .infoNotice {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    padding: 0.85rem 1rem;
+    font-size: 0.9rem;
+  }
+
+  .waiverSection {
+    padding: 1rem;
+  }
+}
+
+/* Very small screens (320px) */
+@media (max-width: 360px) {
+  .page {
+    padding: 1rem 0.5rem;
+  }
+
+  .hero {
+    padding: 1.25rem 0.85rem;
+  }
+
+  .hero h1 {
+    font-size: 1.35rem;
+  }
+
+  .featuredHeader,
+  .addonHeader {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .bundleCard {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    text-align: center;
+  }
+
+  .bundleAddBtn {
+    width: 100%;
   }
 }

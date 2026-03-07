@@ -299,66 +299,6 @@ export async function logPaymentFailed(
 }
 
 /**
- * Log mock payment (for development/testing)
- */
-export async function logMockPayment(
-  context: PaymentLogContext,
-  mockPaymentId: string
-): Promise<PaymentLogResult> {
-  const now = new Date().toISOString();
-
-  try {
-    const log = await PaymentLogRepository.create({
-      idempotency_key: context.idempotencyKey,
-      payment_id: mockPaymentId,
-      customer_id: context.customerId,
-      user_id: context.userId,
-      booking_id: context.bookingId,
-      provider: 'square',
-      payment_type: context.paymentType,
-      amount_usd: context.amount,
-      status: 'completed',
-      reference_id: context.referenceId,
-      response_code: 'COMPLETED',
-      ip_address: context.ipAddress,
-      user_agent: context.userAgent,
-      session_id: context.sessionId,
-      metadata: {
-        ...(context.metadata ?? {}),
-        mock: true,
-      },
-      initiated_at: now,
-      completed_at: now,
-      processing_time_ms: 0,
-    });
-
-    logger.info({
-      msg: 'Mock payment logged',
-      logId: log.log_id,
-      idempotencyKey: context.idempotencyKey,
-      mockPaymentId,
-      paymentType: context.paymentType,
-      amount: context.amount,
-    });
-
-    return {
-      logId: log.log_id,
-      idempotencyKey: context.idempotencyKey,
-    };
-  } catch (error) {
-    logger.error({
-      msg: 'Failed to log mock payment',
-      error,
-      context,
-    });
-    return {
-      logId: -1,
-      idempotencyKey: context.idempotencyKey,
-    };
-  }
-}
-
-/**
  * Get user-friendly error message based on Square error code
  * Based on https://developer.squareup.com/docs/payments-api/error-codes
  */

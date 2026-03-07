@@ -10,6 +10,10 @@ export function AuthCallbackPage() {
   const [message, setMessage] = useState('Completing sign in...');
 
   useEffect(() => {
+    let mounted = true;
+    let timer1: ReturnType<typeof setTimeout>;
+    let timer2: ReturnType<typeof setTimeout>;
+
     const handleCallback = async () => {
       try {
         // Check for error in URL params (from OAuth or magic link)
@@ -17,7 +21,7 @@ export function AuthCallbackPage() {
         const errorDescription = searchParams.get('error_description');
 
         if (errorParam) {
-          setError(errorDescription || errorParam);
+          if (mounted) setError(errorDescription || errorParam);
           return;
         }
 
@@ -25,24 +29,29 @@ export function AuthCallbackPage() {
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
         if (sessionError) {
-          setError(sessionError.message);
+          if (mounted) setError(sessionError.message);
           return;
         }
 
         if (session) {
-          setMessage('Success! Redirecting...');
+          if (mounted) setMessage('Success! Redirecting...');
           // Small delay to show success message
-          setTimeout(() => {
+          timer1 = setTimeout(() => {
+            if (!mounted) return;
             // Check for redirect parameter in URL
-            const redirectTo = searchParams.get('redirect') || '/account';
+            const rawRedirect = searchParams.get('redirect') || '/account';
+            // Validate redirect is a safe relative path (prevent open redirect)
+            const redirectTo = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') && !rawRedirect.startsWith('/\\') ? rawRedirect : '/account';
             navigate(redirectTo, { replace: true });
           }, 500);
         } else {
           // No session yet, might be handling a magic link
           // Wait a bit and check again
-          setMessage('Verifying...');
-          setTimeout(async () => {
+          if (mounted) setMessage('Verifying...');
+          timer2 = setTimeout(async () => {
+            if (!mounted) return;
             const { data: { session: retrySession } } = await supabase.auth.getSession();
+            if (!mounted) return;
             if (retrySession) {
               navigate('/account', { replace: true });
             } else {
@@ -53,11 +62,17 @@ export function AuthCallbackPage() {
         }
       } catch (err) {
         console.error('Auth callback error:', err);
-        setError(err instanceof Error ? err.message : 'Authentication failed');
+        if (mounted) setError(err instanceof Error ? err.message : 'Authentication failed');
       }
     };
 
     handleCallback();
+
+    return () => {
+      mounted = false;
+      if (timer1) clearTimeout(timer1);
+      if (timer2) clearTimeout(timer2);
+    };
   }, [navigate, searchParams]);
 
   if (error) {

@@ -256,6 +256,22 @@
   font-weight: 500;
 }
 
+/* Booking breakdown compact view */
+.bookingBreakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+  font-size: 0.65rem;
+  color: #6b7280;
+}
+
+.bookingBreakdown span {
+  background: #f3f4f6;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+}
+
 .itemPrice {
   font-weight: 700;
   font-size: 0.95rem;
@@ -412,6 +428,35 @@
 .backButton:hover {
   color: #7c3aed;
   text-decoration: underline;
+}
+
+/* Reservation Timer */
+.reservationTimer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+}
+
+.reservationNote {
+  font-size: 0.75rem;
+  color: #92400e;
+  text-align: center;
+}
+
+.reservationExpired {
+  padding: 0.875rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #dc2626;
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-align: center;
 }
 
 /* Checkout Button */

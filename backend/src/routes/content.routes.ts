@@ -7,6 +7,7 @@ import {
   listAnnouncementsHandler,
   listFaqsHandler,
   listInstagramPostsHandler,
+  listStoreHoursHandler,
   listTestimonialsHandler,
   updateAnnouncementHandler,
   updateFaqHandler,
@@ -22,6 +23,7 @@ contentRouter.get('/faqs', cachePublic(300), listFaqsHandler);
 contentRouter.get('/testimonials', cachePublic(300), listTestimonialsHandler);
 contentRouter.get('/announcements', cachePublic(60), listAnnouncementsHandler);
 contentRouter.get('/instagram', cachePublic(300), listInstagramPostsHandler);
+contentRouter.get('/store-hours', cachePublic(300), listStoreHoursHandler);
 
 contentRouter.use(supabaseAuthGuard, requireRoles('admin', 'staff'));
 

@@ -3,7 +3,8 @@ import { z } from 'zod';
 import path from 'path';
 
 // Load .env from project root (one level up from backend/)
-loadEnv({ path: path.resolve(__dirname, '../../../.env') });
+// override: true ensures the .env file wins over stale Docker env_file values
+loadEnv({ path: path.resolve(__dirname, '../../../.env'), override: true });
 
 const envSchema = z
   .object({
@@ -21,10 +22,8 @@ const envSchema = z
     SQUARE_LOCATION_ID: z.string().optional(),
     SQUARE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
     SQUARE_APPLICATION_ID: z.string().optional(),
+    SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1).optional(),
     // Stripe removed - using Square for all payments
-    STRIPE_SECRET_KEY: z.string().optional(),
-    STRIPE_WEBHOOK_SECRET: z.string().optional(),
-    MOCK_PAYMENTS: z.coerce.boolean().default(false),
     FRONTEND_URL: z.string().default('http://localhost:3000'),
     CORS_ORIGIN: z.string().optional(),
     DEFAULT_ADMIN_EMAIL: z.string().optional(),
@@ -47,6 +46,8 @@ const envSchema = z
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
     TWILIO_PHONE_NUMBER: z.string().optional(),
+    // Admin notification emails (comma-separated)
+    ADMIN_EMAILS: z.string().optional(),
   })
   .strip();
 
@@ -76,10 +77,8 @@ export const appConfig = {
   squareLocationId: env.SQUARE_LOCATION_ID,
   squareEnvironment: env.SQUARE_ENVIRONMENT,
   squareApplicationId: env.SQUARE_APPLICATION_ID,
-  // Stripe (deprecated - using Square)
-  stripeSecretKey: env.STRIPE_SECRET_KEY,
-  stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET,
-  mockPayments: env.MOCK_PAYMENTS,
+  squareWebhookSignatureKey: env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+  // Stripe removed - using Square for all payments
   frontendUrl: env.FRONTEND_URL,
   corsOrigin: env.CORS_ORIGIN ?? env.FRONTEND_URL,
   defaultAdminEmail: env.DEFAULT_ADMIN_EMAIL,
@@ -100,4 +99,6 @@ export const appConfig = {
   twilioAccountSid: env.TWILIO_ACCOUNT_SID,
   twilioAuthToken: env.TWILIO_AUTH_TOKEN,
   twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
+  // Admin notification emails
+  adminEmails: env.ADMIN_EMAILS ?? 'playfunia@playfunia.com',
 };

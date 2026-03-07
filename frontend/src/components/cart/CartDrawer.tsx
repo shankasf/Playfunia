@@ -1,14 +1,17 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 import { useCheckout, CheckoutItem } from '../../context/CheckoutContext';
 import { useAuth } from '../../context/AuthContext';
 import { SquarePaymentForm } from '../checkout/SquarePaymentForm';
+import { CountdownTimer } from '../checkout/CountdownTimer';
 import {
   getSquareConfig,
   finalizeSquareCheckout,
   finalizeSquareGuestCheckout,
   SquareConfig,
 } from '../../api/square';
+import { reserveSlot, cancelReservation } from '../../api/reservations';
+import { getAllPricing, type AllPricing } from '../../api/pricing';
 import {
   formatNameInput,
   formatPhoneInput,
@@ -17,6 +20,9 @@ import {
   isValidEmail,
 } from '../../utils/validation';
 import styles from './CartDrawer.module.css';
+
+// Default tax rate (fallback before API loads)
+const DEFAULT_TAX_RATE = 0.08;
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -28,16 +34,43 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const { user, refreshProfile } = useAuth();
 
   const [squareConfig, setSquareConfig] = useState<SquareConfig | null>(null);
+  const [pricingData, setPricingData] = useState<AllPricing | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  // Slot reservation state
+  const [reservationId, setReservationId] = useState<string | null>(null);
+  const [allReservationIds, setAllReservationIds] = useState<string[]>([]);
+  const [reservationExpiresAt, setReservationExpiresAt] = useState<string | null>(null);
+  const [reservationExpired, setReservationExpired] = useState(false);
+  const [reservingSlot, setReservingSlot] = useState(false);
+  const [squareConfigError, setSquareConfigError] = useState(false);
+
+  // Bug fix #14: Ref for success timer cleanup on unmount
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Guest checkout form state
   const [guestFirstName, setGuestFirstName] = useState('');
   const [guestLastName, setGuestLastName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [guestPhone, setGuestPhone] = useState('');
+
+  // Pre-fill guest info from booking item (if guest booked a party)
+  useEffect(() => {
+    if (user) return; // Skip for logged-in users
+    const bookingWithGuestInfo = items.find(
+      item => item.type === 'booking' && item.guestInfo
+    );
+    if (bookingWithGuestInfo?.type === 'booking' && bookingWithGuestInfo.guestInfo) {
+      const info = bookingWithGuestInfo.guestInfo;
+      setGuestFirstName(prev => prev || info.firstName || '');
+      setGuestLastName(prev => prev || info.lastName || '');
+      setGuestEmail(prev => prev || info.email || '');
+      setGuestPhone(prev => prev || info.phone || '');
+    }
+  }, [items, user]);
 
   // Filter to pending items only
   const pendingItems = items.filter(item => {
@@ -47,24 +80,56 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     return false;
   });
 
-  // Calculate totals
-  const TAX_RATE = 0.08; // 8% tax
+  // Tax rate for non-booking items (bookings have tax from API)
+  // Use API rate when available, fallback to default
+  const TAX_RATE = pricingData?.config.taxRate ?? DEFAULT_TAX_RATE;
 
+  // Calculate totals from item data
+  // For bookings: use subtotal + cleaningFee for pre-tax amount
+  // For tickets/memberships: item.total is pre-tax
   const subtotal = pendingItems.reduce((sum, item) => {
+    if (item.type === 'booking') {
+      return sum + (item.subtotal ?? 0) + (item.cleaningFee ?? 0);
+    }
     return sum + item.total;
   }, 0);
 
-  const taxAmount = Number((subtotal * TAX_RATE).toFixed(2));
+  // Get tax from booking items (from API), calculate for others
+  // Use cents-based math to avoid floating-point rounding errors
+  const taxAmount = pendingItems.reduce((sum, item) => {
+    if (item.type === 'booking') {
+      return sum + (item.tax ?? 0);
+    }
+    const totalCents = Math.round(item.total * 100);
+    const taxCents = Math.round(totalCents * TAX_RATE);
+    return sum + taxCents / 100;
+  }, 0);
+
   const total = Number((subtotal + taxAmount).toFixed(2));
 
-  // Load Square config
+  // Load Square config and pricing data (only retry once on failure to prevent infinite loop)
   useEffect(() => {
-    if (isOpen && !squareConfig) {
+    if (isOpen && !squareConfig && !squareConfigError) {
       getSquareConfig()
         .then(setSquareConfig)
-        .catch(err => console.error('Failed to load Square config:', err));
+        .catch(err => {
+          console.error('Failed to load Square config:', err);
+          setSquareConfigError(true);
+        });
     }
-  }, [isOpen, squareConfig]);
+    if (isOpen && !pricingData) {
+      getAllPricing()
+        .then(setPricingData)
+        .catch(err => console.error('Failed to load pricing config:', err));
+    }
+  }, [isOpen, squareConfig, pricingData, squareConfigError]);
+
+  // Bug fix #14: Cleanup success timer on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
 
   // Lock body scroll when drawer is open
   useEffect(() => {
@@ -78,7 +143,25 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     };
   }, [isOpen]);
 
+  // Cancel all reservations when drawer closes
+  useEffect(() => {
+    if (!isOpen && allReservationIds.length > 0) {
+      allReservationIds.forEach(resId => cancelReservation(resId).catch(() => {}));
+      setAllReservationIds([]);
+      setReservationId(null);
+      setReservationExpiresAt(null);
+      setReservationExpired(false);
+      setShowPayment(false);
+    } else if (!isOpen) {
+      setReservationExpiresAt(null);
+      setReservationExpired(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   const handleRemoveItem = (id: string) => {
+    // Prevent removing items during active payment processing
+    if (processing) return;
     removeItem(id);
     if (pendingItems.length === 1) {
       setShowPayment(false);
@@ -135,27 +218,78 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     return true;
   };
 
-  const handleProceedToPayment = () => {
+  const handleProceedToPayment = async () => {
     if (!user && !validateGuestInfo()) {
       return;
     }
     setError(null);
-    setShowPayment(true);
+    setReservationExpired(false);
+
+    // Check for booking items that need slot reservation
+    const bookingItems = pendingItems.filter(item => item.type === 'booking');
+    if (bookingItems.length > 0) {
+      setReservingSlot(true);
+      try {
+        // Bug fix #17: Reserve ALL booking slots (not just the first)
+        const reservations: Array<{ reservationId: string; expiresAt: string }> = [];
+        for (const booking of bookingItems) {
+          if (booking.type !== 'booking') continue;
+          const result = await reserveSlot(booking.eventDate, booking.startTime, booking.location);
+          if (!result.success) {
+            // Cancel already-made reservations on failure
+            for (const res of reservations) {
+              await cancelReservation(res.reservationId).catch(console.error);
+            }
+            setError('One or more time slots are no longer available. Please select different times.');
+            return;
+          }
+          reservations.push(result);
+        }
+        // Store all reservation IDs for cleanup, use first for display
+        setAllReservationIds(reservations.map(r => r.reservationId));
+        setReservationId(reservations[0].reservationId);
+        setReservationExpiresAt(reservations[0].expiresAt);
+        setShowPayment(true);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to reserve slot';
+        if (message.includes('no longer available') || message.includes('already reserved')) {
+          setError('This time slot was just booked by someone else. Please select a different time.');
+        } else {
+          setError(message);
+        }
+      } finally {
+        setReservingSlot(false);
+      }
+    } else {
+      // No booking items — start a frontend-only 5-minute payment timer
+      setReservationExpiresAt(new Date(Date.now() + 5 * 60 * 1000).toISOString());
+      setShowPayment(true);
+    }
   };
+
+  const handleReservationExpire = useCallback(() => {
+    setReservationExpired(true);
+    setError('Your reservation has expired. Please try again.');
+  }, []);
 
   const handlePaymentSuccess = useCallback(async (sourceId: string) => {
     setProcessing(true);
     setError(null);
 
+    // Snapshot pendingItems at invocation time to prevent stale closure
+    // if the cart changes while the payment request is in-flight
+    const itemsSnapshot = [...pendingItems];
+
     try {
       // Build items payload for Square checkout
-      const checkoutItems = pendingItems.map(item => {
+      const checkoutItems = itemsSnapshot.map(item => {
         if (item.type === 'ticket') {
           return {
             type: 'ticket' as const,
             label: item.label,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+            eventId: item.eventId,
           };
         }
         if (item.type === 'membership') {
@@ -170,6 +304,14 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
         }
         // For bookings, send as proper booking type with package details
         if (item.type === 'booking') {
+          // Build addOns array, ensuring extra_adult is included if present
+          const addOns = [...(item.addOns ?? [])];
+          if ((item.extraAdultCount ?? 0) > 0) {
+            const hasExtraAdult = addOns.some(a => a.id === 'extra_adult');
+            if (!hasExtraAdult) {
+              addOns.push({ id: 'extra_adult', quantity: item.extraAdultCount! });
+            }
+          }
           return {
             type: 'booking' as const,
             label: item.packageName,
@@ -181,7 +323,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             guestCount: item.guestCount,
             childIds: item.childIds,
             notes: item.notes,
-            addOns: item.addOns,
+            addOns: addOns.length > 0 ? addOns : undefined,
             guestInfo: item.guestInfo,
           };
         }
@@ -193,6 +335,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
         result = await finalizeSquareCheckout({
           items: checkoutItems,
           sourceId,
+          reservationId: reservationId ?? undefined,
         });
       } else {
         result = await finalizeSquareGuestCheckout({
@@ -202,12 +345,13 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
           guestLastName: guestLastName.trim(),
           guestEmail: guestEmail.trim(),
           guestPhone: guestPhone.trim(),
+          reservationId: reservationId ?? undefined,
         });
       }
 
-      // Update cart items with fulfillment info
+      // Update cart items with fulfillment info using the snapshot (cartIndex corresponds to snapshot positions)
       result.tickets.forEach(ticket => {
-        const originalItem = pendingItems[ticket.cartIndex];
+        const originalItem = itemsSnapshot[ticket.cartIndex];
         if (originalItem?.type === 'ticket') {
           markTicketFulfilled(originalItem.id, {
             ticketId: ticket.ticket.id,
@@ -217,7 +361,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       });
 
       result.memberships.forEach(membership => {
-        const originalItem = pendingItems[membership.cartIndex];
+        const originalItem = itemsSnapshot[membership.cartIndex];
         if (originalItem?.type === 'membership') {
           markMembershipActivated(originalItem.id, membership.membership.startedAt);
         }
@@ -226,7 +370,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       // Mark bookings as paid with their new bookingId and reference
       if (result.bookings) {
         result.bookings.forEach((booking: { cartIndex: number; bookingId: string; reference: string }) => {
-          const originalItem = pendingItems[booking.cartIndex];
+          const originalItem = itemsSnapshot[booking.cartIndex];
           if (originalItem?.type === 'booking') {
             markBookingPaid(originalItem.id, booking.bookingId, booking.reference);
           }
@@ -241,8 +385,8 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
       setSuccess('Payment successful! Your order has been confirmed. A receipt has been sent to your email and mobile number (if provided).');
       setShowPayment(false);
 
-      // Close drawer after short delay
-      setTimeout(() => {
+      // Close drawer after short delay (store ref for cleanup)
+      successTimerRef.current = setTimeout(() => {
         clear();
         onClose();
         setSuccess(null);
@@ -253,7 +397,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     } finally {
       setProcessing(false);
     }
-  }, [pendingItems, user, guestFirstName, guestLastName, guestEmail, guestPhone, markTicketFulfilled, markMembershipActivated, markBookingPaid, refreshProfile, clear, onClose]);
+  }, [pendingItems, user, guestFirstName, guestLastName, guestEmail, guestPhone, reservationId, markTicketFulfilled, markMembershipActivated, markBookingPaid, refreshProfile, clear, onClose]);
 
   
   const renderItemDetails = (item: CheckoutItem) => {
@@ -295,8 +439,23 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
         return (
           <>
             <span className={styles.itemLabel}>{item.packageName}</span>
-            <span className={styles.itemQty}>{item.reference}</span>
-            <span className={styles.itemNote}>{item.eventDate} at {item.startTime}</span>
+            <span className={styles.itemNote}>
+              {item.eventDate} at {item.startTime}
+              {item.durationMinutes && ` • ${item.durationMinutes} min`}
+            </span>
+            <span className={styles.itemNote}>{item.guestCount} guest{item.guestCount !== 1 ? 's' : ''} • {item.location}</span>
+            {/* Brief breakdown */}
+            {item.basePrice && (
+              <div className={styles.bookingBreakdown}>
+                <span>Base: ${item.basePrice.toFixed(2)}</span>
+                {(item.extraAdultCount ?? 0) > 0 && (
+                  <span>+{item.extraAdultCount} adults</span>
+                )}
+                {item.addOnDetails && item.addOnDetails.length > 0 && (
+                  <span>+{item.addOnDetails.length} add-on{item.addOnDetails.length > 1 ? 's' : ''}</span>
+                )}
+              </div>
+            )}
           </>
         );
       default:
@@ -312,8 +471,8 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
 
   return (
     <>
-      {/* Backdrop */}
-      <div className={styles.backdrop} onClick={onClose} />
+      {/* Backdrop - prevent closing during payment processing */}
+      <div className={styles.backdrop} onClick={processing ? undefined : onClose} />
 
       {/* Drawer */}
       <div className={`${styles.drawer} ${isOpen ? styles.drawerOpen : ''}`}>
@@ -326,7 +485,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             </svg>
             Your Cart
           </h2>
-          <button className={styles.closeButton} onClick={onClose} aria-label="Close cart">
+          <button className={styles.closeButton} onClick={onClose} disabled={processing} aria-label="Close cart">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M18 6L6 18M6 6l12 12" />
             </svg>
@@ -390,7 +549,11 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                       value={guestFirstName}
                       onChange={(e) => setGuestFirstName(formatNameInput(e.target.value))}
                       className={styles.input}
+                      required
                       maxLength={100}
+                      pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                      title="Letters, spaces, hyphens, and apostrophes only"
+                      autoComplete="given-name"
                     />
                     <input
                       type="text"
@@ -398,23 +561,35 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                       value={guestLastName}
                       onChange={(e) => setGuestLastName(formatNameInput(e.target.value))}
                       className={styles.input}
+                      required
                       maxLength={100}
+                      pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                      title="Letters, spaces, hyphens, and apostrophes only"
+                      autoComplete="family-name"
                     />
                   </div>
                   <input
                     type="email"
                     placeholder="Email address"
                     value={guestEmail}
-                    onChange={(e) => setGuestEmail(e.target.value)}
+                    onChange={(e) => setGuestEmail(e.target.value.trim())}
                     className={styles.input}
+                    required
+                    maxLength={255}
+                    autoComplete="email"
                   />
                   <input
                     type="tel"
+                    inputMode="numeric"
                     placeholder="Phone (10 digits)"
                     value={guestPhone}
                     onChange={(e) => setGuestPhone(formatPhoneInput(e.target.value))}
                     className={styles.input}
+                    required
                     maxLength={10}
+                    pattern="\d{10}"
+                    title="10-digit phone number"
+                    autoComplete="tel"
                   />
                 </div>
               )}
@@ -426,7 +601,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   <span>${subtotal.toFixed(2)}</span>
                 </div>
                 <div className={styles.summaryRow}>
-                  <span>Tax (8%)</span>
+                  <span>Tax{TAX_RATE > 0 ? ` (${Math.round(TAX_RATE * 100)}%)` : ''}</span>
                   <span>${taxAmount.toFixed(2)}</span>
                 </div>
                 <div className={`${styles.summaryRow} ${styles.total}`}>
@@ -451,12 +626,34 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
               {showPayment && squareConfig?.available ? (
                 <div className={styles.paymentSection}>
                   <h3 className={styles.paymentTitle}>Payment</h3>
+
+                  {/* Countdown Timer */}
+                  {reservationExpiresAt && (
+                    <div className={styles.reservationTimer}>
+                      <CountdownTimer
+                        expiresAt={reservationExpiresAt}
+                        onExpire={handleReservationExpire}
+                      />
+                      <span className={styles.reservationNote}>
+                        Complete your payment to secure your purchase
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Reservation Expired Warning */}
+                  {reservationExpired && (
+                    <div className={styles.reservationExpired}>
+                      Your reservation has expired. Please go back and try again.
+                    </div>
+                  )}
+
                   <SquarePaymentForm
                     amount={total}
                     currency="USD"
                     description={`${pendingItems.length} item${pendingItems.length > 1 ? 's' : ''} - Playfunia`}
                     submitLabel={processing ? 'Processing...' : 'Pay Now'}
                     processingLabel="Processing..."
+                    disabled={reservationExpired}
                     billingContact={
                       user
                         ? {
@@ -478,7 +675,17 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                   />
                   <button
                     className={styles.backButton}
-                    onClick={() => setShowPayment(false)}
+                    onClick={async () => {
+                      // Cancel all reservations
+                      for (const resId of allReservationIds) {
+                        try { await cancelReservation(resId); } catch (_) { /* ignore */ }
+                      }
+                      setAllReservationIds([]);
+                      setReservationId(null);
+                      setReservationExpiresAt(null);
+                      setReservationExpired(false);
+                      setShowPayment(false);
+                    }}
                     disabled={processing}
                   >
                     ← Back to cart
@@ -488,9 +695,9 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
                 <button
                   className={styles.checkoutButton}
                   onClick={handleProceedToPayment}
-                  disabled={pendingItems.length === 0}
+                  disabled={pendingItems.length === 0 || reservingSlot}
                 >
-                  Proceed to Payment
+                  {reservingSlot ? 'Reserving slot...' : 'Proceed to Payment'}
                 </button>
               )}
             </>

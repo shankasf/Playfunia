@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export type BookingCartItem = {
   id: string;
@@ -11,6 +11,16 @@ export type BookingCartItem = {
   startTime: string;
   guestCount: number;
   total: number;
+  // Pricing breakdown for display
+  durationMinutes?: number;
+  basePrice?: number;
+  extraAdultCount?: number;
+  extraAdultFee?: number;
+  extraAdultTotal?: number;
+  addOnDetails?: Array<{ id: string; name: string; price: number; quantity: number }>;
+  cleaningFee?: number;
+  subtotal?: number;
+  tax?: number;
   // Booking creation data
   childIds?: string[];
   notes?: string;
@@ -83,8 +93,19 @@ interface CheckoutContextValue {
 const CheckoutContext = createContext<CheckoutContextValue | undefined>(undefined);
 const STORAGE_KEY = "playfunia_checkout_items";
 
+const CART_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const TIMESTAMP_KEY = "playfunia_checkout_ts";
+
 function loadStoredItems(): CheckoutItem[] {
   try {
+    // Expire cart items after 24 hours
+    const ts = localStorage.getItem(TIMESTAMP_KEY);
+    if (ts && Date.now() - Number(ts) > CART_EXPIRY_MS) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(TIMESTAMP_KEY);
+      return [];
+    }
+
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       return [];
@@ -123,22 +144,31 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    if (items.length > 0) {
+      // Update timestamp on any cart change; set initial timestamp if not present
+      if (!localStorage.getItem(TIMESTAMP_KEY)) {
+        localStorage.setItem(TIMESTAMP_KEY, String(Date.now()));
+      }
+    } else {
+      localStorage.removeItem(TIMESTAMP_KEY);
+    }
   }, [items]);
 
-  const addBookingDepositItem = (item: BookingCartItem) => {
+  const addBookingDepositItem = useCallback((item: BookingCartItem) => {
     setItems(prev => {
-      // Remove any existing booking with same details (package + date + time)
+      // Remove any existing booking with same details (package + date + time + location)
       const filtered = prev.filter(existing =>
         !(existing.type === "booking" &&
           existing.packageId === item.packageId &&
           existing.eventDate === item.eventDate &&
-          existing.startTime === item.startTime)
+          existing.startTime === item.startTime &&
+          existing.location === item.location)
       );
       return [...filtered, item];
     });
-  };
+  }, []);
 
-  const markBookingPaid = (cartItemId: string, bookingId: string, reference: string) => {
+  const markBookingPaid = useCallback((cartItemId: string, bookingId: string, reference: string) => {
     setItems(prev =>
       prev.map(item => {
         if (item.type === "booking" && item.id === cartItemId) {
@@ -152,16 +182,42 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
         return item;
       }),
     );
-  };
+  }, []);
 
-  const addTicketPurchase = (item: TicketCartItem) => {
-    setItems(prev => [...prev, item]);
-  };
+  const addTicketPurchase = useCallback((item: TicketCartItem) => {
+    setItems(prev => {
+      // Check if there's an existing pending ticket with the same label
+      const existingIndex = prev.findIndex(
+        existing =>
+          existing.type === "ticket" &&
+          existing.status === "pending" &&
+          existing.label === item.label
+      );
 
-  const updateTicketQuantity = (itemId: string, newQuantity: number) => {
+      if (existingIndex !== -1) {
+        // Update existing ticket quantity
+        const existing = prev[existingIndex] as TicketCartItem;
+        const newQuantity = existing.quantity + item.quantity;
+        const updated: TicketCartItem = {
+          ...existing,
+          quantity: newQuantity,
+          // Bug fix #18: Use integer cents math to avoid floating-point errors
+          total: Math.round(Math.round(existing.unitPrice * 100) * newQuantity) / 100,
+        };
+        const newItems = [...prev];
+        newItems[existingIndex] = updated;
+        return newItems;
+      }
+
+      // Add as new item
+      return [...prev, item];
+    });
+  }, []);
+
+  const updateTicketQuantity = useCallback((itemId: string, newQuantity: number) => {
     if (newQuantity <= 0) {
       // Remove item if quantity is 0 or less
-      removeItem(itemId);
+      setItems(prev => prev.filter(item => item.id !== itemId));
       return;
     }
     setItems(prev =>
@@ -170,15 +226,16 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
           return {
             ...item,
             quantity: newQuantity,
-            total: Number((item.unitPrice * newQuantity).toFixed(2)),
+            // Bug fix #18: Use integer cents math to avoid floating-point errors
+            total: Math.round(Math.round(item.unitPrice * 100) * newQuantity) / 100,
           };
         }
         return item;
       }),
     );
-  };
+  }, []);
 
-  const markTicketFulfilled = (
+  const markTicketFulfilled = useCallback((
     itemId: string,
     update: { ticketId?: string; codes?: string[]; discounts?: DiscountLine[]; promoCode?: string },
   ) => {
@@ -198,13 +255,24 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
         return item;
       }),
     );
-  };
+  }, []);
 
-  const addMembershipPurchase = (item: MembershipCartItem) => {
-    setItems(prev => [...prev, item]);
-  };
+  const addMembershipPurchase = useCallback((item: MembershipCartItem) => {
+    setItems(prev => {
+      // Replace existing pending membership of the same plan (prevent duplicates)
+      const existingIndex = prev.findIndex(
+        i => i.type === 'membership' && i.status === 'pending' && i.membershipId === item.membershipId
+      );
+      if (existingIndex !== -1) {
+        const newItems = [...prev];
+        newItems[existingIndex] = item;
+        return newItems;
+      }
+      return [...prev, item];
+    });
+  }, []);
 
-  const markMembershipActivated = (itemId: string, activatedAt?: string) => {
+  const markMembershipActivated = useCallback((itemId: string, activatedAt?: string) => {
     setItems(prev =>
       prev.map(item => {
         if (item.type === "membership" && item.id === itemId) {
@@ -217,13 +285,13 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
         return item;
       }),
     );
-  };
+  }, []);
 
-  const removeItem = (id: string) => {
+  const removeItem = useCallback((id: string) => {
     setItems(prev => prev.filter(item => item.id !== id));
-  };
+  }, []);
 
-  const clear = () => setItems([]);
+  const clear = useCallback(() => setItems([]), []);
 
   const value = useMemo<CheckoutContextValue>(
     () => ({
@@ -238,7 +306,7 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
       removeItem,
       clear,
     }),
-    [items],
+    [items, addBookingDepositItem, markBookingPaid, addTicketPurchase, updateTicketQuantity, markTicketFulfilled, addMembershipPurchase, markMembershipActivated, removeItem, clear],
   );
 
   return <CheckoutContext.Provider value={value}>{children}</CheckoutContext.Provider>;

@@ -6,7 +6,7 @@
  * 2. Comparing with webhook_events table
  * 3. Processing any missed events
  *
- * Runs on a schedule (hourly) to ensure payment reconciliation.
+ * Runs on a schedule (daily) to ensure payment reconciliation.
  */
 
 import { getSquareClient } from '../config/square';
@@ -302,11 +302,11 @@ export async function runReconciliation(lookbackHours: number = 24): Promise<Rec
 
 /**
  * Start the reconciliation scheduler.
- * Runs hourly by default.
+ * Runs daily by default.
  *
- * @param intervalHours - Hours between reconciliation runs (default: 1)
+ * @param intervalHours - Hours between reconciliation runs (default: 24)
  */
-export function startReconciliationScheduler(intervalHours: number = 1): void {
+export function startReconciliationScheduler(intervalHours: number = 24): void {
   if (reconciliationInterval) {
     logger.warn('Reconciliation scheduler already running');
     return;

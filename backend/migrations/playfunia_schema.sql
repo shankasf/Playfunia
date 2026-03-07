@@ -41,7 +41,35 @@ CREATE POLICY "Public read on locations" ON public.locations
     FOR SELECT TO anon, authenticated USING (is_active = true);
 
 -- ============================================================
--- 3. CUSTOMERS
+-- 3. STORE_HOURS
+-- Stores operating hours for each day of the week per location
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.store_hours (
+    id SERIAL PRIMARY KEY,
+    location_name VARCHAR(100) NOT NULL,
+    day_of_week INTEGER NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6),
+    -- 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    open_time TIME NOT NULL,
+    close_time TIME NOT NULL,
+    is_closed BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(location_name, day_of_week)
+);
+
+ALTER TABLE public.store_hours ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service role full access on store_hours" ON public.store_hours;
+CREATE POLICY "Service role full access on store_hours" ON public.store_hours
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public read on store_hours" ON public.store_hours;
+CREATE POLICY "Public read on store_hours" ON public.store_hours
+    FOR SELECT TO anon, authenticated USING (is_active = true);
+
+-- ============================================================
+-- 4. CUSTOMERS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.customers (
     customer_id SERIAL PRIMARY KEY,
@@ -104,10 +132,17 @@ CREATE TABLE IF NOT EXISTS public.party_packages (
     includes_food BOOLEAN DEFAULT false,
     includes_drinks BOOLEAN DEFAULT false,
     includes_decor BOOLEAN DEFAULT false,
+    features JSONB DEFAULT '[]',
+    additional_terms JSONB DEFAULT '[]',
+    extra_child_price NUMERIC(10,2) DEFAULT 40.00,
+    extra_adult_price NUMERIC(10,2) DEFAULT 10.00,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Per-package cleaning fee override (NULL means use pricing_config default)
+ALTER TABLE public.party_packages ADD COLUMN IF NOT EXISTS cleaning_fee NUMERIC(10,2);
 
 ALTER TABLE public.party_packages ENABLE ROW LEVEL SECURITY;
 
@@ -490,7 +525,7 @@ CREATE POLICY "Authenticated access on orders" ON public.orders
 CREATE TABLE IF NOT EXISTS public.party_bookings (
     booking_id SERIAL PRIMARY KEY,
     customer_id INTEGER REFERENCES public.customers(customer_id) ON DELETE SET NULL,
-    package_id INTEGER REFERENCES public.party_packages(package_id) ON DELETE SET NULL,
+    package_id INTEGER REFERENCES public.party_packages(package_id) ON DELETE RESTRICT,
     reference VARCHAR(50) UNIQUE,
     event_date DATE,
     start_time VARCHAR(10),
@@ -551,6 +586,7 @@ CREATE TABLE IF NOT EXISTS public.order_items (
     product_id INTEGER,
     ticket_type_id INTEGER REFERENCES public.ticket_types(ticket_type_id) ON DELETE SET NULL,
     booking_id INTEGER REFERENCES public.party_bookings(booking_id) ON DELETE SET NULL,
+    event_id INTEGER REFERENCES public.events(event_id) ON DELETE SET NULL,
     name_override VARCHAR(255),
     quantity INTEGER NOT NULL,
     unit_price_usd NUMERIC(10,2) NOT NULL,
@@ -576,6 +612,7 @@ CREATE TABLE IF NOT EXISTS public.payments (
     provider_payment_id VARCHAR(120),
     status VARCHAR(30) DEFAULT 'Pending' NOT NULL,
     amount_usd NUMERIC(10,2) NOT NULL,
+    receipt_url TEXT,
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -891,8 +928,106 @@ CREATE POLICY "Admin read on payment_logs" ON public.payment_logs
     FOR SELECT TO authenticated USING (true);
 
 -- ============================================================
+-- SLOT RESERVATIONS TABLE
+-- Prevents double-booking by temporarily reserving time slots during checkout
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'slot_reservations') THEN
+    CREATE TABLE slot_reservations (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      slot_date DATE NOT NULL,
+      slot_time TIME NOT NULL,
+      location_name VARCHAR(255) NOT NULL,
+      user_id INT REFERENCES users(user_id) ON DELETE SET NULL,
+      session_id VARCHAR(255) NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'expired', 'cancelled')),
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      confirmed_at TIMESTAMPTZ,
+      booking_id INT REFERENCES party_bookings(booking_id) ON DELETE SET NULL,
+      CONSTRAINT slot_reservations_identity_check CHECK (user_id IS NOT NULL OR booking_id IS NOT NULL)
+    );
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'slot_reservations' AND column_name = 'booking_id') THEN
+    ALTER TABLE slot_reservations ADD COLUMN booking_id INT REFERENCES party_bookings(booking_id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+COMMENT ON TABLE slot_reservations IS 'Temporary slot reservations to prevent double-booking during checkout';
+
+-- ============================================================
+-- WEBHOOK EVENTS TABLE
+-- Ensures idempotent processing of Square webhooks
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'webhook_events') THEN
+    CREATE TABLE webhook_events (
+      id SERIAL PRIMARY KEY,
+      event_id VARCHAR(255) UNIQUE NOT NULL,
+      event_type VARCHAR(100) NOT NULL,
+      payload JSONB NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'received' CHECK (status IN ('received', 'processing', 'processed', 'failed')),
+      error_message TEXT,
+      retry_count INT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      processed_at TIMESTAMPTZ
+    );
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'webhook_events' AND column_name = 'error_message') THEN
+    ALTER TABLE webhook_events ADD COLUMN error_message TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'webhook_events' AND column_name = 'retry_count') THEN
+    ALTER TABLE webhook_events ADD COLUMN retry_count INT DEFAULT 0;
+  END IF;
+END $$;
+
+COMMENT ON TABLE webhook_events IS 'Idempotent storage of Square webhook events';
+
+-- ============================================================
+-- NOTIFICATION QUEUE TABLE
+-- Reliable email/SMS delivery with exponential backoff retry
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'notification_queue') THEN
+    CREATE TABLE notification_queue (
+      id SERIAL PRIMARY KEY,
+      type VARCHAR(50) NOT NULL CHECK (type IN ('email', 'sms')),
+      recipient VARCHAR(255) NOT NULL,
+      subject VARCHAR(500),
+      template VARCHAR(100) NOT NULL,
+      payload JSONB NOT NULL,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
+      attempts INT DEFAULT 0,
+      max_attempts INT DEFAULT 3,
+      next_attempt_at TIMESTAMPTZ DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      reference_type VARCHAR(50),
+      reference_id INT
+    );
+  END IF;
+END $$;
+
+COMMENT ON TABLE notification_queue IS 'Reliable notification delivery with retry support';
+
+-- ============================================================
 -- INDEXES (using IF NOT EXISTS)
 -- ============================================================
+CREATE INDEX IF NOT EXISTS ix_store_hours_location_day ON public.store_hours(location_name, day_of_week);
 CREATE INDEX IF NOT EXISTS ix_users_email ON public.users(email);
 CREATE INDEX IF NOT EXISTS ix_users_customer ON public.users(customer_id);
 CREATE INDEX IF NOT EXISTS ix_users_phone ON public.users(phone);
@@ -944,6 +1079,70 @@ CREATE INDEX IF NOT EXISTS ix_payment_logs_status ON public.payment_logs(status)
 CREATE INDEX IF NOT EXISTS ix_payment_logs_error ON public.payment_logs(error_code) WHERE error_code IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_payment_logs_created ON public.payment_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_payment_logs_initiated ON public.payment_logs(initiated_at DESC);
+
+-- Slot reservations indexes
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_reservation
+  ON slot_reservations(slot_date, slot_time, location_name)
+  WHERE status IN ('pending', 'confirmed');
+CREATE INDEX IF NOT EXISTS idx_reservations_expires
+  ON slot_reservations(expires_at)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_reservations_user
+  ON slot_reservations(user_id)
+  WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_reservations_session
+  ON slot_reservations(session_id);
+
+-- Webhook events indexes
+CREATE INDEX IF NOT EXISTS idx_webhook_events_status
+  ON webhook_events(status, created_at)
+  WHERE status IN ('received', 'processing', 'failed');
+CREATE INDEX IF NOT EXISTS idx_webhook_events_type
+  ON webhook_events(event_type);
+
+-- Notification queue indexes
+CREATE INDEX IF NOT EXISTS idx_notification_queue_pending
+  ON notification_queue(next_attempt_at)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_notification_queue_reference
+  ON notification_queue(reference_type, reference_id);
+
+-- ============================================================
+-- 32. REFUNDS (Square payment refunds tracking)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.refunds (
+    refund_id SERIAL PRIMARY KEY,
+    square_refund_id VARCHAR(100) UNIQUE,
+    square_payment_id VARCHAR(100) NOT NULL,
+    order_id INTEGER REFERENCES public.orders(order_id) ON DELETE SET NULL,
+    payment_id INTEGER REFERENCES public.payments(payment_id) ON DELETE SET NULL,
+    booking_id INTEGER REFERENCES public.party_bookings(booking_id) ON DELETE SET NULL,
+    amount_cents INTEGER NOT NULL,
+    currency VARCHAR(10) NOT NULL DEFAULT 'USD',
+    status VARCHAR(30) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'rejected')),
+    reason VARCHAR(500),
+    initiated_by INTEGER REFERENCES public.users(user_id) ON DELETE SET NULL,
+    idempotency_key VARCHAR(100) NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    processed_at TIMESTAMPTZ,
+    error_code VARCHAR(100),
+    error_message TEXT
+);
+
+ALTER TABLE public.refunds ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service role full access on refunds" ON public.refunds;
+CREATE POLICY "Service role full access on refunds" ON public.refunds
+    FOR ALL TO service_role USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Authenticated read on refunds" ON public.refunds;
+CREATE POLICY "Authenticated read on refunds" ON public.refunds
+    FOR SELECT TO authenticated USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_refunds_square_payment_id ON public.refunds(square_payment_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_status ON public.refunds(status);
+CREATE INDEX IF NOT EXISTS idx_refunds_order_id ON public.refunds(order_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_booking_id ON public.refunds(booking_id);
 
 -- ============================================================
 -- FUNCTIONS
@@ -1101,6 +1300,343 @@ GRANT EXECUTE ON FUNCTION public.process_membership_reminders() TO service_role;
 GRANT EXECUTE ON FUNCTION public.handle_new_auth_user() TO service_role;
 
 -- ============================================================
+-- SLOT RESERVATION FUNCTIONS
+-- Atomically reserve booking slots to prevent double-booking
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION reserve_slot(
+  p_slot_date DATE,
+  p_slot_time TIME,
+  p_location_name VARCHAR(255),
+  p_user_id INT,
+  p_session_id VARCHAR(255),
+  p_timeout_minutes INT DEFAULT 5
+)
+RETURNS TABLE(
+  reservation_id UUID,
+  expires_at TIMESTAMPTZ,
+  success BOOLEAN,
+  error_message TEXT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_expires_at TIMESTAMPTZ;
+  v_reservation_id UUID;
+  v_existing_id UUID;
+BEGIN
+  v_expires_at := NOW() + (p_timeout_minutes || ' minutes')::INTERVAL;
+
+  -- First, clean up any expired reservations for this slot
+  -- Use table alias 'sr' to avoid ambiguous column references with return table
+  UPDATE slot_reservations sr
+  SET status = 'expired'
+  WHERE sr.slot_date = p_slot_date
+    AND sr.slot_time = p_slot_time
+    AND sr.location_name = p_location_name
+    AND sr.status = 'pending'
+    AND sr.expires_at < NOW();
+
+  -- Try to lock any existing active reservation
+  SELECT sr.id INTO v_existing_id
+  FROM slot_reservations sr
+  WHERE sr.slot_date = p_slot_date
+    AND sr.slot_time = p_slot_time
+    AND sr.location_name = p_location_name
+    AND sr.status IN ('pending', 'confirmed')
+    AND (sr.status = 'confirmed' OR sr.expires_at > NOW())
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1;
+
+  IF v_existing_id IS NOT NULL THEN
+    RETURN QUERY SELECT
+      NULL::UUID,
+      NULL::TIMESTAMPTZ,
+      FALSE,
+      'Slot is no longer available'::TEXT;
+    RETURN;
+  END IF;
+
+  INSERT INTO slot_reservations (
+    slot_date,
+    slot_time,
+    location_name,
+    user_id,
+    session_id,
+    status,
+    expires_at
+  ) VALUES (
+    p_slot_date,
+    p_slot_time,
+    p_location_name,
+    p_user_id,
+    p_session_id,
+    'pending',
+    v_expires_at
+  )
+  RETURNING id INTO v_reservation_id;
+
+  RETURN QUERY SELECT
+    v_reservation_id,
+    v_expires_at,
+    TRUE,
+    NULL::TEXT;
+
+EXCEPTION WHEN unique_violation THEN
+  RETURN QUERY SELECT
+    NULL::UUID,
+    NULL::TIMESTAMPTZ,
+    FALSE,
+    'Slot was just reserved by another user'::TEXT;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION confirm_reservation(
+  p_reservation_id UUID,
+  p_booking_id INT DEFAULT NULL
+)
+RETURNS TABLE(
+  success BOOLEAN,
+  error_message TEXT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_status VARCHAR(20);
+  v_expires_at TIMESTAMPTZ;
+BEGIN
+  -- Use table alias to avoid ambiguous column references
+  SELECT sr.status, sr.expires_at INTO v_status, v_expires_at
+  FROM slot_reservations sr
+  WHERE sr.id = p_reservation_id
+  FOR UPDATE;
+
+  IF v_status IS NULL THEN
+    RETURN QUERY SELECT FALSE, 'Reservation not found'::TEXT;
+    RETURN;
+  END IF;
+
+  IF v_status = 'confirmed' THEN
+    RETURN QUERY SELECT TRUE, NULL::TEXT;
+    RETURN;
+  END IF;
+
+  IF v_status != 'pending' THEN
+    RETURN QUERY SELECT FALSE, ('Reservation is ' || v_status)::TEXT;
+    RETURN;
+  END IF;
+
+  IF v_expires_at < NOW() THEN
+    UPDATE slot_reservations SET status = 'expired' WHERE id = p_reservation_id;
+    RETURN QUERY SELECT FALSE, 'Reservation has expired'::TEXT;
+    RETURN;
+  END IF;
+
+  UPDATE slot_reservations
+  SET status = 'confirmed',
+      confirmed_at = NOW(),
+      booking_id = p_booking_id
+  WHERE id = p_reservation_id;
+
+  RETURN QUERY SELECT TRUE, NULL::TEXT;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION cleanup_expired_reservations()
+RETURNS INT
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_count INT;
+BEGIN
+  -- Use table alias sr to avoid any potential ambiguity
+  UPDATE slot_reservations sr
+  SET status = 'expired'
+  WHERE sr.status = 'pending'
+    AND sr.expires_at < NOW();
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION process_booking_deposit(
+  p_booking_id INT,
+  p_expected_status VARCHAR(50) DEFAULT 'pending'
+)
+RETURNS TABLE(
+  success BOOLEAN,
+  error_message TEXT,
+  current_status VARCHAR(50)
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_status VARCHAR(50);
+  v_payment_status VARCHAR(50);
+BEGIN
+  -- Lock the booking row to prevent concurrent updates
+  SELECT status, payment_status INTO v_status, v_payment_status
+  FROM party_bookings
+  WHERE booking_id = p_booking_id
+  FOR UPDATE;
+
+  IF v_payment_status IS NULL THEN
+    RETURN QUERY SELECT FALSE, 'Booking not found'::TEXT, NULL::VARCHAR(50);
+    RETURN;
+  END IF;
+
+  -- Check if deposit is already paid
+  IF v_payment_status = 'deposit_paid' OR v_payment_status = 'paid' THEN
+    RETURN QUERY SELECT FALSE, 'Deposit already paid for this booking'::TEXT, v_payment_status;
+    RETURN;
+  END IF;
+
+  -- Check expected status (optimistic locking)
+  IF v_payment_status != p_expected_status THEN
+    RETURN QUERY SELECT FALSE, ('Payment status changed: expected ' || p_expected_status || ', got ' || v_payment_status)::TEXT, v_payment_status;
+    RETURN;
+  END IF;
+
+  -- Return success - caller will update after payment succeeds
+  RETURN QUERY SELECT TRUE, NULL::TEXT, v_payment_status;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION complete_booking_deposit(
+  p_booking_id INT,
+  p_payment_intent_id VARCHAR(255),
+  p_balance_remaining DECIMAL(10, 2)
+)
+RETURNS TABLE(
+  success BOOLEAN,
+  error_message TEXT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_payment_status VARCHAR(50);
+BEGIN
+  -- Lock and check current status
+  SELECT payment_status INTO v_payment_status
+  FROM party_bookings
+  WHERE booking_id = p_booking_id
+  FOR UPDATE;
+
+  IF v_payment_status IS NULL THEN
+    RETURN QUERY SELECT FALSE, 'Booking not found'::TEXT;
+    RETURN;
+  END IF;
+
+  -- Double-check deposit not already paid (race condition safety)
+  IF v_payment_status = 'deposit_paid' OR v_payment_status = 'paid' THEN
+    RETURN QUERY SELECT FALSE, 'Deposit already paid'::TEXT;
+    RETURN;
+  END IF;
+
+  -- Update to deposit_paid
+  UPDATE party_bookings
+  SET payment_status = 'deposit_paid',
+      status = 'Confirmed',
+      balance_remaining = p_balance_remaining,
+      deposit_paid_at = NOW(),
+      latest_payment_intent_id = p_payment_intent_id
+  WHERE booking_id = p_booking_id;
+
+  RETURN QUERY SELECT TRUE, NULL::TEXT;
+END;
+$$;
+
+COMMENT ON FUNCTION reserve_slot IS 'Atomically reserve a booking slot with race condition protection';
+COMMENT ON FUNCTION confirm_reservation IS 'Confirm a reservation after successful payment';
+COMMENT ON FUNCTION cleanup_expired_reservations IS 'Mark expired pending reservations - call via cron every minute';
+COMMENT ON FUNCTION process_booking_deposit IS 'Lock booking row and verify deposit not already paid';
+COMMENT ON FUNCTION complete_booking_deposit IS 'Atomically complete deposit payment with race condition protection';
+
+-- ============================================================
+-- MEMBERSHIP VISIT & PROMOTION REDEMPTION FUNCTIONS
+-- Atomic operations to prevent race conditions
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.record_membership_visit(
+  p_membership_id INTEGER,
+  p_visits_per_month INTEGER
+)
+RETURNS SETOF public.memberships
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_current_visits INTEGER;
+BEGIN
+  -- Lock the row for update
+  SELECT visits_used_this_period INTO v_current_visits
+  FROM public.memberships
+  WHERE membership_id = p_membership_id
+  FOR UPDATE;
+
+  IF v_current_visits IS NULL THEN
+    RAISE EXCEPTION 'Membership not found: %', p_membership_id;
+  END IF;
+
+  -- Check if within limit
+  IF v_current_visits >= p_visits_per_month THEN
+    RETURN; -- Return empty set = visit limit reached
+  END IF;
+
+  -- Atomically increment and return updated row
+  RETURN QUERY
+  UPDATE public.memberships
+  SET visits_used_this_period = COALESCE(visits_used_this_period, 0) + 1,
+      last_visit_at = NOW(),
+      updated_at = NOW()
+  WHERE membership_id = p_membership_id
+  RETURNING *;
+END;
+$$;
+
+COMMENT ON FUNCTION public.record_membership_visit IS 'Atomically record a membership visit - increments only if under monthly limit';
+
+CREATE OR REPLACE FUNCTION public.increment_promotion_redemptions(
+  p_promotion_id INTEGER
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_max_redemptions INTEGER;
+  v_current_redemptions INTEGER;
+BEGIN
+  -- Lock the row for update
+  SELECT max_redemptions, COALESCE(redemptions, 0)
+  INTO v_max_redemptions, v_current_redemptions
+  FROM public.promotions
+  WHERE promotion_id = p_promotion_id
+  FOR UPDATE;
+
+  IF v_max_redemptions IS NULL AND v_current_redemptions IS NULL THEN
+    RAISE EXCEPTION 'Promotion not found: %', p_promotion_id;
+  END IF;
+
+  -- Check if max redemptions reached (NULL means unlimited)
+  IF v_max_redemptions IS NOT NULL AND v_current_redemptions >= v_max_redemptions THEN
+    RAISE EXCEPTION 'Promotion has reached maximum redemptions';
+  END IF;
+
+  -- Atomically increment
+  UPDATE public.promotions
+  SET redemptions = COALESCE(redemptions, 0) + 1
+  WHERE promotion_id = p_promotion_id;
+END;
+$$;
+
+COMMENT ON FUNCTION public.increment_promotion_redemptions IS 'Atomically increment promotion redemption count with max limit check';
+
+GRANT EXECUTE ON FUNCTION public.record_membership_visit(INTEGER, INTEGER) TO service_role;
+GRANT EXECUTE ON FUNCTION public.increment_promotion_redemptions(INTEGER) TO service_role;
+
+-- ============================================================
 -- GRANTS FOR ALL TABLES AND SEQUENCES
 -- ============================================================
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
@@ -1151,17 +1687,22 @@ INSERT INTO public.party_add_ons (code, label, description, price, price_type, d
 VALUES
     ('extra_hour', 'Extra Hour', 'Extend your party by one hour', 100.00, 'duration', 1),
     ('extra_child', 'Extra Child', 'Additional child beyond base package', 40.00, 'perChild', 2),
-    ('face_painting', 'Face Painting', 'Professional face painting for all guests', 100.00, 'flat', 3),
-    ('photo_video', 'Photo & Video', 'Professional photography and videography', 250.00, 'flat', 4),
-    ('balloon_artist', 'Balloon Artist', 'Balloon sculptures for all guests', 150.00, 'flat', 5),
-    ('character_visit', 'Character Visit', 'Special character appearance at your party', 200.00, 'flat', 6)
+    ('extra_adult', 'Extra Adult', 'Additional adult beyond base package', 10.00, 'flat', 3),
+    ('face_painting', 'Face Painting', 'Professional face painting for all guests', 100.00, 'flat', 4),
+    ('photo_video', 'Photo & Video', 'Professional photography and videography', 250.00, 'flat', 5),
+    ('balloon_artist', 'Balloon Artist', 'Balloon sculptures for all guests', 150.00, 'flat', 6),
+    ('character_visit', 'Character Visit', 'Special character appearance at your party', 200.00, 'flat', 7)
 ON CONFLICT (code) DO NOTHING;
 
 -- Pricing config
+-- Note: extra_child_fee and extra_adult_fee are stored in party_add_ons table (not here)
 INSERT INTO public.pricing_config (config_key, config_value, description)
 VALUES
+    ('tax_rate', 8.00, 'Tax rate as percentage (e.g., 8 for 8%)'),
     ('cleaning_fee', 50.00, 'Standard cleaning fee for party bookings'),
     ('grip_socks_price', 3.00, 'Price per pair of grip socks'),
+    ('single_admission_price', 20.00, 'Price for single child admission ticket'),
+    ('extra_adult_admission_price', 5.00, 'Price for extra adult admission with ticket'),
     ('extra_child_admission', 15.00, 'Price per additional child beyond trio bundle'),
     ('deposit_percentage', 50.00, 'Deposit percentage for party bookings'),
     ('sibling_discount_rate', 5.00, 'Discount percentage for sibling bookings')
@@ -1171,6 +1712,22 @@ ON CONFLICT (config_key) DO NOTHING;
 INSERT INTO public.locations (name, address, city, state, postal_code, phone, email)
 VALUES ('Albany', '1 Crossgates Mall Rd, Unit N202, Level 2, Near Macy''s', 'Albany', 'NY', '12203', '+1 (201) 539-5928', 'info@playfunia.com')
 ON CONFLICT DO NOTHING;
+
+-- Store Hours (Albany location)
+-- Sun: 11AM-6PM, Mon-Thu: 10AM-8PM, Fri-Sat: 10AM-9PM
+INSERT INTO public.store_hours (location_name, day_of_week, open_time, close_time)
+VALUES
+    ('Albany', 0, '11:00', '18:00'),  -- Sunday: 11am - 6pm
+    ('Albany', 1, '10:00', '20:00'),  -- Monday: 10am - 8pm
+    ('Albany', 2, '10:00', '20:00'),  -- Tuesday: 10am - 8pm
+    ('Albany', 3, '10:00', '20:00'),  -- Wednesday: 10am - 8pm
+    ('Albany', 4, '10:00', '20:00'),  -- Thursday: 10am - 8pm
+    ('Albany', 5, '10:00', '21:00'),  -- Friday: 10am - 9pm
+    ('Albany', 6, '10:00', '21:00')   -- Saturday: 10am - 9pm
+ON CONFLICT (location_name, day_of_week) DO UPDATE SET
+    open_time = EXCLUDED.open_time,
+    close_time = EXCLUDED.close_time,
+    updated_at = now();
 
 -- Admin users
 INSERT INTO public.customers (full_name, email, created_at, updated_at)
@@ -1184,6 +1741,262 @@ VALUES
     ('emelgumustop@hotmail.com', 'Emel', 'Gumustop', ARRAY['user', 'admin']::text[], (SELECT customer_id FROM public.customers WHERE email = 'emelgumustop@hotmail.com' LIMIT 1)),
     ('playfunia@playfunia.com', 'Playfunia', 'Admin', ARRAY['user', 'admin']::text[], (SELECT customer_id FROM public.customers WHERE email = 'playfunia@playfunia.com' LIMIT 1))
 ON CONFLICT (email) DO UPDATE SET roles = ARRAY['user', 'admin']::text[], updated_at = NOW();
+
+-- ============================================================
+-- JOB LISTINGS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.job_listings (
+    listing_id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    slug VARCHAR(200) UNIQUE NOT NULL,
+    department VARCHAR(100) NOT NULL,
+    employment_type VARCHAR(30) NOT NULL CHECK (employment_type IN ('full-time', 'part-time', 'seasonal', 'internship')),
+    location VARCHAR(200) NOT NULL DEFAULT 'Crossgates Mall, Albany, NY',
+    description TEXT NOT NULL,
+    responsibilities TEXT[] DEFAULT '{}',
+    qualifications TEXT[] DEFAULT '{}',
+    nice_to_have TEXT[] DEFAULT '{}',
+    perks TEXT[] DEFAULT '{}',
+    pay_range VARCHAR(100),
+    minimum_age INTEGER DEFAULT 16,
+    schedule_notes VARCHAR(200),
+    display_order INTEGER DEFAULT 0,
+    is_active BOOLEAN DEFAULT true,
+    published_at TIMESTAMPTZ DEFAULT now(),
+    closes_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_listings_active_order ON public.job_listings (is_active, display_order);
+CREATE INDEX IF NOT EXISTS idx_job_listings_slug ON public.job_listings (slug);
+
+-- RLS for job_listings
+ALTER TABLE public.job_listings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "job_listings_public_read" ON public.job_listings;
+CREATE POLICY "job_listings_public_read" ON public.job_listings
+    FOR SELECT USING (is_active = true);
+DROP POLICY IF EXISTS "job_listings_service_all" ON public.job_listings;
+CREATE POLICY "job_listings_service_all" ON public.job_listings
+    FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- JOB APPLICATIONS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.job_applications (
+    application_id SERIAL PRIMARY KEY,
+    listing_id INTEGER NOT NULL REFERENCES public.job_listings(listing_id) ON DELETE CASCADE,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    date_of_birth DATE,
+    resume_storage_path TEXT,
+    resume_original_name VARCHAR(255),
+    resume_mime_type VARCHAR(100),
+    resume_size_bytes INTEGER,
+    cover_letter TEXT,
+    schedule_preference VARCHAR(100),
+    available_start_date DATE,
+    has_experience_with_children BOOLEAN DEFAULT false,
+    how_heard VARCHAR(200),
+    emergency_contact_name VARCHAR(200),
+    emergency_contact_phone VARCHAR(50),
+    status VARCHAR(30) DEFAULT 'new' CHECK (status IN ('new', 'reviewed', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn')),
+    admin_notes TEXT,
+    ip_address VARCHAR(64),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_job_applications_listing ON public.job_applications (listing_id);
+CREATE INDEX IF NOT EXISTS idx_job_applications_email ON public.job_applications (email);
+CREATE INDEX IF NOT EXISTS idx_job_applications_status ON public.job_applications (status);
+CREATE INDEX IF NOT EXISTS idx_job_applications_created ON public.job_applications (created_at DESC);
+
+-- RLS for job_applications
+ALTER TABLE public.job_applications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "job_applications_service_all" ON public.job_applications;
+CREATE POLICY "job_applications_service_all" ON public.job_applications
+    FOR ALL USING (true) WITH CHECK (true);
+
+-- ============================================================
+-- SEED: Job Listings
+-- ============================================================
+INSERT INTO public.job_listings (title, slug, department, employment_type, description, responsibilities, qualifications, nice_to_have, perks, pay_range, minimum_age, schedule_notes, display_order, is_active)
+VALUES
+  (
+    'Party Host',
+    'party-host',
+    'Events & Parties',
+    'part-time',
+    'Love throwing parties? As a Party Host at Playfunia, you''ll create magical birthday celebrations that kids and parents will never forget. You''ll lead the fun, keep the energy high, and make every birthday child feel like a superstar!',
+    ARRAY[
+      'Lead birthday parties from setup to cleanup',
+      'Set up and decorate party rooms according to package',
+      'Serve food and beverages to party guests',
+      'Engage kids with games, activities, and entertainment',
+      'Communicate with parents about schedule and special requests',
+      'Ensure party areas are clean and ready for the next group'
+    ],
+    ARRAY[
+      'Energetic and enthusiastic personality',
+      'Comfortable working with children ages 1-13',
+      'Ability to multitask in a fast-paced environment',
+      'Weekend availability required',
+      'Must be at least 16 years old'
+    ],
+    ARRAY[
+      'Previous experience working with children',
+      'CPR/First Aid certification',
+      'Experience in event planning or hospitality'
+    ],
+    ARRAY[
+      'Fun, energetic work environment',
+      'Flexible weekday scheduling',
+      'Employee discounts on parties and play passes',
+      'Tips from party hosts',
+      'Great first job for students'
+    ],
+    '$15-$18/hr + tips',
+    16,
+    'Weekends required, flexible weekday shifts',
+    1,
+    true
+  ),
+  (
+    'Front Desk Associate',
+    'front-desk-associate',
+    'Operations',
+    'part-time',
+    'Be the friendly face that welcomes every family to Playfunia! As a Front Desk Associate, you''ll help guests check in, process ticket and membership purchases, and make sure every visitor has an amazing experience from the moment they walk in.',
+    ARRAY[
+      'Greet families and check them in for play sessions',
+      'Process ticket purchases and membership sign-ups via Square POS',
+      'Answer phone calls and respond to inquiries',
+      'Verify waivers and ensure all guests have completed safety forms',
+      'Handle cash and card transactions accurately',
+      'Maintain a clean and organized front desk area'
+    ],
+    ARRAY[
+      'Strong customer service and communication skills',
+      'Comfortable using POS systems and handling transactions',
+      'Ability to multitask and stay organized',
+      'Friendly and welcoming demeanor',
+      'Must be at least 16 years old'
+    ],
+    ARRAY[
+      'Experience with Square POS or similar systems',
+      'Bilingual (English/Spanish or English/another language)',
+      'Previous retail or customer service experience'
+    ],
+    ARRAY[
+      'Fun, family-friendly work environment',
+      'Flexible scheduling for students',
+      'Employee discounts on play passes and parties',
+      'Growth opportunities within the company'
+    ],
+    '$15-$17/hr',
+    16,
+    'Various shifts available, weekends preferred',
+    2,
+    true
+  ),
+  (
+    'Play Zone Attendant',
+    'play-zone-attendant',
+    'Operations',
+    'part-time',
+    'Keep the fun safe and the play zones sparkling! As a Play Zone Attendant, you''ll make sure kids have a blast while staying safe. You''ll monitor play areas, enforce safety rules, and keep equipment clean and sanitized.',
+    ARRAY[
+      'Monitor play zones to ensure children''s safety',
+      'Enforce age-appropriate zone rules and guidelines',
+      'Sanitize and clean play equipment regularly',
+      'Restock supplies (hand sanitizer, wipes, etc.)',
+      'Assist parents and children with play zone navigation',
+      'Report any maintenance or safety concerns immediately'
+    ],
+    ARRAY[
+      'Comfortable working around children ages 1-13',
+      'Detail-oriented with a focus on cleanliness',
+      'Able to stand and be active for full shift',
+      'Strong awareness of safety protocols',
+      'Must be at least 16 years old'
+    ],
+    ARRAY[
+      'CPR/First Aid certification',
+      'Experience in childcare or recreational settings',
+      'Knowledge of cleaning and sanitation best practices'
+    ],
+    ARRAY[
+      'Active and engaging work environment',
+      'Flexible scheduling',
+      'Employee discounts',
+      'Free play passes for family members'
+    ],
+    '$15-$16/hr',
+    16,
+    'Various shifts, weekends and evenings available',
+    3,
+    true
+  ),
+  (
+    'Assistant Manager',
+    'assistant-manager',
+    'Management',
+    'full-time',
+    'Ready to take the lead? As Assistant Manager, you''ll help run the day-to-day operations at Playfunia, mentor our amazing team, and ensure every family has a top-notch experience. This is a great opportunity for someone with hospitality or retail leadership experience.',
+    ARRAY[
+      'Oversee daily facility operations and team performance',
+      'Supervise and support Front Desk, Party Host, and Attendant staff',
+      'Handle customer escalations and resolve issues professionally',
+      'Manage staff scheduling, time-off requests, and coverage',
+      'Conduct inventory management and supply ordering',
+      'Train and onboard new team members',
+      'Assist with marketing initiatives and community events',
+      'Open and close the facility as needed'
+    ],
+    ARRAY[
+      '2+ years of supervisory or management experience',
+      'Background in hospitality, retail, or recreation',
+      'Strong leadership and communication skills',
+      'Ability to handle multiple priorities and stay calm under pressure',
+      'CPR/First Aid certification within 30 days of hire',
+      'Must be at least 18 years old'
+    ],
+    ARRAY[
+      'Experience managing in a family entertainment center',
+      'Familiarity with Square POS and scheduling software',
+      'Event coordination experience',
+      'Bilingual abilities'
+    ],
+    ARRAY[
+      'Competitive salary with growth potential',
+      'Paid time off and flexible scheduling',
+      'Employee discounts on all services',
+      'Leadership development opportunities',
+      'Fun and rewarding work environment'
+    ],
+    '$22-$26/hr',
+    18,
+    'Full-time, must be available weekends and some evenings',
+    4,
+    true
+  )
+ON CONFLICT (slug) DO UPDATE SET
+    title = EXCLUDED.title,
+    department = EXCLUDED.department,
+    employment_type = EXCLUDED.employment_type,
+    description = EXCLUDED.description,
+    responsibilities = EXCLUDED.responsibilities,
+    qualifications = EXCLUDED.qualifications,
+    nice_to_have = EXCLUDED.nice_to_have,
+    perks = EXCLUDED.perks,
+    pay_range = EXCLUDED.pay_range,
+    minimum_age = EXCLUDED.minimum_age,
+    schedule_notes = EXCLUDED.schedule_notes,
+    display_order = EXCLUDED.display_order,
+    updated_at = now();
 
 -- ============================================================
 -- DONE

@@ -1,0 +1,394 @@
+/* ============================================
+   Events Page - Poster-Focused Layout
+   ============================================ */
+
+.page {
+  padding-bottom: 4rem;
+  background: #fff;
+  min-height: calc(100vh - 80px);
+}
+
+/* Page Header */
+.pageHeader {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 1.5rem;
+  text-align: center;
+}
+
+.pageHeader h1 {
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 0.25rem;
+}
+
+.pageHeader p {
+  font-size: 1rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Event Grid */
+.eventGrid {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+/* Event Card */
+.eventCard {
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.eventCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+.pastCard {
+  opacity: 0.75;
+}
+
+.pastCard:hover {
+  opacity: 1;
+}
+
+/* Poster */
+.posterWrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+.posterImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.posterPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+}
+
+.posterPlaceholder span {
+  color: #6366f1;
+  font-size: 3rem;
+  font-weight: 800;
+}
+
+.badgeOverlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+}
+
+/* Media hint overlay for past events with media */
+.mediaHintOverlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2rem 0.75rem 0.65rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.65) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.mediaHintText {
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Card Body */
+.cardBody {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.cardTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 0.3rem;
+  line-height: 1.3;
+}
+
+.cardDate {
+  font-size: 0.85rem;
+  color: #6366f1;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* Badges */
+.completedBadge,
+.upcomingBadge {
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  backdrop-filter: blur(8px);
+}
+
+.completedBadge {
+  background: rgba(241, 245, 249, 0.9);
+  color: #64748b;
+}
+
+.upcomingBadge {
+  background: rgba(238, 242, 255, 0.9);
+  color: #6366f1;
+}
+
+/* Empty State */
+.emptyState {
+  text-align: center;
+  padding: 4rem 1.5rem;
+  color: #94a3b8;
+}
+
+.emptyState p {
+  font-size: 1.1rem;
+  margin: 0.5rem 0 0;
+}
+
+/* Modal Overlay */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal {
+  position: relative;
+  background: #fff;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  animation: slideUp 0.25s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modalClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1e293b;
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  transition: background 0.2s;
+}
+
+.modalClose:hover {
+  background: #fff;
+}
+
+.modalImage {
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  display: block;
+  border-radius: 18px 18px 0 0;
+}
+
+.modalBody {
+  padding: 1.5rem 1.75rem 2rem;
+}
+
+.modalTitle {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 0.4rem;
+}
+
+.modalDate {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #6366f1;
+  margin: 0 0 1.25rem;
+}
+
+.modalDescription {
+  font-size: 0.92rem;
+  line-height: 1.7;
+  color: #334155;
+  margin-bottom: 1.5rem;
+  white-space: pre-wrap;
+}
+
+/* Photo Gallery inside modal */
+.photoGalleryLabel {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.photoGallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.6rem;
+}
+
+.photoGallery img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.photoGallery img:hover {
+  transform: scale(1.04);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Video items in gallery */
+.videoThumbWrapper {
+  position: relative;
+  cursor: pointer;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.videoThumbWrapper:hover {
+  transform: scale(1.04);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.galleryVideo {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+  background: #0f172a;
+}
+
+.playIconOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+/* Photo Lightbox */
+.lightboxOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  cursor: zoom-out;
+  animation: fadeIn 0.15s ease;
+}
+
+.lightboxImage {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.lightboxVideo {
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 8px;
+  background: #000;
+}
+
+/* Loading */
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 4rem;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .eventGrid {
+    grid-template-columns: 1fr;
+    max-width: 400px;
+  }
+
+  .modalBody {
+    padding: 1.25rem 1.25rem 1.5rem;
+  }
+
+  .photoGallery {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+
+  .lightboxOverlay {
+    padding: 1rem;
+  }
+}

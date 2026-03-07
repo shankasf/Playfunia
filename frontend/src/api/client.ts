@@ -12,6 +12,10 @@ export function setAuthToken(token: string | null) {
   authToken = token;
 }
 
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
 export function setWaiverAuthToken(token: string | null) {
   waiverAuthToken = token;
 }
@@ -46,6 +50,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
       // Not JSON, use raw text
     }
     throw new Error(message);
+  }
+  // Handle 204 No Content (no body to parse)
+  if (response.status === 204) {
+    return {} as T;
   }
   return response.json() as Promise<T>;
 }

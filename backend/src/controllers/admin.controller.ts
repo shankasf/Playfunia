@@ -21,6 +21,7 @@ import {
   adminMembershipPlanCreateSchema,
   adminMembershipPlanUpdateSchema,
   adminWaiverUpdateSchema,
+  adminJobApplicationStatusUpdateSchema,
 } from '../schemas/admin.schema';
 
 // ============= Helper Functions =============
@@ -68,8 +69,8 @@ export const listRolesHandler = asyncHandler(async (_req, res) => {
 
 // ============= Users CRUD =============
 export const listUsersHandler = asyncHandler(async (req, res) => {
-  const limit = parseInt(req.query.limit as string) || 50;
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
   const search = req.query.search as string | undefined;
   
   const result = await AdminService.listUsers({ limit, offset, search });
@@ -100,8 +101,8 @@ export const deleteUserHandler = asyncHandler(async (req, res) => {
 
 // ============= Customers CRUD =============
 export const listCustomersHandler = asyncHandler(async (req, res) => {
-  const limit = parseInt(req.query.limit as string) || 50;
-  const offset = parseInt(req.query.offset as string) || 0;
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
   const search = req.query.search as string | undefined;
   
   const customers = await AdminService.listCustomers({ limit, offset, search });
@@ -131,7 +132,7 @@ export const deleteCustomerHandler = asyncHandler(async (req, res) => {
 // ============= Children CRUD =============
 export const listChildrenHandler = asyncHandler(async (req, res) => {
   const customerId = req.query.customerId ? parseInt(req.query.customerId as string) : undefined;
-  const limit = parseInt(req.query.limit as string) || 100;
+  const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
   
   const children = await AdminService.listChildren({ customerId, limit });
   return res.status(200).json({ children });
@@ -198,6 +199,77 @@ export const deleteEventHandler = asyncHandler(async (req, res) => {
   const eventId = parseIntParam(req.params.id);
   await AdminService.deleteEvent(eventId);
   publishAdminEvent('event.deleted', { eventId });
+  return res.status(200).json({ success: true });
+});
+
+// ============= Event Photos & Posters =============
+import { EventPhotoRepository } from '../repositories';
+import * as EventImageService from '../services/event-image.service';
+
+export const uploadEventPosterHandler = asyncHandler(async (req, res) => {
+  const eventId = parseIntParam(req.params.id);
+  const file = req.file;
+  if (!file) throw new AppError('No poster file uploaded', 400);
+
+  const publicUrl = await EventImageService.uploadEventPoster({
+    buffer: file.buffer,
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+  });
+
+  // Update the event's image_url
+  await AdminService.updateEvent(eventId, { image_url: publicUrl } as Record<string, unknown>);
+  publishAdminEvent('event.updated', { eventId });
+
+  return res.status(200).json({ imageUrl: publicUrl });
+});
+
+export const uploadEventPhotosHandler = asyncHandler(async (req, res) => {
+  const eventId = parseIntParam(req.params.id);
+  const files = req.files as Express.Multer.File[] | undefined;
+  if (!files || files.length === 0) throw new AppError('No photo files uploaded', 400);
+
+  const rawPhotos = await EventImageService.uploadEventPhotos(
+    eventId,
+    files.map(f => ({
+      buffer: f.buffer,
+      originalname: f.originalname,
+      mimetype: f.mimetype,
+      size: f.size,
+    })),
+  );
+
+  const photos = rawPhotos.map(p => ({
+    id: p.photo_id,
+    url: p.photo_url,
+    storagePath: p.storage_path,
+    caption: p.caption,
+    displayOrder: p.display_order,
+    mediaType: p.media_type ?? 'image',
+  }));
+
+  return res.status(201).json({ photos });
+});
+
+export const getEventPhotosHandler = asyncHandler(async (req, res) => {
+  const eventId = parseIntParam(req.params.id);
+  const photos = await EventPhotoRepository.findByEventId(eventId);
+  return res.status(200).json({
+    photos: photos.map((p: Record<string, unknown>) => ({
+      id: p.photo_id,
+      url: p.photo_url,
+      storagePath: p.storage_path,
+      caption: p.caption,
+      displayOrder: p.display_order,
+      mediaType: (p.media_type as string) ?? 'image',
+    })),
+  });
+});
+
+export const deleteEventPhotoHandler = asyncHandler(async (req, res) => {
+  const photoId = parseIntParam(req.params.photoId);
+  await EventImageService.deleteEventPhoto(photoId);
   return res.status(200).json({ success: true });
 });
 
@@ -291,7 +363,7 @@ export const getMembershipHandler = asyncHandler(async (req, res) => {
   const membershipId = parseIntParam(req.params.id);
   const membership = await AdminService.getMembershipById(membershipId);
   if (!membership) throw new AppError('Membership not found', 404);
-  return res.status(200).json({ membership });
+  return res.status(200).json({ membership: transformMembership(membership as Record<string, unknown>) });
 });
 
 export const createMembershipHandler = asyncHandler(async (req, res) => {
@@ -382,10 +454,10 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
     endTime = end.toTimeString().slice(0, 5) ?? '';
   }
 
-  // Calculate balance remaining
-  const totalAmount = Number(b.total_amount) || 0;
-  const depositPaid = Number(b.deposit_paid) || 0;
-  const balanceRemaining = totalAmount - depositPaid;
+  // Use actual DB column names
+  const totalAmount = Number(b.total) || 0;
+  const depositPaid = Number(b.deposit_amount) || 0;
+  const balanceRemaining = b.balance_remaining != null ? Number(b.balance_remaining) : (totalAmount - depositPaid);
 
   // Guest booking info (stored in notes field for guest bookings)
   const guestName = b.guest_name?.toString() ?? null;
@@ -482,11 +554,11 @@ export const updateBookingHandler = asyncHandler(async (req, res) => {
     const newTime = startTime ?? (existingStart?.toTimeString().slice(0, 5) ?? '10:00');
     
     if (newDate && newTime) {
-      const newStart = new Date(`${newDate}T${newTime}:00`);
-      const newEnd = new Date(newStart.getTime() + durationMs);
-      
-      dbUpdates.scheduled_start = newStart.toISOString();
-      dbUpdates.scheduled_end = newEnd.toISOString();
+      const newStart = DateTime.fromISO(`${newDate}T${newTime}`, { zone: 'America/New_York' });
+      const newEnd = newStart.plus({ milliseconds: durationMs });
+
+      dbUpdates.scheduled_start = newStart.toISO();
+      dbUpdates.scheduled_end = newEnd.toISO();
       dbUpdates.event_date = newDate;
       dbUpdates.start_time = newTime;
     }
@@ -516,7 +588,7 @@ export const deleteBookingHandler = asyncHandler(async (req, res) => {
 
 // ============= Waiver Users CRUD =============
 export const listWaiverUsersHandler = asyncHandler(async (req, res) => {
-  const limit = parseInt(req.query.limit as string) || 100;
+  const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
   const search = req.query.search as string | undefined;
   
   const waiverUsers = await AdminService.listWaiverUsers({ limit, search });
@@ -570,7 +642,7 @@ function transformWaiver(w: Record<string, unknown>): Record<string, unknown> {
 }
 
 export const listWaiverSubmissionsHandler = asyncHandler(async (req, res) => {
-  const limit = parseInt(req.query.limit as string) || 100;
+  const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
   const rawWaivers = await AdminService.listWaiverSubmissions({ limit });
   const waivers = rawWaivers.map(transformWaiver);
   return res.status(200).json({ waivers });
@@ -580,7 +652,7 @@ export const getWaiverSubmissionHandler = asyncHandler(async (req, res) => {
   const submissionId = parseIntParam(req.params.id);
   const waiver = await AdminService.getWaiverSubmissionById(submissionId);
   if (!waiver) throw new AppError('Waiver submission not found', 404);
-  return res.status(200).json({ waiver });
+  return res.status(200).json({ waiver: transformWaiver(waiver) });
 });
 
 export const deleteWaiverSubmissionHandler = asyncHandler(async (req, res) => {
@@ -679,7 +751,7 @@ export const getTicketPurchaseHandler = asyncHandler(async (req, res) => {
   const purchaseId = parseIntParam(req.params.id);
   const ticket = await AdminService.getTicketPurchaseById(purchaseId);
   if (!ticket) throw new AppError('Ticket purchase not found', 404);
-  return res.status(200).json({ ticket });
+  return res.status(200).json({ ticket: transformTicket(ticket) });
 });
 
 export const updateTicketPurchaseHandler = asyncHandler(async (req, res) => {
@@ -1075,12 +1147,76 @@ export const exportContactsHandler = asyncHandler(async (req, res) => {
   return res.status(200).send(csv);
 });
 
+// ============= Job Applications =============
+export const listJobApplicationsHandler = asyncHandler(async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+  const status = req.query.status as string | undefined;
+  const listingId = req.query.listingId ? parseInt(req.query.listingId as string) : undefined;
+  const search = req.query.search as string | undefined;
+  const dateFrom = req.query.dateFrom as string | undefined;
+  const dateTo = req.query.dateTo as string | undefined;
+
+  const result = await AdminService.listJobApplications({
+    status, listingId, search, dateFrom, dateTo, limit, offset,
+  });
+  return res.status(200).json({ applications: result.data, total: result.count });
+});
+
+export const getJobApplicationHandler = asyncHandler(async (req, res) => {
+  const applicationId = parseIntParam(req.params.id);
+  const application = await AdminService.getJobApplicationById(applicationId);
+  if (!application) throw new AppError('Job application not found', 404);
+
+  // Generate signed URLs for resume and video if storage paths exist
+  let resumeUrl: string | null = null;
+  let videoUrl: string | null = null;
+
+  if (application.resume_storage_path) {
+    try {
+      resumeUrl = await AdminService.getApplicationResumeSignedUrl(application.resume_storage_path);
+    } catch {
+      // Storage error - file may not exist
+    }
+  }
+  if (application.video_storage_path) {
+    try {
+      videoUrl = await AdminService.getApplicationVideoSignedUrl(application.video_storage_path);
+    } catch {
+      // Storage error - file may not exist
+    }
+  }
+
+  return res.status(200).json({ application, resumeUrl, videoUrl });
+});
+
+export const updateJobApplicationStatusHandler = asyncHandler(async (req, res) => {
+  const applicationId = parseIntParam(req.params.id);
+  const validated = adminJobApplicationStatusUpdateSchema.parse(req.body);
+  const application = await AdminService.updateJobApplicationStatus(
+    applicationId, validated.status, validated.admin_notes,
+  );
+  return res.status(200).json({ application });
+});
+
+export const deleteJobApplicationHandler = asyncHandler(async (req, res) => {
+  const applicationId = parseIntParam(req.params.id);
+  await AdminService.deleteJobApplication(applicationId);
+  return res.status(200).json({ message: 'Application deleted successfully' });
+});
+
+export const listJobListingsForFilterHandler = asyncHandler(async (_req, res) => {
+  const listings = await AdminService.getJobListingsForFilter();
+  return res.status(200).json({ listings });
+});
+
 // ============= Admin Event Stream =============
 export function adminEventStreamHandler(req: Request, res: Response) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  (res as Response & { flushHeaders?: () => void }).flushHeaders?.();
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
 
   let isConnectionOpen = true;
 
@@ -1088,6 +1224,7 @@ export function adminEventStreamHandler(req: Request, res: Response) {
     if (!isConnectionOpen) return;
     try {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
+      (res as Response & { flush?: () => void }).flush?.();
     } catch (err) {
       console.error('[SSE] Write error:', err);
       cleanup();
@@ -1097,9 +1234,21 @@ export function adminEventStreamHandler(req: Request, res: Response) {
   const cleanup = () => {
     if (!isConnectionOpen) return;
     isConnectionOpen = false;
+    clearInterval(keepAliveTimer);
     unsubscribe();
     res.end();
   };
+
+  // Send keepalive comment every 30s to prevent proxy/browser timeouts
+  const keepAliveTimer = setInterval(() => {
+    if (!isConnectionOpen) return;
+    try {
+      res.write(':keepalive\n\n');
+      (res as Response & { flush?: () => void }).flush?.();
+    } catch {
+      cleanup();
+    }
+  }, 30_000);
 
   getRecentAdminEvents().forEach(send);
 

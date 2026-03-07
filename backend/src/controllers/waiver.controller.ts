@@ -1,7 +1,7 @@
 import type { Response } from 'express';
 import { ZodError } from 'zod';
 
-import type { AuthenticatedRequest } from '../middleware/auth.middleware';
+import type { SupabaseAuthenticatedRequest as AuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 import {
   listAllWaivers,
   listWaiversForGuardian,
@@ -23,14 +23,22 @@ export const signWaiverHandler = asyncHandler(async (req: AuthenticatedRequest, 
     guardianId: req.user.id,
   });
 
+  // Capture client IP for the signed waiver record
+  const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()
+    || req.socket.remoteAddress
+    || 'unknown';
+
   // Handle waiver-only users differently
   if (req.user.type === 'waiver_user') {
-    const waiver = await signWaiverForWaiverUser(req.user.id, payload);
+    const waiver = await signWaiverForWaiverUser(req.user.id, payload, ipAddress, {
+      email: req.user.email,
+      phone: req.user.phone,
+    });
     return res.status(201).json({ waiver });
   }
 
   // Regular user
-  const waiver = await signWaiver(req.user.id, payload);
+  const waiver = await signWaiver(req.user.id, payload, ipAddress);
   return res.status(201).json({ waiver });
 });
 
@@ -118,10 +126,15 @@ function buildCsv(rows: Array<Record<string, string | undefined>>) {
 }
 
 function escapeCsv(value: string) {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
+  // Prevent CSV injection: prefix formula-triggering characters with a single quote
+  let safe = value;
+  if (/^[=+\-@\t\r]/.test(safe)) {
+    safe = `'${safe}`;
   }
-  return value;
+  if (safe.includes(',') || safe.includes('"') || safe.includes('\n') || safe !== value) {
+    return `"${safe.replace(/"/g, '""')}"`;
+  }
+  return safe;
 }
 
 function getPopulatedGuardianEmail(guardian: unknown) {

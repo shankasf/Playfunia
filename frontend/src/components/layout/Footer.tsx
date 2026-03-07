@@ -1,15 +1,7 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { getStoreHours } from "../../api/content";
 import styles from "./Footer.module.css";
-
-const businessHours = [
-  { day: "Mon", hours: "10AM - 7PM" },
-  { day: "Tue", hours: "10AM - 7PM" },
-  { day: "Wed", hours: "10AM - 7PM" },
-  { day: "Thu", hours: "10AM - 7PM" },
-  { day: "Fri", hours: "10AM - 8PM" },
-  { day: "Sat", hours: "10AM - 8PM" },
-  { day: "Sun", hours: "11AM - 6PM" },
-];
 
 const locations = [
   {
@@ -33,6 +25,7 @@ const supportLinks = [
   { label: "Contact Us", href: "/contact" },
   { label: "Waiver Form", href: "/waiver" },
   { label: "My Account", href: "/account" },
+  { label: "Careers", href: "/careers" },
 ];
 
 const socials = [
@@ -76,6 +69,22 @@ const socials = [
 
 export function Footer() {
   const year = new Date().getFullYear();
+  const [businessHours, setBusinessHours] = useState<{ day: string; hours: string }[] | null>(null);
+  const [hoursError, setHoursError] = useState(false);
+
+  useEffect(() => {
+    getStoreHours('Albany')
+      .then((hours) => {
+        if (hours && hours.length > 0) {
+          setBusinessHours(hours.map((h) => ({ day: h.day, hours: h.hours })));
+        } else {
+          setHoursError(true);
+        }
+      })
+      .catch(() => {
+        setHoursError(true);
+      });
+  }, []);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -176,14 +185,20 @@ export function Footer() {
             {/* Business Hours */}
             <div className={styles.hoursColumn}>
               <h4>Hours</h4>
-              <ul className={styles.hoursList}>
-                {businessHours.map((item) => (
-                  <li key={item.day} className={styles.hoursItem}>
-                    <span className={styles.dayName}>{item.day}</span>
-                    <span className={styles.hoursTime}>{item.hours}</span>
-                  </li>
-                ))}
-              </ul>
+              {hoursError ? (
+                <p className={styles.hoursError}>Hours unavailable — please call for details.</p>
+              ) : businessHours ? (
+                <ul className={styles.hoursList}>
+                  {businessHours.map((item) => (
+                    <li key={item.day} className={styles.hoursItem}>
+                      <span className={styles.dayName}>{item.day}</span>
+                      <span className={styles.hoursTime}>{item.hours}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className={styles.hoursLoading}>Loading hours...</p>
+              )}
             </div>
           </div>
         </div>
@@ -194,7 +209,7 @@ export function Footer() {
         <div className={styles.container}>
           <div className={styles.bottomContent}>
             <p className={styles.copyright}>
-              &copy; {year} Playfunia. All rights reserved.
+              &copy; {year} Playfunia. All rights reserved. | <Link to="/privacy" className={styles.privacyLink}>Privacy Policy</Link>
             </p>
             <button onClick={scrollToTop} className={styles.backToTop} aria-label="Back to top">
               <svg viewBox="0 0 24 24" fill="currentColor">

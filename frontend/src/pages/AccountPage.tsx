@@ -1,8 +1,8 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { PrimaryButton } from '../components/common/PrimaryButton';
-import { formatDate, formatBirthDate } from '../lib/dateUtils';
+import { formatDate, formatBirthDate, formatTime } from '../lib/dateUtils';
 import { fetchMyWaivers, type GuardianWaiver } from '../api/waivers';
 import {
   formatNameInput,
@@ -57,7 +57,7 @@ export function AccountPage() {
   const [registerStep, setRegisterStep] = useState<'form' | 'otp'>('form');
   const [registerOtp, setRegisterOtp] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
+  const [, setResetSent] = useState(false);
   const [resetStep, setResetStep] = useState<'email' | 'otp' | 'password' | 'done'>('email');
   const [status, setStatus] = useState<{
     type: 'error' | 'success' | null;
@@ -93,8 +93,28 @@ export function AccountPage() {
     error: null,
   });
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
+
+  // Store redirect target - persist in sessionStorage to survive auth flow
   const redirectTarget = searchParams.get('redirect');
-  const safeRedirect = redirectTarget?.startsWith('/') ? redirectTarget : null;
+  const REDIRECT_KEY = 'playfunia_auth_redirect';
+
+  // Validate redirect is a safe relative path (prevent open redirect via // or /\)
+  const isPathOnly = (s: string | null) => s != null && s.startsWith('/') && !s.startsWith('//') && !s.startsWith('/\\');
+
+  // Save redirect to sessionStorage when it exists in URL
+  useEffect(() => {
+    if (isPathOnly(redirectTarget)) {
+      sessionStorage.setItem(REDIRECT_KEY, redirectTarget!);
+    }
+  }, [redirectTarget]);
+
+  // Get redirect from URL or sessionStorage
+  const storedRedirect = sessionStorage.getItem(REDIRECT_KEY);
+  const safeRedirect = isPathOnly(redirectTarget)
+    ? redirectTarget
+    : isPathOnly(storedRedirect)
+    ? storedRedirect
+    : null;
 
   const loadLatestWaiver = useCallback(async () => {
     if (!user) {
@@ -239,6 +259,7 @@ export function AccountPage() {
   useEffect(() => {
     if (!user) return;
     if (safeRedirect) {
+      sessionStorage.removeItem('playfunia_auth_redirect');
       navigate(safeRedirect, { replace: true });
       return;
     }
@@ -331,6 +352,10 @@ export function AccountPage() {
             setStatus({ type: 'error', message: 'Password must be at least 8 characters.' });
             return;
           }
+          if (!/[a-z]/.test(form.password) || !/[A-Z]/.test(form.password) || !/\d/.test(form.password)) {
+            setStatus({ type: 'error', message: 'Password must contain at least one lowercase letter, one uppercase letter, and one number.' });
+            return;
+          }
           if (form.phone && !isValidPhone(form.phone)) {
             setStatus({ type: 'error', message: 'Please enter a valid 10-digit phone number.' });
             return;
@@ -383,7 +408,7 @@ export function AccountPage() {
         }
       } else if (mode === 'forgot-password') {
         if (resetStep === 'email') {
-          if (!isValidEmail(form.email)) {
+          if (!isValidEmail(form.email.trim())) {
             setStatus({ type: 'error', message: 'Please enter a valid email address.' });
             return;
           }
@@ -407,6 +432,10 @@ export function AccountPage() {
           // Step 3: Reset password with OTP
           if (newPassword.length < 8) {
             setStatus({ type: 'error', message: 'Password must be at least 8 characters.' });
+            return;
+          }
+          if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/\d/.test(newPassword)) {
+            setStatus({ type: 'error', message: 'Password must contain at least one lowercase letter, one uppercase letter, and one number.' });
             return;
           }
           if (newPassword !== confirmNewPassword) {
@@ -492,38 +521,38 @@ export function AccountPage() {
         <div className={styles.dashboardContent}>
           {/* Quick Actions */}
           <div className={styles.quickActions}>
-            <a href="/buy-ticket" className={styles.actionCard}>
+            <Link to="/buy-ticket" className={styles.actionCard}>
               <div className={styles.actionIcon} data-type="ticket">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
                 </svg>
               </div>
               <span>Buy Tickets</span>
-            </a>
-            <a href="/book-party" className={styles.actionCard}>
+            </Link>
+            <Link to="/book-party" className={styles.actionCard}>
               <div className={styles.actionIcon} data-type="party">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M21 15.5V18a2 2 0 01-2 2H5a2 2 0 01-2-2v-2.5M12 3v12m0 0l-3-3m3 3l3-3M8.5 8.5L12 3l3.5 5.5" />
                 </svg>
               </div>
               <span>Book Party</span>
-            </a>
-            <a href="/waiver" className={styles.actionCard}>
+            </Link>
+            <Link to="/waiver" className={styles.actionCard}>
               <div className={styles.actionIcon} data-type="waiver">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
               <span>Waiver</span>
-            </a>
-            <a href="/membership" className={styles.actionCard}>
+            </Link>
+            <Link to="/membership" className={styles.actionCard}>
               <div className={styles.actionIcon} data-type="membership">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                 </svg>
               </div>
               <span>Membership</span>
-            </a>
+            </Link>
           </div>
 
           {/* Stats Cards Row */}
@@ -730,7 +759,7 @@ export function AccountPage() {
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <h2>My Bookings</h2>
-              <a href="/book-party" className={styles.cardHeaderLink}>Book a Party</a>
+              <Link to="/book-party" className={styles.cardHeaderLink}>Book a Party</Link>
             </div>
             <div className={styles.cardBody}>
               {bookingsLoading ? (
@@ -744,8 +773,11 @@ export function AccountPage() {
               ) : (
                 <div className={styles.bookingsList}>
                   {bookings.map((booking) => {
-                    const eventDate = new Date(booking.eventDate);
-                    const isPast = eventDate < new Date();
+                    // Parse as local midnight to avoid UTC shift marking today as past
+                    const eventDate = new Date(booking.eventDate + 'T00:00:00');
+                    const todayMidnight = new Date();
+                    todayMidnight.setHours(0, 0, 0, 0);
+                    const isPast = eventDate < todayMidnight;
                     const isCancelled = booking.status === 'Cancelled';
                     const canModify = !isPast && !isCancelled;
 
@@ -789,7 +821,7 @@ export function AccountPage() {
                                 <circle cx="12" cy="12" r="10" />
                                 <path d="M12 6v6l4 2" />
                               </svg>
-                              <span>{booking.startTime} - {booking.endTime}</span>
+                              <span>{formatTime(booking.startTime)} - {formatTime(booking.endTime)}</span>
                             </div>
                             <div className={styles.bookingInfoItem}>
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -843,7 +875,7 @@ export function AccountPage() {
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <h2>My Tickets</h2>
-              <a href="/buy-ticket" className={styles.cardHeaderLink}>Buy Tickets</a>
+              <Link to="/buy-ticket" className={styles.cardHeaderLink}>Buy Tickets</Link>
             </div>
             <div className={styles.cardBody}>
               {ticketsLoading ? (
@@ -923,7 +955,7 @@ export function AccountPage() {
                       weekday: 'short',
                       month: 'short',
                       day: 'numeric',
-                    })} at {rescheduleModal.booking.startTime}
+                    })} at {formatTime(rescheduleModal.booking.startTime)}
                   </p>
 
                   <label className={styles.modalLabel}>
@@ -955,7 +987,7 @@ export function AccountPage() {
                                 className={`${styles.slotBtn} ${rescheduleModal.selectedTime === slot.startTime ? styles.slotBtnSelected : ''}`}
                                 onClick={() => setRescheduleModal((prev) => ({ ...prev, selectedTime: slot.startTime }))}
                               >
-                                {slot.startTime}
+                                {formatTime(slot.startTime)}
                               </button>
                             ))}
                         </div>
@@ -1128,18 +1160,26 @@ export function AccountPage() {
               <label>
                 First name
                 <input
+                  type="text"
                   value={form.firstName}
                   onChange={handleChange('firstName')}
                   required
+                  maxLength={50}
+                  pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                  title="Letters, spaces, hyphens, and apostrophes only"
                   autoComplete="given-name"
                 />
               </label>
               <label>
                 Last name
                 <input
+                  type="text"
                   value={form.lastName}
                   onChange={handleChange('lastName')}
                   required
+                  maxLength={50}
+                  pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                  title="Letters, spaces, hyphens, and apostrophes only"
                   autoComplete="family-name"
                 />
               </label>
@@ -1170,6 +1210,8 @@ export function AccountPage() {
                 Verification Code
                 <input
                   type="text"
+                  inputMode="numeric"
+                  pattern="\d{6}"
                   value={registerOtp}
                   onChange={(e) => setRegisterOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   required
@@ -1188,6 +1230,8 @@ export function AccountPage() {
               Verification Code
               <input
                 type="text"
+                inputMode="numeric"
+                pattern="\d{6}"
                 value={resetOtp}
                 onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 required
@@ -1246,7 +1290,7 @@ export function AccountPage() {
           {mode === 'register' && registerStep === 'form' && (
             <label>
               Phone (optional)
-              <input value={form.phone} onChange={handleChange('phone')} autoComplete="tel" />
+              <input type="tel" inputMode="numeric" value={form.phone} onChange={handleChange('phone')} maxLength={10} pattern="\d{10}" title="10-digit phone number" autoComplete="tel" />
             </label>
           )}
 

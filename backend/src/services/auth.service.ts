@@ -1,5 +1,5 @@
 import type { RegisterInput, LoginInput } from '../schemas/auth.schema';
-import { UserRepository, ChildRepository, WaiverRepository, CustomerRepository } from '../repositories';
+import { UserRepository, ChildRepository, WaiverRepository, CustomerRepository, MembershipRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { hashPassword, verifyPassword } from '../utils/password';
 import { signJwt } from '../utils/jwt';
@@ -108,9 +108,13 @@ export async function createVerifiedUser(data: {
     // If user already exists in Supabase Auth, try to get their ID
     if (authError.message.includes('already been registered')) {
       // User exists in Supabase Auth but not in our table - get their ID
-      const { data: existingUsers } = await supabase.auth.admin.listUsers();
-      const existingAuthUser = existingUsers?.users?.find(u => u.email === normalizedEmail);
-      authUserId = existingAuthUser?.id;
+      // Look up existing user by email directly instead of listing all users
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('auth_user_id')
+        .eq('email', normalizedEmail)
+        .single();
+      authUserId = existingUser?.auth_user_id ?? undefined;
     } else {
       console.error('Failed to create Supabase Auth user:', authError);
       throw new AppError('Failed to create account. Please try again.', 500);
@@ -291,10 +295,30 @@ export async function getUserProfile(userId: string) {
   // Check for valid waiver
   const validWaiver = user.email ? await WaiverRepository.findValidByEmail(user.email) : null;
 
+  // Get active membership
+  let membership: Record<string, unknown> | undefined;
+  if (user.customer_id) {
+    const activeMembership = await MembershipRepository.findByCustomerId(user.customer_id);
+    if (activeMembership && activeMembership.status === 'active') {
+      membership = {
+        membershipId: String(activeMembership.membership_id),
+        tierName: activeMembership.tier,
+        startedAt: activeMembership.start_date,
+        expiresAt: activeMembership.end_date,
+        autoRenew: activeMembership.auto_renew ?? false,
+        visitsPerMonth: activeMembership.visits_per_month,
+        visitsUsed: activeMembership.visits_used_this_period ?? 0,
+        visitPeriodStart: activeMembership.visit_period_start,
+        lastVisitAt: activeMembership.last_visit_at,
+      };
+    }
+  }
+
   const profile = sanitizeUser(user);
   return {
     ...profile,
     children,
+    membership,
     hasValidWaiver: Boolean(validWaiver),
   };
 }
@@ -406,4 +430,34 @@ export async function resetUserPassword(email: string, newPassword: string) {
 
   const passwordHash = await hashPassword(newPassword);
   await UserRepository.update(user.user_id, { password_hash: passwordHash });
+
+  // Also update password in Supabase Auth if user has an auth account
+  if (user.auth_user_id) {
+    try {
+      await supabase.auth.admin.updateUserById(user.auth_user_id, {
+        password: newPassword,
+      });
+    } catch (authError) {
+      console.error('Failed to update Supabase Auth password:', authError);
+      // Don't fail the operation - database password is updated
+    }
+  } else {
+    // User doesn't have Supabase Auth account - create one
+    try {
+      const { data: authData } = await supabase.auth.admin.createUser({
+        email: normalizedEmail,
+        password: newPassword,
+        email_confirm: true,
+        user_metadata: {
+          first_name: user.first_name,
+          last_name: user.last_name,
+        },
+      });
+      if (authData?.user) {
+        await UserRepository.update(user.user_id, { auth_user_id: authData.user.id });
+      }
+    } catch (authError) {
+      console.error('Failed to create Supabase Auth user during password reset:', authError);
+    }
+  }
 }

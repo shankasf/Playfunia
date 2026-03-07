@@ -14,13 +14,13 @@ import { userRouter } from './user.routes';
 import { waiverRouter } from './waiver.routes';
 import { waiverAuthRouter } from './waiver-auth.routes';
 import { adminRouter } from './admin.routes';
-import { checkoutRouter } from './checkout.routes';
 import { squareRouter } from './square.routes';
 import { pricingRouter } from './pricing.routes';
 import { receiptRouter } from './receipt.routes';
 import { reservationRouter } from './reservation.routes';
 import { webhookRouter } from './webhook.routes';
 import { refundRouter } from './refund.routes';
+import { careersRouter } from './careers.routes';
 
 export const apiRouter = Router();
 
@@ -38,10 +38,10 @@ apiRouter.use('/events', eventRouter);
 apiRouter.use('/tickets', ticketRouter);
 apiRouter.use('/content', contentRouter);
 apiRouter.use('/admin', adminRouter);
-apiRouter.use('/checkout', checkoutRouter);
 apiRouter.use('/square', squareRouter);
 apiRouter.use('/pricing', pricingRouter);
 apiRouter.use('/receipts', receiptRouter);
 apiRouter.use('/reservations', reservationRouter);
 apiRouter.use('/webhooks', webhookRouter);
 apiRouter.use('/refunds', refundRouter);
+apiRouter.use('/careers', careersRouter);

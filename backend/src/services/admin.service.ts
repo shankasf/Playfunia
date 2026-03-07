@@ -23,6 +23,8 @@ import {
   AppPaymentRepository,
   WaiverSubmissionRepository,
   ResourceRepository,
+  JobApplicationRepository,
+  JobListingRepository,
   type User,
   type Customer,
   type Child,
@@ -39,6 +41,8 @@ import {
   type AppPayment,
 } from '../repositories';
 import { supabase, supabaseAny } from '../config/supabase';
+import { sendJobApplicationStatusChange } from './email.service';
+import { logger } from '../utils/logger';
 
 // ============= Helper Functions =============
 /**
@@ -69,13 +73,21 @@ export async function getAdminDashboardSummary() {
   const [
     upcomingBookings,
     pendingDeposits,
+    totalBookings,
+    todayBookings,
     totalWaivers,
+    todayWaivers,
     recentWaivers,
     activeMembers,
+    totalMembers,
     totalUsers,
     totalCustomers,
-    activeEvents,
+    totalPublishedEvents,
+    todayEvents,
     recentPayments,
+    totalApplicants,
+    pendingApplicants,
+    ticketPurchases,
   ] = await Promise.all([
     // Upcoming bookings
     supabase
@@ -89,10 +101,26 @@ export async function getAdminDashboardSummary() {
       .from('party_bookings')
       .select('*', { count: 'exact', head: true })
       .eq('payment_status', 'pending'),
+    // Total bookings (all time)
+    supabase
+      .from('party_bookings')
+      .select('*', { count: 'exact', head: true }),
+    // Today's bookings
+    supabase
+      .from('party_bookings')
+      .select('*', { count: 'exact', head: true })
+      .gte('scheduled_start', startOfDay.toISOString())
+      .lte('scheduled_start', endOfDay.toISOString()),
     // Total waiver submissions
     supabase
       .from('waiver_submissions')
       .select('*', { count: 'exact', head: true }),
+    // Today's waiver submissions
+    supabase
+      .from('waiver_submissions')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', startOfDay.toISOString())
+      .lte('created_at', endOfDay.toISOString()),
     // Recent waivers
     supabase
       .from('waiver_submissions')
@@ -104,6 +132,10 @@ export async function getAdminDashboardSummary() {
       .from('memberships')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'active'),
+    // Total memberships (all statuses)
+    supabase
+      .from('memberships')
+      .select('*', { count: 'exact', head: true }),
     // Total users
     supabase
       .from('users')
@@ -112,18 +144,37 @@ export async function getAdminDashboardSummary() {
     supabase
       .from('customers')
       .select('*', { count: 'exact', head: true }),
-    // Published events
+    // Published events (all time)
+    supabase
+      .from('events')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_published', true),
+    // Today's events (published, happening today)
     supabase
       .from('events')
       .select('*', { count: 'exact', head: true })
       .eq('is_published', true)
-      .gte('end_date', now.toISOString()),
+      .lte('start_date', endOfDay.toISOString())
+      .gte('end_date', startOfDay.toISOString()),
     // Recent payments
     supabase
       .from('app_payments')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(10),
+    // Total job applications
+    supabase
+      .from('job_applications')
+      .select('*', { count: 'exact', head: true }),
+    // New (pending review) job applications
+    supabase
+      .from('job_applications')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'new'),
+    // All ticket purchases (for revenue + code stats)
+    supabase
+      .from('ticket_purchases')
+      .select('purchase_id, total, codes, created_at'),
   ]);
 
   // Transform upcoming bookings for frontend
@@ -154,23 +205,67 @@ export async function getAdminDashboardSummary() {
     marketingOptIn: Boolean(w.marketing_opt_in),
   }));
 
+  // Compute ticket stats from purchases data
+  const ticketPurchasesData = (ticketPurchases.data ?? []) as Array<{
+    purchase_id: number;
+    total: number;
+    codes: Array<{ code: string; status: string; redeemedAt?: string }> | null;
+    created_at: string;
+  }>;
+  let ticketTotalRevenue = 0;
+  let ticketTodayRevenue = 0;
+  let ticketTotalPurchases = 0;
+  let ticketTodayPurchases = 0;
+  let unusedCodesCount = 0;
+  let redeemedTodayCount = 0;
+
+  for (const tp of ticketPurchasesData) {
+    ticketTotalPurchases++;
+    ticketTotalRevenue += tp.total ?? 0;
+
+    const createdAt = new Date(tp.created_at);
+    if (createdAt >= startOfDay && createdAt <= endOfDay) {
+      ticketTodayPurchases++;
+      ticketTodayRevenue += tp.total ?? 0;
+    }
+
+    const codes = Array.isArray(tp.codes) ? tp.codes : [];
+    for (const c of codes) {
+      if (c.status === 'unused') unusedCodesCount++;
+      if (c.status === 'redeemed' && c.redeemedAt) {
+        const redeemedDate = new Date(c.redeemedAt);
+        if (redeemedDate >= startOfDay && redeemedDate <= endOfDay) {
+          redeemedTodayCount++;
+        }
+      }
+    }
+  }
+
   return {
     generatedAt: now.toISOString(),
     bookings: {
+      total: totalBookings.count ?? 0,
+      today: todayBookings.count ?? 0,
       upcoming: transformedBookings,
       pendingDepositCount: pendingDeposits.count ?? 0,
     },
     waivers: {
       total: totalWaivers.count ?? 0,
+      today: todayWaivers.count ?? 0,
       recent: transformedWaivers,
     },
     tickets: {
-      salesToday: 0,
-      redeemedToday: 0,
-      unusedCodes: 0,
-      salesWeek: 0,
+      totalRevenue: ticketTotalRevenue,
+      todayRevenue: ticketTodayRevenue,
+      totalPurchases: ticketTotalPurchases,
+      todayPurchases: ticketTodayPurchases,
+      salesToday: ticketTodayPurchases,
+      redeemedToday: redeemedTodayCount,
+      unusedCodes: unusedCodesCount,
+      salesWeek: ticketTotalRevenue,
     },
     memberships: {
+      total: totalMembers.count ?? 0,
       activeMembers: activeMembers.count ?? 0,
       visitsToday: 0,
     },
@@ -181,10 +276,15 @@ export async function getAdminDashboardSummary() {
       total: totalCustomers.count ?? 0,
     },
     events: {
-      activeCount: activeEvents.count ?? 0,
+      total: totalPublishedEvents.count ?? 0,
+      today: todayEvents.count ?? 0,
     },
     payments: {
       recent: recentPayments.data ?? [],
+    },
+    applicants: {
+      total: totalApplicants.count ?? 0,
+      pendingCount: pendingApplicants.count ?? 0,
     },
   };
 }
@@ -309,18 +409,12 @@ export async function createEvent(eventData: {
   description?: string;
   start_date: string;
   end_date?: string;
-  location?: string;
-  location_id?: number;
-  capacity?: number;
-  price?: number;
-  tags?: string[];
   image_url?: string;
   is_published?: boolean;
 }) {
   return EventRepository.create({
     ...eventData,
     end_date: eventData.end_date ?? eventData.start_date,
-    tickets_remaining: eventData.capacity,
   });
 }
 
@@ -329,6 +423,9 @@ export async function updateEvent(eventId: number, updates: Partial<Event>) {
 }
 
 export async function deleteEvent(eventId: number) {
+  // Clean up Supabase Storage files before deleting (DB rows cascade automatically)
+  const { deleteAllEventPhotos } = await import('./event-image.service');
+  await deleteAllEventPhotos(eventId);
   return EventRepository.delete(eventId);
 }
 
@@ -393,7 +490,6 @@ export async function createMembership(membershipData: {
   tier: string;
   start_date: string;
   end_date?: string;
-  stripe_subscription_id?: string;
 }) {
   return MembershipRepository.create(membershipData);
 }
@@ -629,13 +725,23 @@ export async function lookupTicketByCode(code: string) {
  * Validate a ticket code without redeeming it
  */
 export async function validateTicketCode(code: string) {
-  const result = await lookupTicketByCode(code);
+  let result;
+  try {
+    result = await lookupTicketByCode(code);
+  } catch {
+    return {
+      valid: false,
+      status: 'invalid',
+      message: 'Invalid ticket number',
+      ticket: null,
+    };
+  }
 
   if (!result || !result.codeEntry) {
     return {
       valid: false,
       status: 'invalid',
-      message: 'Ticket code not found',
+      message: 'Invalid ticket number',
       ticket: null,
     };
   }
@@ -970,6 +1076,90 @@ export async function exportWaiversToCsv(dateFrom?: string, dateTo?: string): Pr
 
   if (error) throw error;
   return (waivers ?? []) as any;
+}
+
+// ============= Job Applications Management =============
+export async function listJobApplications(options?: {
+  status?: string;
+  listingId?: number;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  return JobApplicationRepository.findAll(options);
+}
+
+export async function getJobApplicationById(applicationId: number) {
+  return JobApplicationRepository.findById(applicationId);
+}
+
+export async function updateJobApplicationStatus(applicationId: number, status: string, adminNotes?: string) {
+  // Fetch current application to get previous status + applicant info for email
+  const current = await JobApplicationRepository.findById(applicationId);
+  if (!current) {
+    throw new Error('Application not found');
+  }
+
+  const result = await JobApplicationRepository.updateStatus(applicationId, status, adminNotes);
+
+  // Send status change notification if status actually changed
+  if (current.status !== status) {
+    // Get job title from listing
+    const listing = current.listing_id
+      ? await JobListingRepository.findById(current.listing_id)
+      : null;
+
+    sendJobApplicationStatusChange({
+      applicantFirstName: current.first_name,
+      applicantEmail: current.email,
+      jobTitle: (listing?.title as string) ?? 'Unknown Position',
+      previousStatus: current.status as string,
+      newStatus: status,
+    }).catch(err => {
+      logger.error({ error: err }, 'Failed to send application status change email');
+    });
+  }
+
+  return result;
+}
+
+export async function deleteJobApplication(applicationId: number) {
+  const app = await JobApplicationRepository.findById(applicationId);
+  if (!app) {
+    throw new Error('Application not found');
+  }
+
+  // Clean up stored files
+  if (app.resume_storage_path) {
+    await supabase.storage.from('resumes').remove([app.resume_storage_path]).catch(() => {});
+  }
+  if (app.video_storage_path) {
+    await supabase.storage.from('application-videos').remove([app.video_storage_path]).catch(() => {});
+  }
+
+  await JobApplicationRepository.deleteById(applicationId);
+}
+
+export async function getJobListingsForFilter() {
+  return JobListingRepository.findAll();
+}
+
+export async function getApplicationResumeSignedUrl(storagePath: string) {
+  const { data, error } = await supabase.storage
+    .from('resumes')
+    .createSignedUrl(storagePath, 600); // 10 minutes
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function getApplicationVideoSignedUrl(storagePath: string) {
+  const { data, error } = await supabase.storage
+    .from('application-videos')
+    .createSignedUrl(storagePath, 600);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 export async function exportContactsToCsv(dateFrom?: string, dateTo?: string): Promise<{ name: string; email: string; phone?: string; marketingOptIn: boolean }[]> {

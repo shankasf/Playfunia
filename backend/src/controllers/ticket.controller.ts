@@ -1,7 +1,7 @@
 import type { Response } from "express";
 import { ZodError } from "zod";
 
-import type { AuthenticatedRequest } from "../middleware/auth.middleware";
+import type { SupabaseAuthenticatedRequest as AuthenticatedRequest } from "../middleware/supabase-auth.middleware";
 import { redeemTicket, reserveTickets, listTicketsForGuardian, listAllTickets } from "../services/ticket.service";
 import { redeemTicketSchema, reserveTicketsSchema } from "../schemas/ticket.schema";
 import { AppError } from "../utils/app-error";

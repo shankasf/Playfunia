@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 
 import { PrimaryButton } from "../components/common/PrimaryButton";
 import { SquarePaymentForm } from "../components/checkout/SquarePaymentForm";
-import { PaymentForm } from "../components/checkout/PaymentForm";
 import { formatTime, formatDateWithWeekday } from "../lib/dateUtils";
 import {
   useCheckout,
@@ -12,22 +11,19 @@ import {
   type MembershipCartItem,
 } from "../context/CheckoutContext";
 // Booking payment now handled through unified cart checkout (CartPage/CartDrawer)
-import { createCheckoutIntent, finalizeCheckout, type CheckoutSummary } from "../api/checkout";
 import {
   createSquareCheckoutIntent,
   finalizeSquareCheckout,
   getSquareConfig,
 } from "../api/square";
+import type { CheckoutSummary } from "../api/checkout";
 import { useAuth } from "../context/AuthContext";
 import styles from "./CheckoutPage.module.css";
-
-type PaymentProvider = 'stripe' | 'square';
 
 // Booking payment state no longer needed - bookings go through cart checkout
 
 type CartPaymentState = {
   loading: boolean;
-  clientSecret?: string;
   summary?: CheckoutSummary;
   error?: string;
   success?: boolean;
@@ -45,8 +41,7 @@ export function CheckoutPage() {
   const location = useLocation();
   const [status, setStatus] = useState<string | null>(null);
   const [cartPayment, setCartPayment] = useState<CartPaymentState>({ loading: false });
-  const [paymentProvider, setPaymentProvider] = useState<PaymentProvider>('square');
-  const [squareAvailable, setSquareAvailable] = useState(false);
+  const [, setSquareAvailable] = useState(false);
 
   // Check if Square is available on mount
   useEffect(() => {
@@ -87,11 +82,11 @@ export function CheckoutPage() {
 
   const totalBookingsDueNow = bookingItems
     .filter(item => item.status === "pending")
-    .reduce((sum, item) => sum + item.total, 0);
+    .reduce((sum, item) => sum + Math.round(item.total * 100), 0) / 100;
 
-  const totalBalancesDueLater = 0; // No balance due - full payment required
+  // totalBalancesDueLater removed - no balance due, full payment required
 
-  const cartSubtotal = payableItems.reduce((sum, item) => sum + item.total, 0);
+  const cartSubtotal = payableItems.reduce((sum, item) => sum + Math.round(item.total * 100), 0) / 100;
 
   // Booking payments now handled through unified cart checkout (CartPage/CartDrawer)
 
@@ -133,37 +128,17 @@ export function CheckoutPage() {
         ),
       };
 
-      // Use Square or Stripe based on selected provider
-      if (paymentProvider === 'square' && squareAvailable) {
-        const intent = await createSquareCheckoutIntent(payload);
+      const intent = await createSquareCheckoutIntent(payload);
 
-        setCartPayment({
-          loading: false,
-          squareReady: true,
-          squareAmount: intent.amount,
-          summary: intent.summary,
-          error: undefined,
-          success: false,
-        });
-        setStatus("Secure payment form ready. Complete payment to finalize tickets and memberships.");
-      } else {
-        const intent = await createCheckoutIntent(payload);
-
-        // Mock payment mode - auto-finalize without Stripe
-        if (intent.mock && intent.paymentIntentId) {
-          await handleCartPaymentSuccess(intent.paymentIntentId);
-          return;
-        }
-
-        setCartPayment({
-          loading: false,
-          clientSecret: intent.clientSecret,
-          summary: intent.summary,
-          error: undefined,
-          success: false,
-        });
-        setStatus("Secure payment form ready. Complete payment to finalize tickets and memberships.");
-      }
+      setCartPayment({
+        loading: false,
+        squareReady: true,
+        squareAmount: intent.amount,
+        summary: intent.summary,
+        error: undefined,
+        success: false,
+      });
+      setStatus("Secure payment form ready. Complete payment to finalize tickets and memberships.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to prepare checkout payment.";
       setCartPayment({ loading: false, error: message });
@@ -234,72 +209,6 @@ export function CheckoutPage() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Payment failed. Please try again.";
-      setCartPayment(prev => ({ ...prev, loading: false, error: message }));
-      setStatus(message);
-    }
-  };
-
-  const handleCartPaymentSuccess = async (paymentIntentId: string) => {
-    if (payableItems.length === 0) return;
-    try {
-      const payload = {
-        paymentIntentId,
-        items: payableItems.map(item =>
-          item.type === "ticket"
-            ? {
-              type: "ticket" as const,
-              label: item.label,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              metadata: { cartId: item.id },
-            }
-            : {
-              type: "membership" as const,
-              label: item.label,
-              membershipId: item.membershipId,
-              durationMonths: item.durationMonths,
-              autoRenew: item.autoRenew,
-              unitPrice: item.total,
-            },
-        ),
-      };
-
-      const result = await finalizeCheckout(payload);
-
-      result.tickets.forEach(entry => {
-        const item = payableItems[entry.cartIndex];
-        if (item && item.type === "ticket") {
-          const codes = (entry.ticket?.codes ?? []).map(code => code.code);
-          markTicketFulfilled(item.id, {
-            ticketId: (entry.ticket as { id?: string; _id?: string }).id ?? (entry.ticket as { _id?: string })._id,
-            codes,
-          });
-        }
-      });
-
-      result.memberships.forEach(entry => {
-        const item = payableItems[entry.cartIndex];
-        if (item && item.type === "membership") {
-          markMembershipActivated(item.id, entry.membership.startedAt);
-        }
-      });
-
-      setCartPayment(prev => ({
-        ...prev,
-        loading: false,
-        success: true,
-        clientSecret: undefined,
-        receiptEmail: result.receiptEmail,
-        summary: result.summary,
-      }));
-      setStatus(
-        result.receiptEmail
-          ? `Order complete! Confirmation sent to ${result.receiptEmail}.`
-          : "Order complete!",
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Payment captured but we could not finalize the order.";
       setCartPayment(prev => ({ ...prev, loading: false, error: message }));
       setStatus(message);
     }
@@ -476,35 +385,6 @@ export function CheckoutPage() {
             <p className={styles.success}>Receipt sent to {cartPayment.receiptEmail}</p>
           ) : null}
 
-          {/* Payment provider selector */}
-          {payableItems.length > 0 && !cartPayment.clientSecret && !cartPayment.squareReady && !cartPayment.success ? (
-            <div className={styles.paymentProviderSelector}>
-              <label className={styles.providerLabel}>Payment method:</label>
-              <div className={styles.providerOptions}>
-                <label className={styles.providerOption}>
-                  <input
-                    type="radio"
-                    name="paymentProvider"
-                    value="square"
-                    checked={paymentProvider === 'square'}
-                    onChange={() => setPaymentProvider('square')}
-                    disabled={!squareAvailable}
-                  />
-                  <span>Square {!squareAvailable && '(unavailable)'}</span>
-                </label>
-                <label className={styles.providerOption}>
-                  <input
-                    type="radio"
-                    name="paymentProvider"
-                    value="stripe"
-                    checked={paymentProvider === 'stripe'}
-                    onChange={() => setPaymentProvider('stripe')}
-                  />
-                  <span>Card (Stripe)</span>
-                </label>
-              </div>
-            </div>
-          ) : null}
 
           {payableItems.length > 0 ? (
             cartPayment.squareReady ? (
@@ -515,16 +395,6 @@ export function CheckoutPage() {
                 submitLabel="Pay now"
                 processingLabel="Processing checkout..."
                 onSuccess={handleSquarePaymentSuccess}
-              />
-            ) : cartPayment.clientSecret ? (
-              <PaymentForm
-                clientSecret={cartPayment.clientSecret}
-                amount={cartPayment.summary?.total ?? cartSubtotal}
-                currency={cartPayment.summary?.currency ?? "usd"}
-                description="Checkout total"
-                submitLabel="Pay now"
-                processingLabel="Processing checkout..."
-                onSuccess={handleCartPaymentSuccess}
               />
             ) : (
               <PrimaryButton type="button" onClick={prepareCartPayment} disabled={!hasValidWaiver || cartPayment.loading}>

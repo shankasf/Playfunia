@@ -1,8 +1,10 @@
-import { API_BASE_URL, apiDelete, apiGet, apiPatch, apiPost } from './client';
+import { API_BASE_URL, apiDelete, apiGet, apiPatch, apiPost, getAuthToken } from './client';
 
 export type AdminSummary = {
   generatedAt: string;
   bookings: {
+    total: number;
+    today: number;
     upcoming: Array<{
       id: string;
       reference: string;
@@ -16,17 +18,31 @@ export type AdminSummary = {
   };
   waivers: {
     total: number;
+    today: number;
     recent: Array<{ id: string; guardianName: string; signedAt: string; marketingOptIn: boolean }>;
   };
   tickets: {
+    totalRevenue: number;
+    todayRevenue: number;
+    totalPurchases: number;
+    todayPurchases: number;
     salesToday: number;
     redeemedToday: number;
     unusedCodes: number;
     salesWeek: number;
   };
   memberships: {
+    total: number;
     activeMembers: number;
     visitsToday: number;
+  };
+  applicants?: {
+    total: number;
+    pendingCount: number;
+  };
+  events?: {
+    total: number;
+    today: number;
   };
 };
 
@@ -316,4 +332,201 @@ export function createAdminEventSource(token: string) {
     url.searchParams.set('token', token);
   }
   return new EventSource(url.toString());
+}
+
+// ============= Job Applications =============
+export type AdminJobApplication = {
+  application_id: number;
+  listing_id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  date_of_birth: string | null;
+  resume_storage_path: string | null;
+  resume_original_name: string | null;
+  cover_letter: string | null;
+  schedule_preference: string | null;
+  available_start_date: string | null;
+  has_experience_with_children: boolean;
+  gender: string | null;
+  pronouns: string | null;
+  how_heard: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+  video_url: string | null;
+  video_storage_path: string | null;
+  video_original_name: string | null;
+  resume_mime_type: string | null;
+  resume_size_bytes: number | null;
+  video_mime_type: string | null;
+  video_size_bytes: number | null;
+  status: string;
+  admin_notes: string | null;
+  created_at: string;
+  updated_at: string;
+  job_listings?: { listing_id: number; title: string } | null;
+};
+
+export type AdminJobApplicationFilters = {
+  status?: string;
+  listingId?: number;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type AdminJobListing = {
+  listing_id: number;
+  title: string;
+};
+
+export async function fetchAdminJobApplications(filters?: AdminJobApplicationFilters) {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.listingId) params.set('listingId', String(filters.listingId));
+  if (filters?.search) params.set('search', filters.search);
+  if (filters?.dateFrom) params.set('dateFrom', filters.dateFrom);
+  if (filters?.dateTo) params.set('dateTo', filters.dateTo);
+  if (filters?.limit != null) params.set('limit', String(filters.limit));
+  if (filters?.offset != null) params.set('offset', String(filters.offset));
+
+  const query = params.toString();
+  return apiGet<{ applications: AdminJobApplication[]; total: number }>(
+    `/admin/job-applications${query ? `?${query}` : ''}`
+  );
+}
+
+export async function fetchAdminJobApplication(applicationId: number) {
+  return apiGet<{ application: AdminJobApplication; resumeUrl: string | null; videoUrl: string | null }>(
+    `/admin/job-applications/${applicationId}`
+  );
+}
+
+export async function updateAdminJobApplicationStatus(
+  applicationId: number,
+  payload: { status: string; admin_notes?: string }
+) {
+  return apiPatch<{ application: AdminJobApplication }, { status: string; admin_notes?: string }>(
+    `/admin/job-applications/${applicationId}/status`,
+    payload
+  );
+}
+
+export async function deleteAdminJobApplication(applicationId: number) {
+  return apiDelete<{ message: string }>(`/admin/job-applications/${applicationId}`);
+}
+
+export async function fetchAdminJobListings() {
+  const response = await apiGet<{ listings: AdminJobListing[] }>('/admin/job-listings/all');
+  return response.listings;
+}
+
+// ============= Events Management =============
+export type AdminEvent = {
+  event_id: number;
+  title: string;
+  description: string | null;
+  start_date: string;
+  end_date: string;
+  image_url: string | null;
+  is_published: boolean | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type AdminEventPhoto = {
+  id: number;
+  url: string;
+  storagePath: string;
+  caption: string | null;
+  displayOrder: number | null;
+  mediaType: 'image' | 'video';
+};
+
+export type AdminEventCreatePayload = {
+  title: string;
+  description?: string;
+  start_date: string;
+  end_date?: string;
+  is_published?: boolean;
+  image_url?: string;
+};
+
+export type AdminEventUpdatePayload = Omit<Partial<AdminEventCreatePayload>, 'image_url'> & { image_url?: string | null };
+
+export async function fetchAdminEvents() {
+  const response = await apiGet<{ events: AdminEvent[] }>('/admin/events');
+  return response.events;
+}
+
+export async function createAdminEvent(payload: AdminEventCreatePayload) {
+  const response = await apiPost<{ event: AdminEvent }, AdminEventCreatePayload>(
+    '/admin/events',
+    payload,
+  );
+  return response.event;
+}
+
+export async function updateAdminEvent(eventId: number, payload: AdminEventUpdatePayload) {
+  const response = await apiPatch<{ event: AdminEvent }, AdminEventUpdatePayload>(
+    `/admin/events/${eventId}`,
+    payload,
+  );
+  return response.event;
+}
+
+export async function deleteAdminEvent(eventId: number) {
+  return apiDelete<{ success: boolean }>(`/admin/events/${eventId}`);
+}
+
+export async function uploadEventPoster(eventId: number, file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append('poster', file);
+
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/admin/events/${eventId}/poster`, {
+    method: 'POST',
+    body: formData,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to upload poster');
+  }
+
+  const data = await response.json();
+  return data.imageUrl;
+}
+
+export async function uploadEventPhotos(eventId: number, files: File[]): Promise<AdminEventPhoto[]> {
+  const formData = new FormData();
+  files.forEach(f => formData.append('photos', f));
+
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE_URL}/admin/events/${eventId}/photos`, {
+    method: 'POST',
+    body: formData,
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Failed to upload photos');
+  }
+
+  const data = await response.json();
+  return data.photos;
+}
+
+export async function fetchEventPhotos(eventId: number): Promise<AdminEventPhoto[]> {
+  const response = await apiGet<{ photos: AdminEventPhoto[] }>(`/admin/events/${eventId}/photos`);
+  return response.photos;
+}
+
+export async function deleteEventPhoto(photoId: number) {
+  return apiDelete<{ success: boolean }>(`/admin/events/photos/${photoId}`);
 }

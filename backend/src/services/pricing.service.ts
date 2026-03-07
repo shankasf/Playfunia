@@ -9,7 +9,10 @@ import {
   MembershipPlanRepository,
   PartyAddOnRepository,
   PricingConfigRepository,
+  StoreHoursRepository,
 } from '../repositories';
+import { getCheckoutPricingConfig, type CheckoutPricingConfig } from './pricing-config.service';
+import { roundCurrency } from '../utils/currency';
 
 export interface TicketBundle {
   id: string;
@@ -19,6 +22,11 @@ export interface TicketBundle {
   childCount: number;
   requiresWaiver: boolean;
   requiresGripSocks: boolean;
+}
+
+export interface AdditionalTerm {
+  title: string;
+  description: string;
 }
 
 export interface PartyPackagePricing {
@@ -31,6 +39,9 @@ export interface PartyPackagePricing {
   includesFood: boolean;
   includesDrinks: boolean;
   includesDecor: boolean;
+  features: string[];
+  additionalTerms: AdditionalTerm[];
+  extraAdultPrice: number;
 }
 
 export interface PartyAddOnPricing {
@@ -62,9 +73,12 @@ export interface StoreHours {
 }
 
 export interface PricingConfigValues {
+  taxRate: number;
   cleaningFee: number;
   gripSocksPrice: number;
   extraChildAdmission: number;
+  extraAdultAdmission: number;
+  singleAdmissionPrice: number;
   depositPercentage: number;
   siblingDiscountRate: number;
   storeHours: StoreHours[];
@@ -101,17 +115,28 @@ export async function getTicketBundles(): Promise<TicketBundle[]> {
 export async function getPartyPackages(): Promise<PartyPackagePricing[]> {
   const packages = await PartyPackageRepository.findAll(true);
 
-  return packages.map(p => ({
-    id: String(p.package_id),
-    name: p.name,
-    description: (p as unknown as { description?: string }).description ?? null,
-    basePrice: p.price_usd,
-    maxGuests: p.base_children,
-    duration: p.base_room_hours * 60, // Convert hours to minutes
-    includesFood: p.includes_food ?? false,
-    includesDrinks: p.includes_drinks ?? false,
-    includesDecor: p.includes_decor ?? false,
-  }));
+  return packages.map(p => {
+    const pkg = p as unknown as {
+      description?: string;
+      features?: string[];
+      additional_terms?: AdditionalTerm[];
+      extra_adult_price?: number;
+    };
+    return {
+      id: String(p.package_id),
+      name: p.name,
+      description: pkg.description ?? null,
+      basePrice: p.price_usd,
+      maxGuests: p.base_children,
+      duration: p.base_room_hours * 60, // Convert hours to minutes
+      includesFood: p.includes_food ?? false,
+      includesDrinks: p.includes_drinks ?? false,
+      includesDecor: p.includes_decor ?? false,
+      features: pkg.features ?? [],
+      additionalTerms: pkg.additional_terms ?? [],
+      extraAdultPrice: pkg.extra_adult_price ?? 10,
+    };
+  });
 }
 
 /**
@@ -126,7 +151,7 @@ export async function getPartyAddOns(): Promise<PartyAddOnPricing[]> {
     label: a.label,
     description: a.description,
     price: a.price,
-    priceType: a.price_type,
+    priceType: a.price_type as 'flat' | 'perChild' | 'duration',
   }));
 }
 
@@ -149,8 +174,8 @@ export async function getMembershipPlans(): Promise<MembershipPlanPricing[]> {
   }));
 }
 
-// Store operating hours (same as booking.service.ts)
-const STORE_HOURS_DATA: Record<number, { open: string; close: string }> = {
+// Fallback store hours (used only if database is unavailable)
+const DEFAULT_STORE_HOURS: Record<number, { open: string; close: string }> = {
   0: { open: '11:00', close: '18:00' }, // Sunday: 11am - 6pm
   1: { open: '10:00', close: '19:00' }, // Monday: 10am - 7pm
   2: { open: '10:00', close: '19:00' }, // Tuesday: 10am - 7pm
@@ -171,10 +196,26 @@ const DAY_NAMES: Record<number, string> = {
 };
 
 /**
- * Get store hours as an array
+ * Get store hours as an array - fetches from database
  */
-export function getStoreHours(): StoreHours[] {
-  return Object.entries(STORE_HOURS_DATA).map(([dayIndex, hours]) => {
+export async function getStoreHours(location: string = 'Albany'): Promise<StoreHours[]> {
+  try {
+    const dbHours = await StoreHoursRepository.findByLocation(location);
+
+    if (dbHours && dbHours.length > 0) {
+      return dbHours.map(h => ({
+        day: DAY_NAMES[h.day_of_week] ?? 'Unknown',
+        dayIndex: h.day_of_week,
+        open: h.open_time.slice(0, 5),
+        close: h.close_time.slice(0, 5),
+      }));
+    }
+  } catch (error) {
+    console.error('Failed to fetch store hours from database:', error);
+  }
+
+  // Fallback to default hours
+  return Object.entries(DEFAULT_STORE_HOURS).map(([dayIndex, hours]) => {
     const idx = Number(dayIndex);
     return {
       day: DAY_NAMES[idx] ?? 'Unknown',
@@ -189,16 +230,25 @@ export function getStoreHours(): StoreHours[] {
  * Get pricing configuration values
  */
 export async function getPricingConfig(): Promise<PricingConfigValues> {
+  // Get checkout-specific pricing from centralized service
+  const checkoutConfig = await getCheckoutPricingConfig();
+
+  // Get additional config values from repository
   const configs = await PricingConfigRepository.findAll(true);
   const configMap = new Map(configs.map(c => [c.config_key, c.config_value]));
 
+  const storeHours = await getStoreHours();
+
   return {
-    cleaningFee: configMap.get('cleaning_fee') ?? 50,
-    gripSocksPrice: configMap.get('grip_socks_price') ?? 3,
-    extraChildAdmission: configMap.get('extra_child_admission') ?? 15,
+    taxRate: checkoutConfig.taxRate,
+    cleaningFee: checkoutConfig.cleaningFee,
+    gripSocksPrice: checkoutConfig.gripSocksPrice,
+    extraChildAdmission: checkoutConfig.extraChildFee,
+    extraAdultAdmission: checkoutConfig.extraAdultAdmissionPrice,
+    singleAdmissionPrice: checkoutConfig.singleAdmissionPrice,
     depositPercentage: configMap.get('deposit_percentage') ?? 50,
     siblingDiscountRate: configMap.get('sibling_discount_rate') ?? 5,
-    storeHours: getStoreHours(),
+    storeHours,
   };
 }
 
@@ -242,7 +292,8 @@ export async function calculateTicketPricing(quantity: number): Promise<{
   if (exactMatch) {
     return {
       total: exactMatch.price,
-      unitPrice: exactMatch.price / quantity,
+      // Bug fix #10b: Round unit price to avoid floating-point display issues
+      unitPrice: roundCurrency(exactMatch.price / quantity),
       label: exactMatch.name,
       description: exactMatch.description ?? '',
       bundleId: exactMatch.id,
@@ -262,7 +313,7 @@ export async function calculateTicketPricing(quantity: number): Promise<{
 
     return {
       total,
-      unitPrice: total / quantity,
+      unitPrice: roundCurrency(total / quantity),
       label: `${largestBundle.name} + ${extraChildren} extra`,
       description: `Save with the bundle; additional kids are $${config.extraChildAdmission} each.`,
       bundleId: largestBundle.id,

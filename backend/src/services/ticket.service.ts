@@ -10,7 +10,7 @@ import type { RedeemTicketInput, ReserveTicketsInput } from '../schemas/ticket.s
  * Generate a unique ticket code in format PF-XXXXXXXX
  */
 function generateTicketCode(): string {
-  return `PF-${randomUUID().substring(0, 8).toUpperCase()}`;
+  return `PF-${randomUUID().substring(0, 12).toUpperCase()}`;
 }
 
 export async function listTicketTypes() {
@@ -22,7 +22,6 @@ export async function listTicketTypes() {
     basePrice: t.base_price_usd,
     requiresWaiver: t.requires_waiver,
     requiresGripSocks: t.requires_grip_socks,
-    locationId: t.location_id,
     isActive: t.is_active,
   }));
 }
@@ -69,32 +68,23 @@ export async function reserveTickets(input: ReserveTicketsInput) {
   });
 
   // Create order item for the ticket
-  const ticketTypeId = input.type === 'event' && input.eventId 
-    ? parseInt(input.eventId, 10) 
+  // For event tickets, use event_id (FK to events table) instead of ticket_type_id (FK to ticket_types).
+  // Using eventId as ticket_type_id caused FK violation 23503 and auto-refund (guest_order_87).
+  const eventId = input.type === 'event' && input.eventId
+    ? parseInt(input.eventId, 10)
     : undefined;
 
   await OrderItemRepository.create({
     order_id: order.order_id,
     item_type: 'Ticket',
-    ticket_type_id: ticketTypeId && !isNaN(ticketTypeId) ? ticketTypeId : undefined,
+    event_id: eventId && !isNaN(eventId) ? eventId : undefined,
     name_override: input.type,
     quantity: input.quantity,
     unit_price_usd: input.price,
     line_total_usd: total,
   });
 
-  // Decrement tickets_remaining for event tickets
-  if (input.type === 'event' && input.eventId) {
-    const eventId = parseInt(input.eventId, 10);
-    if (!isNaN(eventId)) {
-      try {
-        await EventRepository.decrementTickets(eventId, input.quantity);
-      } catch (err) {
-        console.error('Failed to decrement event tickets:', err);
-        // Don't fail the order if decrement fails - the order is already created
-      }
-    }
-  }
+  // Event ticket tracking (events no longer have capacity/tickets_remaining)
 
   // Generate unique codes for each ticket
   const codes: Array<{ code: string; status: string }> = [];
@@ -111,7 +101,7 @@ export async function reserveTickets(input: ReserveTicketsInput) {
     try {
       ticketPurchase = await TicketPurchaseRepository.create({
         customer_id: customerId,
-        ticket_type_id: ticketTypeId && !isNaN(ticketTypeId) ? ticketTypeId : undefined,
+        ticket_type_id: undefined,
         event_id: input.type === 'event' && input.eventId ? parseInt(input.eventId, 10) : undefined,
         ticket_type: input.type || 'general',
         quantity: input.quantity,

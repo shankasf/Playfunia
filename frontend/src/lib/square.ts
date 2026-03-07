@@ -10,12 +10,18 @@ export interface SquareConfig {
 
 let squarePayments: Payments | null = null;
 let squareConfig: SquareConfig | null = null;
+// Config cache TTL - 5 minutes (Fix #9)
+let squareConfigTimestamp: number = 0;
+const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;
+// Mutex for concurrent init calls
+let initPromise: Promise<Payments | null> | null = null;
 
 /**
- * Load Square Web Payments SDK script dynamically
+ * Load Square Web Payments SDK script dynamically (Fix #8 - race condition)
  */
 function loadSquareScript(environment: 'sandbox' | 'production'): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Check if SDK is already loaded first (Fix #8)
     if (window.Square) {
       resolve();
       return;
@@ -23,8 +29,25 @@ function loadSquareScript(environment: 'sandbox' | 'production'): Promise<void> 
 
     const existingScript = document.getElementById('square-web-payments-sdk');
     if (existingScript) {
-      existingScript.addEventListener('load', () => resolve());
+      // Script tag exists but Square might not be ready yet
+      // Poll for window.Square instead of relying on events (Fix #8)
+      // This handles the case where the script is already loaded
+      let attempts = 0;
+      const MAX_ATTEMPTS = 200; // 10 seconds at 50ms intervals
+      const checkLoaded = () => {
+        if (window.Square) {
+          resolve();
+        } else if (++attempts > MAX_ATTEMPTS) {
+          reject(new Error('Square SDK loading timed out'));
+        } else {
+          setTimeout(checkLoaded, 50);
+        }
+      };
+      // Also listen for events in case script is still loading
+      existingScript.addEventListener('load', checkLoaded);
       existingScript.addEventListener('error', () => reject(new Error('Failed to load Square SDK')));
+      // Start polling immediately in case events already fired
+      checkLoaded();
       return;
     }
 
@@ -42,14 +65,17 @@ function loadSquareScript(environment: 'sandbox' | 'production'): Promise<void> 
 }
 
 /**
- * Fetch Square configuration from backend
+ * Fetch Square configuration from backend (Fix #9 - add cache invalidation)
  */
 export async function fetchSquareConfig(): Promise<SquareConfig> {
-  if (squareConfig) {
+  const now = Date.now();
+
+  // Return cached config if it's still fresh (Fix #9)
+  if (squareConfig && (now - squareConfigTimestamp) < CONFIG_CACHE_TTL_MS) {
     return squareConfig;
   }
 
-  const apiUrl = process.env.REACT_APP_API_URL || '';
+  const apiUrl = process.env.REACT_APP_API_URL || '/api';
   const response = await fetch(`${apiUrl}/square/config`);
 
   if (!response.ok) {
@@ -57,7 +83,19 @@ export async function fetchSquareConfig(): Promise<SquareConfig> {
   }
 
   squareConfig = await response.json();
+  squareConfigTimestamp = now;
   return squareConfig!;
+}
+
+/**
+ * Invalidate the cached Square configuration.
+ * Call this if you need to force a fresh config fetch.
+ */
+export function invalidateSquareConfig(): void {
+  squareConfig = null;
+  squareConfigTimestamp = 0;
+  // Also clear the payments instance since it may use old config
+  squarePayments = null;
 }
 
 /**
@@ -68,25 +106,38 @@ export async function initializeSquare(): Promise<Payments | null> {
     return squarePayments;
   }
 
-  try {
-    const config = await fetchSquareConfig();
+  // Prevent concurrent initialization (race condition)
+  if (initPromise) {
+    return initPromise;
+  }
 
-    if (!config.available || !config.applicationId || !config.locationId) {
-      console.warn('Square payments not available');
+  initPromise = (async () => {
+    try {
+      const config = await fetchSquareConfig();
+
+      if (!config.available || !config.applicationId || !config.locationId) {
+        console.warn('Square payments not available');
+        return null;
+      }
+
+      await loadSquareScript(config.environment);
+
+      if (!window.Square) {
+        throw new Error('Square SDK not loaded');
+      }
+
+      squarePayments = await window.Square.payments(config.applicationId, config.locationId);
+      return squarePayments;
+    } catch (error) {
+      console.error('Failed to initialize Square:', error);
       return null;
     }
+  })();
 
-    await loadSquareScript(config.environment);
-
-    if (!window.Square) {
-      throw new Error('Square SDK not loaded');
-    }
-
-    squarePayments = await window.Square.payments(config.applicationId, config.locationId);
-    return squarePayments;
-  } catch (error) {
-    console.error('Failed to initialize Square:', error);
-    return null;
+  try {
+    return await initPromise;
+  } finally {
+    initPromise = null;
   }
 }
 
