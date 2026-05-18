@@ -54,6 +54,6 @@ export function AnnouncementsBanner({ announcements, isLoading }: Props) {
 
 function formatDate(value?: string) {
   if (!value) return "Recently";
-  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" }).format(new Date(value));
 }
 

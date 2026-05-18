@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { CartAddedPopup, type CartPopupData } from "../components/common/CartAddedPopup";
 
 export type BookingCartItem = {
   id: string;
@@ -73,6 +74,15 @@ export type MembershipCartItem = {
   total: number;
   status: "pending" | "activated";
   activatedAt?: string;
+  referralName?: string;
+  childInfo?: {
+    childId?: number;
+    firstName: string;
+    lastName: string;
+    birthDate: string;
+  };
+  childPhotoFile?: File;
+  parentZipCode?: string;
 };
 
 export type CheckoutItem = BookingCartItem | TicketCartItem | MembershipCartItem;
@@ -141,6 +151,7 @@ function loadStoredItems(): CheckoutItem[] {
 
 export function CheckoutProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CheckoutItem[]>(() => loadStoredItems());
+  const [cartPopup, setCartPopup] = useState<CartPopupData | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
@@ -165,6 +176,17 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
           existing.location === item.location)
       );
       return [...filtered, item];
+    });
+    setCartPopup({
+      itemType: 'booking',
+      label: item.packageName,
+      details: [
+        { key: 'Date', value: item.eventDate },
+        { key: 'Time', value: item.startTime },
+        { key: 'Location', value: item.location },
+        { key: 'Guests', value: String(item.guestCount) },
+        { key: 'Total', value: `$${item.total.toFixed(2)}` },
+      ],
     });
   }, []);
 
@@ -211,6 +233,15 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
 
       // Add as new item
       return [...prev, item];
+    });
+    setCartPopup({
+      itemType: 'ticket',
+      label: item.label,
+      details: [
+        { key: 'Quantity', value: String(item.quantity) },
+        { key: 'Price', value: `$${item.unitPrice.toFixed(2)} each` },
+        { key: 'Total', value: `$${item.total.toFixed(2)}` },
+      ],
     });
   }, []);
 
@@ -270,6 +301,17 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
       }
       return [...prev, item];
     });
+    const durationLabel = item.durationMonths === 1 ? '1 month' : `${item.durationMonths} months`;
+    setCartPopup({
+      itemType: 'membership',
+      label: item.label,
+      details: [
+        { key: 'Duration', value: durationLabel },
+        { key: 'Monthly', value: `$${item.monthlyPrice.toFixed(2)}/mo` },
+        { key: 'Auto-Renew', value: item.autoRenew ? 'Yes' : 'No' },
+        { key: 'Total', value: `$${item.total.toFixed(2)}` },
+      ],
+    });
   }, []);
 
   const markMembershipActivated = useCallback((itemId: string, activatedAt?: string) => {
@@ -309,7 +351,14 @@ export function CheckoutProvider({ children }: { children: React.ReactNode }) {
     [items, addBookingDepositItem, markBookingPaid, addTicketPurchase, updateTicketQuantity, markTicketFulfilled, addMembershipPurchase, markMembershipActivated, removeItem, clear],
   );
 
-  return <CheckoutContext.Provider value={value}>{children}</CheckoutContext.Provider>;
+  return (
+    <CheckoutContext.Provider value={value}>
+      {children}
+      {cartPopup && (
+        <CartAddedPopup data={cartPopup} onClose={() => setCartPopup(null)} />
+      )}
+    </CheckoutContext.Provider>
+  );
 }
 
 export function useCheckout() {

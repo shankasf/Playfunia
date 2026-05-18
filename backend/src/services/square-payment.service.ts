@@ -4,7 +4,7 @@ import type { CreatePaymentRequest, Money } from 'square';
 import { getSquareClient, getSquareLocationId } from '../config/square';
 import { appConfig } from '../config/env';
 import { supabaseAny } from '../config/supabase';
-import { UserRepository, PartyBookingRepository, PaymentRepository, OrderRepository, PartyPackageRepository } from '../repositories';
+import { UserRepository, PartyBookingRepository, PaymentRepository, OrderRepository, PartyPackageRepository, ChildRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { sendBookingConfirmation, type BookingEmailData } from './email.service';
 import { sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
@@ -205,12 +205,15 @@ async function sendBookingConfirmationEmail(
   const reference = booking.reference ?? `PF-${booking.booking_id}`;
   const guestName = `${guardian.first_name} ${guardian.last_name}`.trim();
   const eventDate = booking.event_date
-    ? new Date(booking.event_date).toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
+    ? (() => {
+        const p = booking.event_date.split('-');
+        return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
+      })()
     : 'TBD';
   const startTime = booking.start_time ?? 'TBD';
   const location = booking.location_name ?? 'Albany';
@@ -264,6 +267,23 @@ async function sendBookingConfirmationEmail(
     quantity: a.quantity ?? 1,
   }));
 
+  // Resolve children from DB for email/PDF
+  const paymentChildIds = (booking.child_ids ?? []) as number[];
+  let paymentResolvedChildren: Array<{ name: string; birthDate?: string }> = [];
+  if (paymentChildIds.length > 0) {
+    try {
+      const childRecords = await ChildRepository.findByIds(paymentChildIds);
+      paymentResolvedChildren = childRecords.map((c: any) => ({
+        name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+        birthDate: c.birth_date || undefined,
+      }));
+    } catch (childErr) {
+      logger.warn({ err: childErr }, 'Failed to resolve children for booking receipt');
+    }
+  }
+  const paymentBookingNotes = booking.notes?.toString() || undefined;
+  const guardianPhone = guardian.phone || booking.guest_phone || undefined;
+
   // Generate receipt record and PDF
   let receiptNumber: string | undefined;
   let receiptPdf: Buffer | undefined;
@@ -289,13 +309,16 @@ async function sendBookingConfirmationEmail(
         guestCount,
         subtotal,
         taxAmount,
-        taxRate: Math.round(getTaxRateSync() * 100), // Tax rate as percentage from config
+        taxRate: Math.round(getTaxRateSync() * 100),
         cleaningFee,
         extraChildren,
         extraAdults,
         addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
         totalAmount,
         balanceRemaining,
+        children: paymentResolvedChildren.length > 0 ? paymentResolvedChildren : undefined,
+        notes: paymentBookingNotes,
+        customerPhone: guardianPhone,
         packageDetails: partyPackage ? {
           priceUsd: partyPackage.price_usd ?? 0,
           baseChildren: partyPackage.base_children ?? 10,
@@ -316,9 +339,11 @@ async function sendBookingConfirmationEmail(
         year: 'numeric',
         month: 'long',
         day: 'numeric',
+        timeZone: 'America/New_York',
       }),
       customerName: guestName || 'Customer',
       customerEmail: guardian.email ?? booking.guest_email ?? '',
+      customerPhone: guardianPhone,
       bookingReference: reference,
       packageName,
       packageBasePrice,
@@ -337,7 +362,8 @@ async function sendBookingConfirmationEmail(
       total: totalAmount,
       paymentMethod: 'Credit Card (Square)',
       paymentId: paymentId ?? `booking_${booking.booking_id}`,
-      // Include full package details for page 2
+      children: paymentResolvedChildren.length > 0 ? paymentResolvedChildren : undefined,
+      notes: paymentBookingNotes,
       packageDetails: partyPackage ? {
         priceUsd: partyPackage.price_usd ?? 0,
         baseChildren: partyPackage.base_children ?? 10,
@@ -350,7 +376,6 @@ async function sendBookingConfirmationEmail(
     });
   } catch (receiptError) {
     logger.error({ err: receiptError, bookingId: booking.booking_id }, 'Failed to generate booking receipt');
-    // Don't fail the payment if receipt generation fails
   }
 
   // Send email
@@ -378,6 +403,22 @@ async function sendBookingConfirmationEmail(
         addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
         receiptPdf,
         receiptNumber,
+        phone: guardianPhone,
+        children: paymentResolvedChildren.length > 0 ? paymentResolvedChildren : undefined,
+        notes: paymentBookingNotes,
+        packageDetails: partyPackage ? {
+          priceUsd: partyPackage.price_usd ?? 0,
+          baseChildren: partyPackage.base_children ?? 10,
+          baseRoomHours: partyPackage.base_room_hours ?? 2,
+          includesFood: partyPackage.includes_food ?? false,
+          includesDrinks: partyPackage.includes_drinks ?? false,
+          includesDecor: partyPackage.includes_decor ?? false,
+          notes: partyPackage.notes ?? undefined,
+          features: (partyPackage as any).features ?? [],
+          additionalTerms: (partyPackage as any).additional_terms ?? [],
+          extraChildPrice: (partyPackage as any).extra_child_price ?? 40,
+          extraAdultPrice: (partyPackage as any).extra_adult_price ?? 10,
+        } : undefined,
       };
 
       await sendBookingConfirmation(emailData);
@@ -522,7 +563,16 @@ export async function createSquarePayment(
       amountMoney: toSquareMoney(cardPaymentAmount),
       locationId,
       referenceId: `booking_${booking.booking_id}`,
-      note: `Deposit for party booking ${booking.reference ?? booking.booking_id}`,
+      note: await (async () => {
+        let pkgName = 'Party Booking';
+        if (booking.package_id) {
+          try {
+            const pkg = await PartyPackageRepository.findById(booking.package_id);
+            if (pkg?.name) pkgName = `${pkg.name} Party Booking`;
+          } catch { /* use default */ }
+        }
+        return `${pkgName} (Ref: ${booking.reference ?? booking.booking_id}) | Playfunia`;
+      })(),
     };
 
     // Log payment initiation

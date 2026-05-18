@@ -82,6 +82,7 @@ export async function downloadReceiptPdf(req: Request, res: Response, next: Next
       year: 'numeric',
       month: 'long',
       day: 'numeric',
+      timeZone: 'America/New_York',
     });
 
     let pdfBuffer: Buffer;
@@ -113,6 +114,7 @@ export async function downloadReceiptPdf(req: Request, res: Response, next: Next
           date,
           customerName,
           customerEmail,
+          customerPhone: (metadata.customerPhone as string) ?? undefined,
           bookingReference: (metadata.bookingReference as string) ?? '',
           packageName: (metadata.packageName as string) ?? 'Party Package',
           packageBasePrice: (metadata.packageBasePrice as number) ?? undefined,
@@ -132,6 +134,8 @@ export async function downloadReceiptPdf(req: Request, res: Response, next: Next
           total: (metadata.totalAmount as number) ?? receipt.total_usd,
           paymentMethod: receipt.payment_method ?? 'Credit Card',
           paymentId: receipt.payment_id ?? '',
+          children: (metadata.children as Array<{ name: string; birthDate?: string }>) ?? undefined,
+          notes: (metadata.notes as string) ?? undefined,
           packageDetails: (metadata.packageDetails as {
             priceUsd: number;
             baseChildren: number;
@@ -171,8 +175,9 @@ export async function downloadReceiptPdf(req: Request, res: Response, next: Next
         break;
     }
 
+    const disposition = req.query.inline === 'true' ? 'inline' : 'attachment';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="playfunia-receipt-${receiptNumber}.pdf"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="playfunia-receipt-${receiptNumber}.pdf"`);
     res.send(pdfBuffer);
   } catch (error) {
     next(error);

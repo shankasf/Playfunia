@@ -12,7 +12,7 @@ const locationDetails = [
     address: '1 Crossgates Mall Rd, Unit N202, Level 2, Near Macy\'s, Albany, NY 12203',
     phone: '+1 (201) 539-5928',
     phoneHref: 'tel:+12015395928',
-    email: 'playfunia@playfunia.com',
+    email: 'info@playfunia.com',
     mapTitle: 'PlayFunia Albany',
     mapSrc:
       'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2926.8276644097!2d-73.85076492335!3d42.6858833!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x89de0a3aa5dc0b3b%3A0x2c3b8d2a74b8b8b8!2sCrossgates%20Mall!5e0!3m2!1sen!2sus!4v1709573099000!5m2!1sen!2sus',

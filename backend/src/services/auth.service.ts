@@ -105,16 +105,27 @@ export async function createVerifiedUser(data: {
   });
 
   if (authError) {
-    // If user already exists in Supabase Auth, try to get their ID
+    // If user already exists in Supabase Auth, get their ID and update their password
     if (authError.message.includes('already been registered')) {
-      // User exists in Supabase Auth but not in our table - get their ID
-      // Look up existing user by email directly instead of listing all users
-      const { data: existingUser } = await supabase
-        .from('users')
-        .select('auth_user_id')
-        .eq('email', normalizedEmail)
-        .single();
-      authUserId = existingUser?.auth_user_id ?? undefined;
+      // Look up existing auth user via Supabase Admin API (not public.users which may not exist yet)
+      const { data: userList, error: listError } = await supabase.auth.admin.listUsers();
+      if (!listError && userList?.users) {
+        const existingAuthUser = userList.users.find(
+          (u) => u.email?.toLowerCase() === normalizedEmail
+        );
+        if (existingAuthUser) {
+          authUserId = existingAuthUser.id;
+          // Update their password so email/password login works
+          // (they may have originally signed up via Google OAuth)
+          try {
+            await supabase.auth.admin.updateUserById(existingAuthUser.id, {
+              password: data.password,
+            });
+          } catch (updateErr) {
+            console.error('Failed to update Supabase Auth password for existing user:', updateErr);
+          }
+        }
+      }
     } else {
       console.error('Failed to create Supabase Auth user:', authError);
       throw new AppError('Failed to create account. Please try again.', 500);
@@ -279,6 +290,7 @@ export async function getUserProfile(userId: string) {
     lastName: string | null;
     birthDate: string | null;
     gender: string | null;
+    photoUrl: string | null;
   }> = [];
   
   if (user.customer_id) {
@@ -289,6 +301,7 @@ export async function getUserProfile(userId: string) {
       lastName: c.last_name,
       birthDate: c.birth_date,
       gender: c.gender,
+      photoUrl: c.photo_url ?? null,
     }));
   }
 

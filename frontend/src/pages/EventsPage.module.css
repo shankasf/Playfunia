@@ -47,6 +47,9 @@
   border: 1px solid #e2e8f0;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  text-decoration: none;
+  color: inherit;
+  display: block;
 }
 
 .eventCard:hover {
@@ -135,6 +138,10 @@
   color: #6366f1;
   font-weight: 600;
   margin: 0;
+}
+
+.cardShare {
+  margin-top: 0.75rem;
 }
 
 /* Badges */
@@ -374,21 +381,44 @@
 }
 
 /* Responsive */
+@media (max-width: 900px) {
+  .eventGrid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.25rem;
+  }
+}
+
 @media (max-width: 640px) {
+  .pageHeader {
+    padding: 2rem 1rem 1.25rem;
+  }
+
   .eventGrid {
     grid-template-columns: 1fr;
     max-width: 400px;
+    padding: 0 1rem;
+    gap: 1rem;
   }
 
-  .modalBody {
-    padding: 1.25rem 1.25rem 1.5rem;
-  }
-
-  .photoGallery {
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  .cardBody {
+    padding: 0.85rem 1rem 1rem;
   }
 
   .lightboxOverlay {
     padding: 1rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .eventGrid {
+    max-width: 100%;
+  }
+
+  .cardTitle {
+    font-size: 1rem;
+  }
+
+  .cardDate {
+    font-size: 0.8rem;
   }
 }

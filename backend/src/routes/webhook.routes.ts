@@ -7,11 +7,12 @@
  * - Order updates
  */
 
-import { Router, json } from 'express';
+import { Router, json, urlencoded } from 'express';
 import {
   handleSquareWebhook,
   webhookHealthCheck,
 } from '../controllers/webhook.controller';
+import { handleTwilioStatusCallback } from '../controllers/twilio-webhook.controller';
 
 export const webhookRouter = Router();
 
@@ -30,4 +31,13 @@ webhookRouter.post(
     },
   }),
   handleSquareWebhook
+);
+
+// Twilio SMS delivery status callback. Twilio POSTs as
+// application/x-www-form-urlencoded; signature is validated in the controller
+// using twilio.validateRequest() over the parsed params + full URL.
+webhookRouter.post(
+  '/twilio/status',
+  urlencoded({ extended: false }),
+  handleTwilioStatusCallback,
 );

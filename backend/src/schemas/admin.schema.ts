@@ -223,3 +223,84 @@ export const adminJobApplicationStatusUpdateSchema = z
   .strip();
 
 export type AdminJobApplicationStatusUpdateInput = z.infer<typeof adminJobApplicationStatusUpdateSchema>;
+
+// Full admin edit of a job application
+export const adminJobApplicationUpdateSchema = z
+  .object({
+    first_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    last_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    email: z.string().trim().email().toLowerCase().max(255).optional(),
+    phone: phoneSchema.optional(),
+    date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    cover_letter: z.string().trim().max(5000).nullable().optional(),
+    schedule_preference: z.string().trim().max(100).nullable().optional(),
+    available_start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    has_experience_with_children: z.boolean().optional(),
+    gender: z.string().trim().max(50).nullable().optional(),
+    pronouns: z.string().trim().max(50).nullable().optional(),
+    how_heard: z.string().trim().max(200).nullable().optional(),
+    emergency_contact_name: z.string().trim().max(200).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').nullable().optional(),
+    emergency_contact_phone: phoneSchema.nullable().optional(),
+    status: z.enum(['new', 'reviewed', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn']).optional(),
+    admin_notes: z.string().max(2000).nullable().optional(),
+    listing_id: z.number().int().positive().optional(),
+  })
+  .refine(data => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided to update a job application.',
+  })
+  .strip();
+
+export type AdminJobApplicationUpdateInput = z.infer<typeof adminJobApplicationUpdateSchema>;
+
+// ============= Job Listing Schemas =============
+const employmentTypeEnum = z.enum(['full-time', 'part-time', 'seasonal', 'internship']);
+const slugRegex = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export const adminJobListingCreateSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200),
+    slug: z.string().trim().min(1).max(200).regex(slugRegex, 'Slug must be lowercase letters, numbers, and hyphens'),
+    department: z.string().trim().min(1).max(100),
+    employment_type: employmentTypeEnum,
+    location: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().min(1),
+    responsibilities: z.array(z.string().trim().min(1).max(500)).optional(),
+    qualifications: z.array(z.string().trim().min(1).max(500)).optional(),
+    nice_to_have: z.array(z.string().trim().min(1).max(500)).optional(),
+    perks: z.array(z.string().trim().min(1).max(500)).optional(),
+    pay_range: z.string().trim().max(100).nullable().optional(),
+    minimum_age: z.number().int().min(14).max(99).optional(),
+    schedule_notes: z.string().trim().max(200).nullable().optional(),
+    display_order: z.number().int().min(0).optional(),
+    is_active: z.boolean().optional(),
+    closes_at: z.string().datetime().nullable().optional(),
+  })
+  .strip();
+
+export type AdminJobListingCreateInput = z.infer<typeof adminJobListingCreateSchema>;
+
+export const adminJobListingUpdateSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    slug: z.string().trim().min(1).max(200).regex(slugRegex, 'Slug must be lowercase letters, numbers, and hyphens').optional(),
+    department: z.string().trim().min(1).max(100).optional(),
+    employment_type: employmentTypeEnum.optional(),
+    location: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().min(1).optional(),
+    responsibilities: z.array(z.string().trim().min(1).max(500)).optional(),
+    qualifications: z.array(z.string().trim().min(1).max(500)).optional(),
+    nice_to_have: z.array(z.string().trim().min(1).max(500)).optional(),
+    perks: z.array(z.string().trim().min(1).max(500)).optional(),
+    pay_range: z.string().trim().max(100).nullable().optional(),
+    minimum_age: z.number().int().min(14).max(99).optional(),
+    schedule_notes: z.string().trim().max(200).nullable().optional(),
+    display_order: z.number().int().min(0).optional(),
+    is_active: z.boolean().optional(),
+    closes_at: z.string().datetime().nullable().optional(),
+  })
+  .refine(data => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided to update a job listing.',
+  })
+  .strip();
+
+export type AdminJobListingUpdateInput = z.infer<typeof adminJobListingUpdateSchema>;

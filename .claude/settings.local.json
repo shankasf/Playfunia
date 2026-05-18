@@ -11,7 +11,10 @@
       "WebFetch",
       "Delete",
       "WebSearch",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(docker stop *)",
+      "Bash(rm -rf chatbot_service/chroma/* chatbot_service/chroma/.[!.]*)",
+      "Bash(docker start *)"
     ]
   }
 }

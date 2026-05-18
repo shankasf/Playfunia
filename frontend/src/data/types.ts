@@ -3,6 +3,11 @@ export interface MembershipPlan {
   name: string;
   description: string;
   monthlyPrice: number;
+  originalPrice?: number;
+  promoLabel?: string;
+  promoNote?: string;
+  promoEndsAt?: string;
+  promoSpotsLeft?: number;
   benefits: string[];
   maxChildren: number;
   visitsPerMonth?: number;

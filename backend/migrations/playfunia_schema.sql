@@ -366,9 +366,14 @@ CREATE TABLE IF NOT EXISTS public.children (
     allergies TEXT,
     notes TEXT,
     membership_tier VARCHAR(50),
+    photo_url TEXT,
+    photo_storage_path TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE public.children ADD COLUMN IF NOT EXISTS photo_url TEXT;
+ALTER TABLE public.children ADD COLUMN IF NOT EXISTS photo_storage_path TEXT;
 
 ALTER TABLE public.children ENABLE ROW LEVEL SECURITY;
 

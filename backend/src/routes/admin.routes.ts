@@ -56,6 +56,13 @@ import {
   deleteMembershipHandler,
   validateMembershipHandler,
   recordMembershipVisitHandler,
+
+  // Enhanced Membership Stats & Referrals
+  getMembershipStatsHandler,
+  listUnmatchedReferralsHandler,
+  matchReferralHandler,
+  listStaffMembersHandler,
+  getStaffReferralStatsHandler,
   
   // Party Packages
   listPartyPackagesHandler,
@@ -70,6 +77,8 @@ import {
   updateBookingHandler,
   cancelBookingHandler,
   deleteBookingHandler,
+  createManualBookingHandler,
+  issueTicketsHandler,
 
   // Waiver Users
   listWaiverUsersHandler,
@@ -148,15 +157,44 @@ import {
   listJobApplicationsHandler,
   getJobApplicationHandler,
   updateJobApplicationStatusHandler,
+  updateJobApplicationHandler,
   deleteJobApplicationHandler,
   listJobListingsForFilterHandler,
+
+  // Job Listings
+  listJobListingsHandler,
+  getJobListingHandler,
+  createJobListingHandler,
+  updateJobListingHandler,
+  deleteJobListingHandler,
 
   // Event Photos & Posters
   uploadEventPosterHandler,
   uploadEventPhotosHandler,
   getEventPhotosHandler,
   deleteEventPhotoHandler,
+
+  // Product Promotions
+  listProductPromotionsHandler,
+  getProductPromotionHandler,
+  createProductPromotionHandler,
+  updateProductPromotionHandler,
+  deleteProductPromotionHandler,
+
+  // Promo Offers
+  listPromoOffersHandler,
+  getPromoOfferHandler,
+  createPromoOfferHandler,
+  updatePromoOfferHandler,
+  deletePromoOfferHandler,
 } from '../controllers/admin.controller';
+import {
+  listCouponsHandler,
+  getCouponHandler,
+  createCouponHandler,
+  updateCouponHandler,
+  deleteCouponHandler,
+} from '../controllers/coupon.controller';
 import { AppError } from '../utils/app-error';
 
 const upload = multer({
@@ -229,12 +267,18 @@ adminRouter.delete('/membership-plans/:id', deleteMembershipPlanHandler);
 
 // Customer Memberships CRUD
 adminRouter.get('/memberships', listMembershipsHandler);
+// Specific routes BEFORE /:id to avoid parameter capture
+adminRouter.get('/memberships/stats', getMembershipStatsHandler);
+adminRouter.get('/memberships/referrals/unmatched', listUnmatchedReferralsHandler);
+adminRouter.post('/memberships/validate', validateMembershipHandler);
+adminRouter.post('/memberships/referrals/:membershipId/match', matchReferralHandler);
 adminRouter.get('/memberships/:id', getMembershipHandler);
 adminRouter.post('/memberships', createMembershipHandler);
 adminRouter.patch('/memberships/:id', updateMembershipHandler);
 adminRouter.delete('/memberships/:id', deleteMembershipHandler);
-adminRouter.post('/memberships/validate', validateMembershipHandler);
 adminRouter.post('/memberships/:membershipId/visit', recordMembershipVisitHandler);
+adminRouter.get('/staff', listStaffMembersHandler);
+adminRouter.get('/staff/:userId/referral-stats', getStaffReferralStatsHandler);
 
 // Party Packages CRUD
 adminRouter.get('/party-packages', listPartyPackagesHandler);
@@ -244,6 +288,7 @@ adminRouter.patch('/party-packages/:id', updatePartyPackageHandler);
 adminRouter.delete('/party-packages/:id', deletePartyPackageHandler);
 
 // Bookings CRUD
+adminRouter.post('/bookings', createManualBookingHandler);
 adminRouter.get('/bookings', listBookingsHandler);
 adminRouter.get('/bookings/:id', getBookingHandler);
 adminRouter.patch('/bookings/:id', updateBookingHandler);
@@ -269,6 +314,7 @@ adminRouter.patch('/waivers/:id', updateWaiverSubmissionHandler);
 adminRouter.delete('/waivers/:id', deleteWaiverSubmissionHandler);
 
 // Ticket Purchases
+adminRouter.post('/tickets/issue', issueTicketsHandler);
 adminRouter.get('/ticket-purchases', listTicketPurchasesHandler);
 adminRouter.get('/ticket-purchases/:id', getTicketPurchaseHandler);
 adminRouter.patch('/ticket-purchases/:id', updateTicketPurchaseHandler);
@@ -334,8 +380,37 @@ adminRouter.delete('/resources/:id', deleteResourceHandler);
 adminRouter.get('/job-applications', listJobApplicationsHandler);
 adminRouter.get('/job-applications/:id', getJobApplicationHandler);
 adminRouter.patch('/job-applications/:id/status', updateJobApplicationStatusHandler);
+adminRouter.patch('/job-applications/:id', updateJobApplicationHandler);
 adminRouter.delete('/job-applications/:id', deleteJobApplicationHandler);
+
+// Job Listings CRUD (full /all must stay above /:id)
 adminRouter.get('/job-listings/all', listJobListingsForFilterHandler);
+adminRouter.get('/job-listings', listJobListingsHandler);
+adminRouter.post('/job-listings', createJobListingHandler);
+adminRouter.get('/job-listings/:id', getJobListingHandler);
+adminRouter.patch('/job-listings/:id', updateJobListingHandler);
+adminRouter.delete('/job-listings/:id', deleteJobListingHandler);
+
+// Product Promotions CRUD
+adminRouter.get('/promotions', listProductPromotionsHandler);
+adminRouter.get('/promotions/:id', getProductPromotionHandler);
+adminRouter.post('/promotions', createProductPromotionHandler);
+adminRouter.patch('/promotions/:id', updateProductPromotionHandler);
+adminRouter.delete('/promotions/:id', deleteProductPromotionHandler);
+
+// Promo Offers CRUD
+adminRouter.get('/promo-offers', listPromoOffersHandler);
+adminRouter.get('/promo-offers/:id', getPromoOfferHandler);
+adminRouter.post('/promo-offers', createPromoOfferHandler);
+adminRouter.patch('/promo-offers/:id', updatePromoOfferHandler);
+adminRouter.delete('/promo-offers/:id', deletePromoOfferHandler);
+
+// Coupons CRUD (cart-redeemable codes; targets memberships, tickets, bookings or all)
+adminRouter.get('/coupons', listCouponsHandler);
+adminRouter.get('/coupons/:id', getCouponHandler);
+adminRouter.post('/coupons', createCouponHandler);
+adminRouter.patch('/coupons/:id', updateCouponHandler);
+adminRouter.delete('/coupons/:id', deleteCouponHandler);
 
 // Event Reconciliation (admin only)
 // POST /api/admin/reconciliation/run?hours=24

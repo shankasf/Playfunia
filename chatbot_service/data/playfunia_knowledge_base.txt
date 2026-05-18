@@ -1,0 +1,159 @@
+# Playfunia Knowledge Base
+
+This document contains current business information for Playfunia, extracted from the production database on May 16, 2026. It is organized by topic and written in plain English for use as a chatbot knowledge base.
+
+## About Playfunia & Location
+
+Playfunia is an indoor play center for children, offering open play, birthday parties, memberships, and special events in a safe, kid-focused environment.
+
+The Albany location is at 1 Crossgates Mall Rd, Unit N202, Level 2, Near Macy's, Albany, NY, 12203. You can reach the Albany location by phone at +1 (201) 539-5928 or by email at info@playfunia.com.
+
+## Hours of Operation
+
+On Monday the Albany location is open from 11 AM to 6 PM. On Tuesday the Albany location is open from 10 AM to 8 PM. On Wednesday the Albany location is open from 10 AM to 8 PM. On Thursday the Albany location is open from 10 AM to 8 PM. On Friday the Albany location is open from 10 AM to 8 PM. On Saturday the Albany location is open from 10 AM to 9 PM. On Sunday the Albany location is open from 10 AM to 9 PM.
+
+## Open Play Admission Tickets
+
+Open play admission gives children unlimited play time at Playfunia for the day. Pricing depends on the number of children and there are sibling bundles to make group visits easier.
+
+The Grip Socks ticket costs $3. Required grip socks for play area.
+
+The Single Child Admission ticket is $20 and gives one child unlimited play for the day. This ticket requires a signed waiver and grip socks.
+
+The 2 Siblings Bundle is $35 and covers 2 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
+
+The 3 Siblings Bundle is $50 and covers 3 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
+
+The 4 Siblings Bundle is $65 and covers 4 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
+
+The 5 Siblings Bundle is $80 and covers 5 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
+
+The 6 Siblings Bundle is $95 and covers 6 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
+
+## Membership Plans
+
+Playfunia memberships give families unlimited open play visits each month for a flat monthly price. Each plan covers a fixed number of children and adults and comes with grip socks and full access to the play areas.
+
+The Mini Plan membership costs $250 per month and covers 1 child and 1 adult with unlimited visits per month. Members also get Grip socks included and Access to all play areas. There is currently a promotion on the Mini Plan: LIMITED TIME - 50% OFF (50% off) through June 18, 2026. Limited promo pricing for early members.
+
+The Super Plan membership costs $440 per month and covers 2 children and 2 adults with unlimited visits per month. Members also get Grip socks included, Access to all play areas, and Priority event access. There is currently a promotion on the Super Plan: LIMITED TIME - 50% OFF (50% off) through June 18, 2026. Limited promo pricing for early members.
+
+The Mega Plan membership costs $630 per month and covers 3 children and 3 adults with unlimited visits per month. Members also get Grip socks included, Access to all play areas, Priority event access, and VIP party discounts. There is currently a promotion on the Mega Plan: LIMITED TIME - 50% OFF (50% off) through June 18, 2026. Limited promo pricing for early members.
+
+## Birthday Party Packages
+
+Playfunia hosts birthday parties with exclusive use of a private party room while guests also enjoy access to the open play area. Three party packages are available at different price points.
+
+The Mini Fun party package is $399 and covers up to 10 children with 2 hours of private party room time plus all-day open play access. Guests bring their own food, drinks, and decorations for this package. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Bring your own snacks or treats – we make it easy for your party to be exactly how you want. Guests handle decorations, food, and party items – your way, your style. Terms to know: additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
+
+The Super Fun party package is $599 and covers up to 10 children with 2 hours of private party room time plus all-day open play access. The package includes food and drinks. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Party supplies included – everything you need for a fun and colorful celebration|Choose from a blue, pink, or white party theme: tableware, napkins, utensils. One slice of cheese pizza and drinks (water/juice) for every child. Snack tray to share – cookies & chips for everyone to enjoy. Terms to know: pizza and drinks — Only accounted for children. Additional pizza may be purchased separately for adults; additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
+
+The Mega Fun party package is $699 and covers up to 10 children with 2 hours of private party room time plus all-day open play access. The package includes food, drinks, and themed decorations. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Custom themed balloon decorations – bring your child's favorite characters and colors to life. Coordinated theme-matching tableware and extras – plates, cups, and decor that match your theme. Pizza and drinks for every child – one slice of cheese pizza plus water and juice. Snack tray to share – cookies & chips for everyone to enjoy. Terms to know: pizza and drinks — Only accounted for children. Additional pizza may be purchased separately for adults; additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
+
+A cleaning fee of $50 is added to every party booking, and a 50% deposit is required at booking to reserve the party room.
+
+### Party Add-Ons
+
+On top of any party package, families can purchase add-ons at checkout to extend or enhance the party experience.
+
+The Extra Hour add-on costs $100 per added hour. Add 1 extra hour to your party.
+
+The Extra Child add-on costs $40 per additional child. Additional child beyond package limit.
+
+The Extra Adult add-on costs $10. Additional adult beyond base package.
+
+The Face Painting add-on costs $100. Professional face painting for guests.
+
+The Photo & Video add-on costs $250. Professional photo and video package.
+
+## Additional Pricing & Fees
+
+Beyond ticket and package prices, the following fees and rates apply at Playfunia.
+
+Cleaning fee: $50. Standard cleaning fee for party bookings.
+
+Deposit percentage: 50%. Deposit percentage for party bookings.
+
+Extra adult admission price: $5. Price for extra adult admission with ticket.
+
+Extra child admission: $15. Price per additional child beyond trio bundle.
+
+Grip socks price: $3. Price per pair of grip socks.
+
+Sibling discount rate: 5%. Discount percentage for sibling bookings.
+
+Single admission price: $20. Price for single child admission ticket.
+
+## Current Promotions & Discount Codes
+
+Promo code MAY10 gives 10% off on party_booking and is valid through June 1, 2026.
+
+## Announcements & Current Programs
+
+These are current Playfunia programs, recurring offers, and announcements that families should know about.
+
+Sensory-Friendly Sundays: Reserve limited-capacity sessions with softer lighting, calming music, and extra staff support. A welcoming environment for children who prefer a quieter play experience.
+
+Birthday Week Bonus: Book a birthday party this month and receive complimentary grip socks for up to 10 guests.
+
+Teacher Tuesdays: Educators play for free with any paid child admission every Tuesday. Just show your school ID at the front desk.
+
+## Events & Special Activities
+
+Playfunia organizes special events on a monthly basis throughout the year, from seasonal celebrations and holiday parties to giveaways and themed family days. Each event typically features festive activities for kids — like face painting, raffles, and photo opportunities — along with a limited-time discount or offer that families can take advantage of during the event. Follow Playfunia on Instagram or check back with us to find out about the next upcoming event.
+
+There are no upcoming events scheduled at this time, but a new event is typically announced each month — reach out to Playfunia for the latest event calendar and active offers.
+
+## Frequently Asked Questions
+
+These are common questions families ask about visiting Playfunia, booking parties, memberships, and general policies.
+
+### Admission FAQs
+
+Q: Do we need to sign a waiver?
+A: Yes. Every participant must have a signed waiver before entering the play areas. Waivers can be completed online ahead of time or at check-in, and parents/guardians sign on behalf of minors.
+
+Q: Are grip socks required?
+A: Yes — grip socks are required for everyone entering the play areas, children and adults alike. You may bring your own or purchase a pair at the front desk for $3.
+
+Q: What is the age range for kids at Playfunia?
+A: Playfunia is designed for children aged 1 to 13. Younger toddlers and older kids alike will find areas suited to them. Adult supervision is required for children under 5 at all times.
+
+Q: Do parents and adults need to pay admission?
+A: One adult is included free with each paid child admission. Additional adults are $5 each. Membership plans cover a set number of adults — see plan details for specifics.
+
+### General FAQs
+
+Q: What forms of payment do you accept?
+A: We accept all major credit cards (Visa, Mastercard, American Express, Discover) for both online bookings and on-site purchases.
+
+Q: Do you offer group rates or school field trips?
+A: Yes, we host group visits and school field trips. For groups of 10 or more, please contact us directly to arrange custom pricing and scheduling.
+
+### Membership FAQs
+
+Q: Can I cancel my membership at any time?
+A: Memberships are month-to-month and can be cancelled before the next billing cycle. There are no long-term commitments or cancellation fees.
+
+### Party FAQs
+
+Q: Can we bring our own decorations?
+A: Absolutely. Private party rooms are yours to personalize. Please skip confetti and glitter — they are very difficult to clean up and can damage the play equipment.
+
+Q: What is the rescheduling policy?
+A: Contact us at least 48 hours before your party and we will gladly help you move the celebration to another available date. Deposits transfer to the rescheduled date.
+
+Q: Are outside food and drinks allowed?
+A: Outside food is welcome with the Mini Fun package or when arranged in advance. The Super Fun and Mega Fun packages include pizza and drinks for every child. Please let us know about allergies when booking.
+
+Q: How far in advance should we book a party?
+A: We recommend booking at least 3–4 weeks ahead, especially for weekend slots. Popular dates around school breaks and holidays book even further out.
+
+Q: Is there a deposit required to book a party?
+A: Yes. A 50% deposit is required at the time of booking to reserve the party room. The remaining balance is due on the day of the event.
+
+## Careers — Open Positions
+
+Playfunia is hiring for the roles listed below. To apply, contact the Albany location.
+
+Staff Member — full-time; in the Operations team; based at Crossgates Mall, Albany, NY; with pay in the $16/hr range; minimum age 18; Full-time, open availability required. PlayFunia is an indoor playground focused on providing a safe, fun, and positive experience for families. We are looking for a reliable, friendly team member who enjoys working in a fast-paced, kid-focused environment. The Full-Time Staff Member will assist with daily operations, including customer service, party support, and facility upkeep. This role is ideal for someone who enjoys interacting with children and families and takes pride in keeping a space clean, organized, and welcoming. Responsibilities: Greet guests and operate the front register; Process admissions and retail sales; Assist with birthday parties and special events; Help with decorating, including balloon arches and other party setups (training available); Maintain cleanliness throughout the facility; Restock supplies and monitor play areas; Follow safety guidelines and ensure play rules are upheld; Support the team with additional tasks as needed. Qualifications: Must be at least 18 years old; Open availability required; Ability to decorate for parties or events; Positive attitude and good communication skills; Comfort working around children and families; Ability to stand for extended periods and lift up to 25 lbs; Reliability and punctuality are essential; Experience in customer service or childcare is helpful but not required. Nice to have: Party planning experience; Decorating skills; Face painting; Videography; Social media management; Experience working with children. Perks: Fun, family-friendly work environment; Training provided for all party setup and decorating tasks; Growth opportunities within the company.

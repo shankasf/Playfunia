@@ -3,25 +3,41 @@ import { Link } from 'react-router-dom';
 
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
-import { formatDate, formatDateTime } from '../lib/dateUtils';
+import { formatDate, formatDateTime, formatTime } from '../lib/dateUtils';
+import { fetchPartyPackages, type PartyPackageDto } from '../api/bookings';
 import {
   AdminBooking,
   AdminBookingUpdatePayload,
   AdminMembership,
   AdminMembershipUpdatePayload,
+  AdminProductPromotion,
+  AdminPromoOffer,
+  AdminPromoOfferPlan,
   AdminSummary,
   AdminTicketLogEntry,
   AdminWaiver,
   AdminWaiverUpdatePayload,
   MembershipValidationResult,
   cancelAdminBooking,
+  createAdminBooking,
+  AdminCreateBookingPayload,
+  issueAdminTickets,
+  AdminIssueTicketPayload,
+  createAdminMembership,
+  AdminCreateMembershipPayload,
   createAdminEventSource,
+  createAdminPromotion,
+  createAdminPromoOffer,
   deleteAdminBooking,
   deleteAdminMembership,
+  deleteAdminPromotion,
+  deleteAdminPromoOffer,
   deleteAdminTicketPurchase,
   deleteAdminWaiverSubmission,
   fetchAdminBookings,
   fetchAdminMemberships,
+  fetchAdminPromotions,
+  fetchAdminPromoOffers,
   fetchAdminSummary,
   fetchAdminTicketLog,
   fetchAdminWaivers,
@@ -29,6 +45,8 @@ import {
   redeemTicketByCode,
   redeemTicketCode,
   updateAdminMembership,
+  updateAdminPromotion,
+  updateAdminPromoOffer,
   updateAdminWaiverSubmission,
   updateAdminBooking,
   validateMembershipEntry,
@@ -36,9 +54,38 @@ import {
   type TicketValidationResult,
 } from '../api/admin';
 import { API_BASE_URL } from '../api/client';
+import {
+  fetchAdminCoupons,
+  createAdminCoupon,
+  updateAdminCoupon,
+  deleteAdminCoupon,
+  type AdminCoupon,
+  type CouponCategory,
+} from '../api/coupons';
 import styles from './AdminDashboardPage.module.css';
 
 type LoadState = 'idle' | 'loading' | 'error';
+
+/** Get today's date as YYYY-MM-DD in local timezone (not UTC) */
+function getLocalDateStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const COUPON_CATEGORY_LABELS: Record<CouponCategory, { singular: string; plural: string }> = {
+  all: { singular: 'All', plural: 'All purchases' },
+  membership: { singular: 'Membership', plural: 'Memberships' },
+  ticket: { singular: 'Ticket', plural: 'Tickets' },
+  party_booking: { singular: 'Party booking', plural: 'Party bookings' },
+};
+
+function formatCouponCategory(cat: CouponCategory): string {
+  return COUPON_CATEGORY_LABELS[cat]?.singular ?? cat;
+}
+
+function formatCouponCategoryPlural(cat: CouponCategory): string {
+  return COUPON_CATEGORY_LABELS[cat]?.plural ?? cat;
+}
 
 type BookingFormState = AdminBookingUpdatePayload;
 
@@ -105,6 +152,56 @@ export function AdminDashboardPage() {
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [bookingActionMessage, setBookingActionMessage] = useState<string | null>(null);
   const [bookingActionBusy, setBookingActionBusy] = useState(false);
+  const [partyPackages, setPartyPackages] = useState<PartyPackageDto[]>([]);
+  const [showCreateBooking, setShowCreateBooking] = useState(false);
+  const [createBookingBusy, setCreateBookingBusy] = useState(false);
+  const [createBookingForm, setCreateBookingForm] = useState<AdminCreateBookingPayload>({
+    guestName: '',
+    guestEmail: '',
+    guestPhone: '',
+    childName: '',
+    partyPackageId: '',
+    location: 'Albany',
+    eventDate: getLocalDateStr(),
+    startTime: '10:00',
+    endTime: '',
+    guests: 12,
+    total: 0,
+    paymentMethod: 'cash',
+    paymentStatus: 'paid',
+    notes: '',
+    privateNotes: '',
+  });
+  // Issue tickets modal state
+  const [showIssueTickets, setShowIssueTickets] = useState(false);
+  const [issueTicketsBusy, setIssueTicketsBusy] = useState(false);
+  const [issueTicketForm, setIssueTicketForm] = useState({
+    guestName: '',
+    guestEmail: '',
+    guestPhone: '',
+    quantity: 1,
+    unitPrice: 20,
+    paymentMethod: 'cash',
+  });
+
+  // Create membership modal state
+  const [showCreateMembership, setShowCreateMembership] = useState(false);
+  const [createMembershipBusy, setCreateMembershipBusy] = useState(false);
+  const [membershipCreateForm, setMembershipCreateForm] = useState<AdminCreateMembershipPayload>({
+    guestName: '',
+    guestEmail: '',
+    guestPhone: '',
+    childName: '',
+    password: '',
+    planId: 0,
+    tier: '',
+    durationMonths: 1,
+    monthlyPrice: 0,
+    total: 0,
+    paymentMethod: 'cash',
+    paymentStatus: 'paid',
+  });
+
   const [selectedWaiverId, setSelectedWaiverId] = useState<string | null>(null);
   const [waiverForm, setWaiverForm] = useState<WaiverFormState>(emptyWaiverForm());
   const [waiverActionMessage, setWaiverActionMessage] = useState<string | null>(null);
@@ -116,7 +213,7 @@ export function AdminDashboardPage() {
   const [membershipMessage, setMembershipMessage] = useState<string | null>(null);
   const [selectedMembershipId, setSelectedMembershipId] = useState<string | null>(null);
   const [membershipForm, setMembershipForm] = useState<MembershipFormState>({
-    tier: 'explorer',
+    tier: 'mini',
     autoRenew: false,
     visitsUsed: 0,
     status: 'active',
@@ -146,6 +243,70 @@ export function AdminDashboardPage() {
   const [ticketNameFilter, setTicketNameFilter] = useState<string>('');
   const [ticketDateFilter, setTicketDateFilter] = useState<string>('');
 
+  // Promotions state
+  const [promoState, setPromoState] = useState<{ status: LoadState; data: AdminProductPromotion[] }>({ status: 'idle', data: [] });
+  const [promoFormOpen, setPromoFormOpen] = useState(false);
+  const [editingPromoId, setEditingPromoId] = useState<number | null>(null);
+  const [promoForm, setPromoForm] = useState({
+    product_type: 'membership',
+    discount_type: 'percent' as 'percent' | 'fixed_price',
+    discount_value: 50,
+    promo_label: '',
+    promo_note: '',
+    starts_at: '',
+    ends_at: '',
+    max_redemptions: '',
+  });
+  const [promoMessage, setPromoMessage] = useState<string | null>(null);
+  const [promoBusy, setPromoBusy] = useState(false);
+
+  // Promo Offers state
+  const [promoOfferState, setPromoOfferState] = useState<{ status: LoadState; data: AdminPromoOffer[] }>({ status: 'idle', data: [] });
+  const [promoOfferFormOpen, setPromoOfferFormOpen] = useState(false);
+  const [editingPromoOfferId, setEditingPromoOfferId] = useState<number | null>(null);
+  const emptyPlan: AdminPromoOfferPlan = { name: '', normalValue: 0, regularPrice: 0, promoPrice: 0, savingsPercent: 0 };
+  const [promoOfferForm, setPromoOfferForm] = useState({
+    title: '',
+    subtitle: '',
+    promo_label: '',
+    promo_note: '',
+    notes: [''] as string[],
+    plans: [{ ...emptyPlan }] as AdminPromoOfferPlan[],
+    starts_at: '',
+    ends_at: '',
+    max_redemptions: '',
+  });
+  const [promoOfferMessage, setPromoOfferMessage] = useState<string | null>(null);
+  const [promoOfferBusy, setPromoOfferBusy] = useState(false);
+
+  // Coupon code state (cart-redeemable promo codes for memberships, tickets, bookings or all)
+  const [couponState, setCouponState] = useState<{ status: LoadState; data: AdminCoupon[] }>({ status: 'idle', data: [] });
+  const [couponFormOpen, setCouponFormOpen] = useState(false);
+  const [editingCouponId, setEditingCouponId] = useState<number | null>(null);
+  const [couponForm, setCouponForm] = useState({
+    code: '',
+    description: '',
+    discount_type: 'percent' as 'percent' | 'fixed',
+    discount_value: '10',
+    applies_to: ['all'] as CouponCategory[],
+    min_purchase_usd: '',
+    max_redemptions: '',
+    valid_from: '',
+    valid_to: '',
+    is_active: true,
+  });
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
+  const [couponBusy, setCouponBusy] = useState(false);
+
+  const refreshCoupons = useCallback(async () => {
+    try {
+      const { coupons } = await fetchAdminCoupons();
+      setCouponState({ status: 'idle', data: coupons });
+    } catch {
+      setCouponState({ status: 'error', data: [] });
+    }
+  }, []);
+
   // Export modal state
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportType, setExportType] = useState<'waivers' | 'contacts'>('waivers');
@@ -174,18 +335,26 @@ export function AdminDashboardPage() {
         setMembershipState((prev) => ({ ...prev, status: 'loading', error: undefined }));
       }
       try {
-        const [summary, bookings, waivers, tickets, memberships] = await Promise.all([
+        const [summary, bookings, waivers, tickets, memberships, promotions, promoOffers, packages] = await Promise.all([
           fetchAdminSummary(),
           fetchAdminBookings(),
           fetchAdminWaivers(),
           fetchAdminTicketLog(),
           fetchAdminMemberships(),
+          fetchAdminPromotions().catch(() => [] as AdminProductPromotion[]),
+          fetchAdminPromoOffers().catch(() => [] as AdminPromoOffer[]),
+          fetchPartyPackages().catch(() => [] as PartyPackageDto[]),
         ]);
         setSummaryState({ status: 'idle', data: summary });
         setBookingState({ status: 'idle', data: bookings });
         setWaiverState({ status: 'idle', data: waivers });
         setTicketState({ status: 'idle', data: tickets });
         setMembershipState({ status: 'idle', data: memberships });
+        setPromoState({ status: 'idle', data: promotions });
+        setPromoOfferState({ status: 'idle', data: promoOffers });
+        // Coupons are independent — fetch silently so a failure doesn't break the dashboard.
+        void refreshCoupons();
+        if (packages.length > 0) setPartyPackages(packages);
         const activeSelection = selectedBookingRef.current;
         if (activeSelection) {
           const selected = bookings.find((entry) => entry.id === activeSelection);
@@ -420,6 +589,130 @@ export function AdminDashboardPage() {
     }
   };
 
+  const calcEndTime = (startTime: string, durationMinutes: number): string => {
+    const [h, m] = startTime.split(':').map(Number);
+    if (isNaN(h) || isNaN(m)) return '';
+    const totalMin = h * 60 + m + durationMinutes;
+    const eh = Math.floor(totalMin / 60) % 24;
+    const em = totalMin % 60;
+    return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+  };
+
+  const handleCreateBooking = async () => {
+    if (!createBookingForm.guestName.trim()) {
+      alert('Customer name is required.');
+      return;
+    }
+    if (!createBookingForm.partyPackageId) {
+      alert('Please select a party package.');
+      return;
+    }
+    setCreateBookingBusy(true);
+    try {
+      await createAdminBooking({
+        ...createBookingForm,
+        guestName: createBookingForm.guestName.trim(),
+        guestEmail: createBookingForm.guestEmail?.trim() || undefined,
+        guestPhone: createBookingForm.guestPhone?.trim() || undefined,
+        childName: createBookingForm.childName?.trim() || undefined,
+        notes: createBookingForm.notes?.trim() || undefined,
+        privateNotes: createBookingForm.privateNotes?.trim() || undefined,
+      });
+      setShowCreateBooking(false);
+      setCreateBookingForm({
+        guestName: '',
+        guestEmail: '',
+        guestPhone: '',
+        childName: '',
+        partyPackageId: '',
+        location: 'Albany',
+        eventDate: getLocalDateStr(),
+        startTime: '10:00',
+        endTime: '',
+        guests: 12,
+        total: 0,
+        paymentMethod: 'cash',
+        paymentStatus: 'paid',
+        notes: '',
+        privateNotes: '',
+      });
+      await refreshAll({ silent: true });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to create booking.');
+    } finally {
+      setCreateBookingBusy(false);
+    }
+  };
+
+  const handleIssueTickets = async () => {
+    if (!issueTicketForm.guestName.trim()) {
+      alert('Customer name is required.');
+      return;
+    }
+    setIssueTicketsBusy(true);
+    try {
+      const result = await issueAdminTickets({
+        guestName: issueTicketForm.guestName.trim(),
+        guestEmail: issueTicketForm.guestEmail.trim() || undefined,
+        guestPhone: issueTicketForm.guestPhone.trim() || undefined,
+        quantity: issueTicketForm.quantity,
+        unitPrice: issueTicketForm.unitPrice,
+        total: issueTicketForm.quantity * issueTicketForm.unitPrice,
+        paymentMethod: issueTicketForm.paymentMethod,
+      });
+      alert(`Tickets issued! Codes: ${result.codes.join(', ')}`);
+      setShowIssueTickets(false);
+      setIssueTicketForm({ guestName: '', guestEmail: '', guestPhone: '', quantity: 1, unitPrice: 20, paymentMethod: 'cash' });
+      await refreshAll({ silent: true });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to issue tickets.');
+    } finally {
+      setIssueTicketsBusy(false);
+    }
+  };
+
+  const handleCreateMembership = async () => {
+    if (!membershipCreateForm.guestName.trim()) {
+      alert('Customer name is required.');
+      return;
+    }
+    if (!membershipCreateForm.guestEmail?.trim()) {
+      alert('Email is required to create a login account.');
+      return;
+    }
+    if (!membershipCreateForm.password?.trim() || membershipCreateForm.password.trim().length < 6) {
+      alert('Password is required (min 6 characters).');
+      return;
+    }
+    if (!membershipCreateForm.planId) {
+      alert('Please select a membership plan.');
+      return;
+    }
+    setCreateMembershipBusy(true);
+    try {
+      const result = await createAdminMembership({
+        ...membershipCreateForm,
+        guestName: membershipCreateForm.guestName.trim(),
+        guestEmail: membershipCreateForm.guestEmail.trim(),
+        guestPhone: membershipCreateForm.guestPhone?.trim() || undefined,
+        childName: membershipCreateForm.childName?.trim() || undefined,
+        password: membershipCreateForm.password.trim(),
+      });
+      alert(`Membership created! ID: ${result.displayId}${result.receiptNumber ? ` | Receipt: ${result.receiptNumber}` : ''}`);
+      setShowCreateMembership(false);
+      setMembershipCreateForm({
+        guestName: '', guestEmail: '', guestPhone: '', childName: '', password: '',
+        planId: 0, tier: '', durationMonths: 1, monthlyPrice: 0, total: 0,
+        paymentMethod: 'cash', paymentStatus: 'paid',
+      });
+      await refreshAll({ silent: true });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to create membership.');
+    } finally {
+      setCreateMembershipBusy(false);
+    }
+  };
+
   const handleBookingUpdate = async () => {
     if (!selectedBookingId) return;
     setBookingActionBusy(true);
@@ -538,11 +831,17 @@ export function AdminDashboardPage() {
   const handleSelectMembership = (member: AdminMembership) => {
     if (!member.membership?.membershipId) return;
     setSelectedMembershipId(member.membership.membershipId);
+    const tierName = member.membership.tierName.toLowerCase();
+    const tierCode = tierName === 'mini plan' ? 'mini'
+      : tierName === 'super plan' ? 'super'
+      : tierName === 'mega plan' ? 'mega'
+      // Legacy tiers
+      : tierName === 'silver' ? 'explorer'
+      : tierName === 'gold' ? 'adventurer'
+      : tierName === 'platinum' ? 'champion'
+      : 'mini';
     setMembershipForm({
-      tier: member.membership.tierName.toLowerCase() === 'silver' ? 'explorer' 
-        : member.membership.tierName.toLowerCase() === 'gold' ? 'adventurer'
-        : member.membership.tierName.toLowerCase() === 'platinum' ? 'champion'
-        : 'explorer',
+      tier: tierCode,
       autoRenew: member.membership.autoRenew,
       visitsUsed: member.membership.visitsUsed,
       status: 'active',
@@ -737,10 +1036,12 @@ export function AdminDashboardPage() {
           <p>Monitor bookings, waivers, tickets, and memberships in real time.</p>
         </div>
         <div className={styles.actions}>
-          <PrimaryButton to="/book-party">Create booking</PrimaryButton>
-          <PrimaryButton to="/buy-ticket" className={styles.secondary}>
-            Issue tickets
-          </PrimaryButton>
+          <button type="button" className={styles.checkInBtn} onClick={() => setShowCreateMembership(true)}>
+            + Create Membership
+          </button>
+          <button type="button" className={styles.checkInBtn} onClick={() => setShowIssueTickets(true)}>
+            Issue Tickets
+          </button>
           <button type="button" className={styles.signOutButton} onClick={logout}>
             Sign out
           </button>
@@ -778,9 +1079,9 @@ export function AdminDashboardPage() {
         )}
         <Link to="/admin/applicants" style={{ textDecoration: 'none', display: 'contents' }}>
           {renderSummaryCard(
-            'Applicants',
+            'Jobs & Applicants',
             summary?.applicants?.total ?? 0,
-            'Total',
+            'Applicants',
             `${summary?.applicants?.pendingCount ?? 0} pending review`
           )}
         </Link>
@@ -799,15 +1100,24 @@ export function AdminDashboardPage() {
           <section id="section-bookings" className={styles.panel}>
             <header className={styles.panelHeader}>
               <div className={styles.panelTitleRow}>
-                <h2>Upcoming bookings</h2>
-                <button
-                  type="button"
-                  className={styles.calendarBtn}
-                  onClick={() => setCalendarOpen(true)}
-                  title="View calendar"
-                >
-                  📅 Calendar
-                </button>
+                <h2>Upcoming Party Bookings</h2>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className={styles.checkInBtn}
+                    onClick={() => setShowCreateBooking(true)}
+                  >
+                    + Create Party Booking
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.calendarBtn}
+                    onClick={() => setCalendarOpen(true)}
+                    title="View calendar"
+                  >
+                    📅 Calendar
+                  </button>
+                </div>
               </div>
               <span>{filteredBookings.length} of {bookingState.data.length}</span>
             </header>
@@ -921,9 +1231,12 @@ export function AdminDashboardPage() {
                 <span>Tier</span>
                 <select value={membershipTierFilter} onChange={(e) => setMembershipTierFilter(e.target.value)}>
                   <option value="all">All Tiers</option>
-                  <option value="explorer">Silver</option>
-                  <option value="adventurer">Gold</option>
-                  <option value="champion">Platinum</option>
+                  <option value="mini">Mini Plan</option>
+                  <option value="super">Super Plan</option>
+                  <option value="mega">Mega Plan</option>
+                  <option value="explorer">Silver (Legacy)</option>
+                  <option value="adventurer">Gold (Legacy)</option>
+                  <option value="champion">Platinum (Legacy)</option>
                 </select>
               </label>
               <label className={styles.filterItem}>
@@ -1076,6 +1389,968 @@ export function AdminDashboardPage() {
         </aside>
       </div>
 
+      {/* Promotions Panel */}
+      <section id="section-promotions" className={styles.panel} style={{ marginTop: '1.5rem' }}>
+        <header className={styles.panelHeader}>
+          <h2>Promotions</h2>
+          <div className={styles.panelActions}>
+            <button
+              type="button"
+              className={styles.exportLink}
+              onClick={() => {
+                setEditingPromoId(null);
+                setPromoForm({
+                  product_type: 'membership',
+                  discount_type: 'percent',
+                  discount_value: 50,
+                  promo_label: '',
+                  promo_note: '',
+                  starts_at: new Date().toISOString().slice(0, 16),
+                  ends_at: '',
+                  max_redemptions: '',
+                });
+                setPromoMessage(null);
+                setPromoFormOpen(true);
+              }}
+            >
+              + New Promotion
+            </button>
+          </div>
+        </header>
+
+        {promoState.data.length === 0 ? (
+          <p style={{ padding: '1rem', color: '#64748b', fontSize: '0.9rem' }}>No promotions configured yet.</p>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Type</th>
+                <th>Discount</th>
+                <th>Starts</th>
+                <th>Ends</th>
+                <th>Redeemed</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {promoState.data.map(promo => {
+                const now = new Date();
+                const isExpired = new Date(promo.ends_at) < now;
+                const isNotStarted = new Date(promo.starts_at) > now;
+                const isCapped = promo.max_redemptions != null && promo.redemptions >= promo.max_redemptions;
+                const isLive = promo.is_active && !isExpired && !isNotStarted && !isCapped;
+                let statusLabel = 'Active';
+                let statusColor = '#16a34a';
+                if (!promo.is_active) { statusLabel = 'Disabled'; statusColor = '#94a3b8'; }
+                else if (isExpired) { statusLabel = 'Expired'; statusColor = '#94a3b8'; }
+                else if (isCapped) { statusLabel = 'Limit reached'; statusColor = '#f59e0b'; }
+                else if (isNotStarted) { statusLabel = 'Scheduled'; statusColor = '#6366f1'; }
+
+                return (
+                  <tr key={promo.promotion_id}>
+                    <td><strong>{promo.promo_label || '—'}</strong>{promo.promo_note ? <><br /><small style={{ color: '#64748b' }}>{promo.promo_note}</small></> : null}</td>
+                    <td style={{ textTransform: 'capitalize' }}>{promo.product_type}{promo.product_id ? ` #${promo.product_id}` : ' (all)'}</td>
+                    <td>{promo.discount_type === 'percent' ? `${promo.discount_value}%` : `$${promo.discount_value}`}</td>
+                    <td>{formatDate(promo.starts_at)}</td>
+                    <td>{formatDate(promo.ends_at)}</td>
+                    <td>{promo.redemptions}{promo.max_redemptions != null ? ` / ${promo.max_redemptions}` : ''}</td>
+                    <td><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button
+                          type="button"
+                          className={styles.editBtn}
+                          onClick={() => {
+                            setEditingPromoId(promo.promotion_id);
+                            setPromoForm({
+                              product_type: promo.product_type,
+                              discount_type: promo.discount_type,
+                              discount_value: promo.discount_value,
+                              promo_label: promo.promo_label || '',
+                              promo_note: promo.promo_note || '',
+                              starts_at: promo.starts_at.slice(0, 16),
+                              ends_at: promo.ends_at.slice(0, 16),
+                              max_redemptions: promo.max_redemptions != null ? String(promo.max_redemptions) : '',
+                            });
+                            setPromoMessage(null);
+                            setPromoFormOpen(true);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        {promo.is_active ? (
+                          <button
+                            type="button"
+                            className={styles.cancelBtn}
+                            onClick={async () => {
+                              if (!window.confirm('Deactivate this promotion?')) return;
+                              await deleteAdminPromotion(promo.promotion_id);
+                              refreshAll({ silent: true });
+                            }}
+                          >
+                            Disable
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Promotion Create/Edit Modal */}
+      {promoFormOpen && (
+        <div className={styles.modalOverlay} onClick={() => setPromoFormOpen(false)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>{editingPromoId ? 'Edit Promotion' : 'New Promotion'}</h2>
+              <button type="button" className={styles.modalCloseBtn} onClick={() => setPromoFormOpen(false)}>
+                &times;
+              </button>
+            </header>
+            <form
+              className={styles.modalBody}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setPromoBusy(true);
+                setPromoMessage(null);
+                try {
+                  const payload = {
+                    product_type: promoForm.product_type,
+                    discount_type: promoForm.discount_type as 'percent' | 'fixed_price',
+                    discount_value: Number(promoForm.discount_value),
+                    promo_label: promoForm.promo_label || undefined,
+                    promo_note: promoForm.promo_note || undefined,
+                    starts_at: new Date(promoForm.starts_at).toISOString(),
+                    ends_at: new Date(promoForm.ends_at).toISOString(),
+                    max_redemptions: promoForm.max_redemptions ? Number(promoForm.max_redemptions) : null,
+                  };
+                  if (editingPromoId) {
+                    await updateAdminPromotion(editingPromoId, payload);
+                    setPromoMessage('Promotion updated.');
+                  } else {
+                    await createAdminPromotion(payload);
+                    setPromoMessage('Promotion created.');
+                  }
+                  await refreshAll({ silent: true });
+                  setTimeout(() => setPromoFormOpen(false), 800);
+                } catch (err) {
+                  setPromoMessage(err instanceof Error ? err.message : 'Failed to save promotion.');
+                } finally {
+                  setPromoBusy(false);
+                }
+              }}
+            >
+              <div className={styles.formRow}>
+                <label>Product Type</label>
+                <select
+                  value={promoForm.product_type}
+                  onChange={(e) => setPromoForm(f => ({ ...f, product_type: e.target.value }))}
+                >
+                  <option value="membership">Membership</option>
+                  <option value="ticket">Ticket</option>
+                  <option value="party">Party</option>
+                  <option value="add_on">Add-on</option>
+                </select>
+              </div>
+              <div className={styles.formRow}>
+                <label>Discount Type</label>
+                <select
+                  value={promoForm.discount_type}
+                  onChange={(e) => setPromoForm(f => ({ ...f, discount_type: e.target.value as 'percent' | 'fixed_price' }))}
+                >
+                  <option value="percent">Percentage Off</option>
+                  <option value="fixed_price">Fixed Price</option>
+                </select>
+              </div>
+              <div className={styles.formRow}>
+                <label>{promoForm.discount_type === 'percent' ? 'Discount %' : 'Fixed Price ($)'}</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={promoForm.discount_value}
+                  onChange={(e) => setPromoForm(f => ({ ...f, discount_value: Number(e.target.value) }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Promo Label</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Launch Promotion – 50% OFF"
+                  value={promoForm.promo_label}
+                  onChange={(e) => setPromoForm(f => ({ ...f, promo_label: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Promo Note</label>
+                <input
+                  type="text"
+                  placeholder="e.g. For first members only"
+                  value={promoForm.promo_note}
+                  onChange={(e) => setPromoForm(f => ({ ...f, promo_note: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Starts At</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={promoForm.starts_at}
+                  onChange={(e) => setPromoForm(f => ({ ...f, starts_at: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Ends At</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={promoForm.ends_at}
+                  onChange={(e) => setPromoForm(f => ({ ...f, ends_at: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Max Redemptions (leave empty for unlimited)</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 100"
+                  value={promoForm.max_redemptions}
+                  onChange={(e) => setPromoForm(f => ({ ...f, max_redemptions: e.target.value }))}
+                />
+              </div>
+              {promoMessage && (
+                <p style={{ fontSize: '0.85rem', fontWeight: 600, color: promoMessage.includes('Failed') ? '#dc2626' : '#16a34a', margin: '0.5rem 0 0' }}>
+                  {promoMessage}
+                </p>
+              )}
+              <div className={styles.modalFooter}>
+                <button type="button" className={styles.cancelBtn} onClick={() => setPromoFormOpen(false)}>Cancel</button>
+                <button type="submit" className={styles.saveBtn} disabled={promoBusy}>
+                  {promoBusy ? 'Saving...' : editingPromoId ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Promo Offers Panel */}
+      <section id="section-promo-offers" className={styles.panel} style={{ marginTop: '1.5rem' }}>
+        <header className={styles.panelHeader}>
+          <h2>Promo Offers</h2>
+          <div className={styles.panelActions}>
+            <button
+              type="button"
+              className={styles.exportLink}
+              onClick={() => {
+                setEditingPromoOfferId(null);
+                setPromoOfferForm({
+                  title: '',
+                  subtitle: '',
+                  promo_label: '',
+                  promo_note: '',
+                  notes: [''],
+                  plans: [{ ...emptyPlan }],
+                  starts_at: new Date().toISOString().slice(0, 16),
+                  ends_at: '',
+                  max_redemptions: '',
+                });
+                setPromoOfferMessage(null);
+                setPromoOfferFormOpen(true);
+              }}
+            >
+              + New Promo Offer
+            </button>
+          </div>
+        </header>
+
+        {promoOfferState.data.length === 0 ? (
+          <p style={{ padding: '1rem', color: '#64748b', fontSize: '0.9rem' }}>No promo offers configured yet.</p>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Label</th>
+                <th>Plans</th>
+                <th>Starts</th>
+                <th>Ends</th>
+                <th>Redeemed</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {promoOfferState.data.map(offer => {
+                const now = new Date();
+                const isExpired = new Date(offer.ends_at) < now;
+                const isNotStarted = new Date(offer.starts_at) > now;
+                const isCapped = offer.max_redemptions != null && offer.redemptions >= offer.max_redemptions;
+                let statusLabel = 'Active';
+                let statusColor = '#16a34a';
+                if (!offer.is_active) { statusLabel = 'Disabled'; statusColor = '#94a3b8'; }
+                else if (isExpired) { statusLabel = 'Expired'; statusColor = '#94a3b8'; }
+                else if (isCapped) { statusLabel = 'Limit reached'; statusColor = '#f59e0b'; }
+                else if (isNotStarted) { statusLabel = 'Scheduled'; statusColor = '#6366f1'; }
+
+                return (
+                  <tr key={offer.offer_id}>
+                    <td><strong>{offer.title}</strong>{offer.subtitle ? <><br /><small style={{ color: '#64748b' }}>{offer.subtitle}</small></> : null}</td>
+                    <td>{offer.promo_label || '—'}</td>
+                    <td>{offer.plans.length} plan{offer.plans.length !== 1 ? 's' : ''}</td>
+                    <td>{formatDate(offer.starts_at)}</td>
+                    <td>{formatDate(offer.ends_at)}</td>
+                    <td>{offer.redemptions}{offer.max_redemptions != null ? ` / ${offer.max_redemptions}` : ''}</td>
+                    <td><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button
+                          type="button"
+                          className={styles.editBtn}
+                          onClick={() => {
+                            setEditingPromoOfferId(offer.offer_id);
+                            setPromoOfferForm({
+                              title: offer.title,
+                              subtitle: offer.subtitle || '',
+                              promo_label: offer.promo_label || '',
+                              promo_note: offer.promo_note || '',
+                              notes: offer.notes.length > 0 ? [...offer.notes] : [''],
+                              plans: offer.plans.length > 0 ? offer.plans.map(p => ({ ...p })) : [{ ...emptyPlan }],
+                              starts_at: offer.starts_at.slice(0, 16),
+                              ends_at: offer.ends_at.slice(0, 16),
+                              max_redemptions: offer.max_redemptions != null ? String(offer.max_redemptions) : '',
+                            });
+                            setPromoOfferMessage(null);
+                            setPromoOfferFormOpen(true);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        {offer.is_active ? (
+                          <button
+                            type="button"
+                            className={styles.cancelBtn}
+                            onClick={async () => {
+                              if (!window.confirm('Deactivate this promo offer?')) return;
+                              await deleteAdminPromoOffer(offer.offer_id);
+                              refreshAll({ silent: true });
+                            }}
+                          >
+                            Disable
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Promo Offer Create/Edit Modal */}
+      {promoOfferFormOpen && (
+        <div className={styles.modalOverlay} onClick={() => setPromoOfferFormOpen(false)}>
+          <div className={styles.modalCard} style={{ maxWidth: '680px' }} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>{editingPromoOfferId ? 'Edit Promo Offer' : 'New Promo Offer'}</h2>
+              <button type="button" className={styles.modalCloseBtn} onClick={() => setPromoOfferFormOpen(false)}>
+                &times;
+              </button>
+            </header>
+            <form
+              className={styles.modalBody}
+              style={{ maxHeight: '70vh', overflowY: 'auto' }}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setPromoOfferBusy(true);
+                setPromoOfferMessage(null);
+                try {
+                  const payload = {
+                    title: promoOfferForm.title,
+                    subtitle: promoOfferForm.subtitle || undefined,
+                    promo_label: promoOfferForm.promo_label || undefined,
+                    promo_note: promoOfferForm.promo_note || undefined,
+                    notes: promoOfferForm.notes.filter(n => n.trim()),
+                    plans: promoOfferForm.plans.filter(p => p.name.trim()),
+                    starts_at: new Date(promoOfferForm.starts_at).toISOString(),
+                    ends_at: new Date(promoOfferForm.ends_at).toISOString(),
+                    max_redemptions: promoOfferForm.max_redemptions ? Number(promoOfferForm.max_redemptions) : null,
+                  };
+                  if (editingPromoOfferId) {
+                    await updateAdminPromoOffer(editingPromoOfferId, payload);
+                    setPromoOfferMessage('Promo offer updated.');
+                  } else {
+                    await createAdminPromoOffer(payload);
+                    setPromoOfferMessage('Promo offer created.');
+                  }
+                  await refreshAll({ silent: true });
+                  setTimeout(() => setPromoOfferFormOpen(false), 800);
+                } catch (err) {
+                  setPromoOfferMessage(err instanceof Error ? err.message : 'Failed to save promo offer.');
+                } finally {
+                  setPromoOfferBusy(false);
+                }
+              }}
+            >
+              <div className={styles.formRow}>
+                <label>Title</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Monthly Unlimited Playground Membership"
+                  value={promoOfferForm.title}
+                  onChange={(e) => setPromoOfferForm(f => ({ ...f, title: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Subtitle</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Unlimited access for 30 days"
+                  value={promoOfferForm.subtitle}
+                  onChange={(e) => setPromoOfferForm(f => ({ ...f, subtitle: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Promo Label</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Launch Promotion – 50% OFF"
+                  value={promoOfferForm.promo_label}
+                  onChange={(e) => setPromoOfferForm(f => ({ ...f, promo_label: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Promo Note</label>
+                <input
+                  type="text"
+                  placeholder="e.g. For first members only"
+                  value={promoOfferForm.promo_note}
+                  onChange={(e) => setPromoOfferForm(f => ({ ...f, promo_note: e.target.value }))}
+                />
+              </div>
+
+              {/* Notes editor */}
+              <div className={styles.formRow}>
+                <label>Notes</label>
+                {promoOfferForm.notes.map((note, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.4rem' }}>
+                    <input
+                      type="text"
+                      placeholder={`Note ${i + 1}`}
+                      value={note}
+                      onChange={(e) => {
+                        const updated = [...promoOfferForm.notes];
+                        updated[i] = e.target.value;
+                        setPromoOfferForm(f => ({ ...f, notes: updated }));
+                      }}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className={styles.cancelBtn}
+                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}
+                      onClick={() => {
+                        const updated = promoOfferForm.notes.filter((_, idx) => idx !== i);
+                        setPromoOfferForm(f => ({ ...f, notes: updated.length ? updated : [''] }));
+                      }}
+                    >
+                      X
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className={styles.editBtn}
+                  style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem', alignSelf: 'flex-start' }}
+                  onClick={() => setPromoOfferForm(f => ({ ...f, notes: [...f.notes, ''] }))}
+                >
+                  + Add Note
+                </button>
+              </div>
+
+              {/* Plans editor */}
+              <div className={styles.formRow}>
+                <label>Plans</label>
+                {promoOfferForm.plans.map((plan, i) => (
+                  <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '0.75rem', marginBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.4rem', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '0.82rem', color: '#334155' }}>Plan {i + 1}</strong>
+                      <div style={{ flex: 1 }} />
+                      <button
+                        type="button"
+                        className={styles.cancelBtn}
+                        style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                        onClick={() => {
+                          const updated = promoOfferForm.plans.filter((_, idx) => idx !== i);
+                          setPromoOfferForm(f => ({ ...f, plans: updated.length ? updated : [{ ...emptyPlan }] }));
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Name</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. 1 Kid + 1 Adult"
+                          value={plan.name}
+                          onChange={(e) => {
+                            const updated = [...promoOfferForm.plans];
+                            updated[i] = { ...updated[i], name: e.target.value };
+                            setPromoOfferForm(f => ({ ...f, plans: updated }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Normal Value ($)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          required
+                          value={plan.normalValue}
+                          onChange={(e) => {
+                            const updated = [...promoOfferForm.plans];
+                            updated[i] = { ...updated[i], normalValue: Number(e.target.value) };
+                            setPromoOfferForm(f => ({ ...f, plans: updated }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Regular Price ($)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          required
+                          value={plan.regularPrice}
+                          onChange={(e) => {
+                            const updated = [...promoOfferForm.plans];
+                            updated[i] = { ...updated[i], regularPrice: Number(e.target.value) };
+                            setPromoOfferForm(f => ({ ...f, plans: updated }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Promo Price ($)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          required
+                          value={plan.promoPrice}
+                          onChange={(e) => {
+                            const updated = [...promoOfferForm.plans];
+                            updated[i] = { ...updated[i], promoPrice: Number(e.target.value) };
+                            setPromoOfferForm(f => ({ ...f, plans: updated }));
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.75rem', color: '#64748b' }}>Savings %</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          required
+                          value={plan.savingsPercent}
+                          onChange={(e) => {
+                            const updated = [...promoOfferForm.plans];
+                            updated[i] = { ...updated[i], savingsPercent: Number(e.target.value) };
+                            setPromoOfferForm(f => ({ ...f, plans: updated }));
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className={styles.editBtn}
+                  style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem', alignSelf: 'flex-start' }}
+                  onClick={() => setPromoOfferForm(f => ({ ...f, plans: [...f.plans, { ...emptyPlan }] }))}
+                >
+                  + Add Plan
+                </button>
+              </div>
+
+              <div className={styles.formRow}>
+                <label>Starts At</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={promoOfferForm.starts_at}
+                  onChange={(e) => setPromoOfferForm(f => ({ ...f, starts_at: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Ends At</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={promoOfferForm.ends_at}
+                  onChange={(e) => setPromoOfferForm(f => ({ ...f, ends_at: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Max Redemptions (leave empty for unlimited)</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 50"
+                  value={promoOfferForm.max_redemptions}
+                  onChange={(e) => setPromoOfferForm(f => ({ ...f, max_redemptions: e.target.value }))}
+                />
+              </div>
+              {promoOfferMessage && (
+                <p style={{ fontSize: '0.85rem', fontWeight: 600, color: promoOfferMessage.includes('Failed') ? '#dc2626' : '#16a34a', margin: '0.5rem 0 0' }}>
+                  {promoOfferMessage}
+                </p>
+              )}
+              <div className={styles.modalFooter}>
+                <button type="button" className={styles.cancelBtn} onClick={() => setPromoOfferFormOpen(false)}>Cancel</button>
+                <button type="submit" className={styles.saveBtn} disabled={promoOfferBusy}>
+                  {promoOfferBusy ? 'Saving...' : editingPromoOfferId ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Coupon Codes Panel — cart-redeemable codes for memberships, tickets, bookings or all */}
+      <section id="section-coupons" className={styles.panel} style={{ marginTop: '1.5rem' }}>
+        <header className={styles.panelHeader}>
+          <h2>Coupon Codes</h2>
+          <div className={styles.panelActions}>
+            <button
+              type="button"
+              className={styles.exportLink}
+              onClick={() => {
+                setEditingCouponId(null);
+                setCouponForm({
+                  code: '',
+                  description: '',
+                  discount_type: 'percent',
+                  discount_value: '10',
+                  applies_to: ['all'],
+                  min_purchase_usd: '',
+                  max_redemptions: '',
+                  valid_from: '',
+                  valid_to: '',
+                  is_active: true,
+                });
+                setCouponMessage(null);
+                setCouponFormOpen(true);
+              }}
+            >
+              + New Coupon
+            </button>
+          </div>
+        </header>
+
+        <p style={{ padding: '0 1rem', color: '#64748b', fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+          Customers enter these codes in the cart to get a discount. Choose which purchase types each code applies to.
+        </p>
+
+        {couponState.data.length === 0 ? (
+          <p style={{ padding: '1rem', color: '#64748b', fontSize: '0.9rem' }}>No coupon codes configured yet.</p>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Code</th>
+                <th>Discount</th>
+                <th>Applies to</th>
+                <th>Min purchase</th>
+                <th>Valid until</th>
+                <th>Redeemed</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {couponState.data.map(coupon => {
+                const now = new Date();
+                const isExpired = coupon.valid_to ? new Date(coupon.valid_to) < now : false;
+                const isNotStarted = coupon.valid_from ? new Date(coupon.valid_from) > now : false;
+                const isCapped = coupon.max_redemptions != null && coupon.redemptions >= coupon.max_redemptions;
+                let statusLabel = 'Active';
+                let statusColor = '#16a34a';
+                if (!coupon.is_active) { statusLabel = 'Disabled'; statusColor = '#94a3b8'; }
+                else if (isExpired) { statusLabel = 'Expired'; statusColor = '#94a3b8'; }
+                else if (isCapped) { statusLabel = 'Limit reached'; statusColor = '#f59e0b'; }
+                else if (isNotStarted) { statusLabel = 'Scheduled'; statusColor = '#6366f1'; }
+
+                const discountText = coupon.percent_off
+                  ? `${Number(coupon.percent_off)}% off`
+                  : coupon.amount_off_usd
+                    ? `$${Number(coupon.amount_off_usd).toFixed(2)} off`
+                    : '—';
+
+                return (
+                  <tr key={coupon.promotion_id}>
+                    <td>
+                      <code style={{ background: '#f1f5f9', padding: '0.15rem 0.45rem', borderRadius: 4, fontWeight: 700 }}>{coupon.code}</code>
+                      {coupon.description ? <><br /><small style={{ color: '#64748b' }}>{coupon.description}</small></> : null}
+                    </td>
+                    <td>{discountText}</td>
+                    <td>{coupon.applies_to.map(formatCouponCategory).join(', ')}</td>
+                    <td>{coupon.min_purchase_usd != null ? `$${Number(coupon.min_purchase_usd).toFixed(2)}` : '—'}</td>
+                    <td>{coupon.valid_to ? formatDate(coupon.valid_to) : '—'}</td>
+                    <td>{coupon.redemptions}{coupon.max_redemptions != null ? ` / ${coupon.max_redemptions}` : ''}</td>
+                    <td><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button
+                          type="button"
+                          className={styles.editBtn}
+                          onClick={() => {
+                            setEditingCouponId(coupon.promotion_id);
+                            setCouponForm({
+                              code: coupon.code,
+                              description: coupon.description ?? '',
+                              discount_type: coupon.percent_off != null ? 'percent' : 'fixed',
+                              discount_value: String(coupon.percent_off ?? coupon.amount_off_usd ?? ''),
+                              applies_to: coupon.applies_to.length > 0 ? coupon.applies_to : ['all'],
+                              min_purchase_usd: coupon.min_purchase_usd != null ? String(coupon.min_purchase_usd) : '',
+                              max_redemptions: coupon.max_redemptions != null ? String(coupon.max_redemptions) : '',
+                              valid_from: coupon.valid_from ? coupon.valid_from.slice(0, 16) : '',
+                              valid_to: coupon.valid_to ? coupon.valid_to.slice(0, 16) : '',
+                              is_active: coupon.is_active,
+                            });
+                            setCouponMessage(null);
+                            setCouponFormOpen(true);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.cancelBtn}
+                          onClick={async () => {
+                            if (!window.confirm(`Delete coupon ${coupon.code}? This cannot be undone.`)) return;
+                            try {
+                              await deleteAdminCoupon(coupon.promotion_id);
+                              await refreshCoupons();
+                            } catch (err) {
+                              window.alert(err instanceof Error ? err.message : 'Failed to delete coupon.');
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* Coupon Create/Edit Modal */}
+      {couponFormOpen && (
+        <div className={styles.modalOverlay} onClick={() => setCouponFormOpen(false)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>{editingCouponId ? 'Edit Coupon' : 'New Coupon'}</h2>
+              <button type="button" className={styles.modalCloseBtn} onClick={() => setCouponFormOpen(false)}>
+                &times;
+              </button>
+            </header>
+            <form
+              className={styles.modalBody}
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setCouponBusy(true);
+                setCouponMessage(null);
+                try {
+                  const value = Number(couponForm.discount_value);
+                  if (!Number.isFinite(value) || value <= 0) {
+                    throw new Error('Enter a positive discount value');
+                  }
+                  if (!couponForm.code.trim()) {
+                    throw new Error('Coupon code is required');
+                  }
+                  if (couponForm.applies_to.length === 0) {
+                    throw new Error('Select at least one category');
+                  }
+                  const payload = {
+                    code: couponForm.code.trim().toUpperCase(),
+                    description: couponForm.description.trim() || null,
+                    percent_off: couponForm.discount_type === 'percent' ? value : null,
+                    amount_off_usd: couponForm.discount_type === 'fixed' ? value : null,
+                    applies_to: couponForm.applies_to,
+                    min_purchase_usd: couponForm.min_purchase_usd ? Number(couponForm.min_purchase_usd) : null,
+                    max_redemptions: couponForm.max_redemptions ? Number(couponForm.max_redemptions) : null,
+                    valid_from: couponForm.valid_from ? new Date(couponForm.valid_from).toISOString() : null,
+                    valid_to: couponForm.valid_to ? new Date(couponForm.valid_to).toISOString() : null,
+                    is_active: couponForm.is_active,
+                  };
+                  if (editingCouponId) {
+                    await updateAdminCoupon(editingCouponId, payload);
+                    setCouponMessage('Coupon updated.');
+                  } else {
+                    await createAdminCoupon(payload);
+                    setCouponMessage('Coupon created.');
+                  }
+                  await refreshCoupons();
+                  setTimeout(() => setCouponFormOpen(false), 600);
+                } catch (err) {
+                  setCouponMessage(err instanceof Error ? err.message : 'Failed to save coupon.');
+                } finally {
+                  setCouponBusy(false);
+                }
+              }}
+            >
+              <div className={styles.formRow}>
+                <label>Code</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. SUMMER20"
+                  maxLength={40}
+                  value={couponForm.code}
+                  onChange={(e) => setCouponForm(f => ({ ...f, code: e.target.value.toUpperCase() }))}
+                  style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Description (optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 20% off summer memberships"
+                  maxLength={500}
+                  value={couponForm.description}
+                  onChange={(e) => setCouponForm(f => ({ ...f, description: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Discount Type</label>
+                <select
+                  value={couponForm.discount_type}
+                  onChange={(e) => setCouponForm(f => ({ ...f, discount_type: e.target.value as 'percent' | 'fixed' }))}
+                >
+                  <option value="percent">Percentage Off</option>
+                  <option value="fixed">Fixed Amount Off ($)</option>
+                </select>
+              </div>
+              <div className={styles.formRow}>
+                <label>{couponForm.discount_type === 'percent' ? 'Discount %' : 'Discount Amount ($)'}</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  max={couponForm.discount_type === 'percent' ? '100' : '10000'}
+                  value={couponForm.discount_value}
+                  onChange={(e) => setCouponForm(f => ({ ...f, discount_value: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Applies To</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  {(['all', 'membership', 'ticket', 'party_booking'] as CouponCategory[]).map(cat => (
+                    <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 500 }}>
+                      <input
+                        type="checkbox"
+                        checked={couponForm.applies_to.includes(cat)}
+                        onChange={(e) => {
+                          setCouponForm(f => {
+                            let next = new Set(f.applies_to);
+                            if (e.target.checked) {
+                              if (cat === 'all') next = new Set<CouponCategory>(['all']);
+                              else { next.delete('all'); next.add(cat); }
+                            } else {
+                              next.delete(cat);
+                              if (next.size === 0) next.add('all');
+                            }
+                            return { ...f, applies_to: Array.from(next) as CouponCategory[] };
+                          });
+                        }}
+                      />
+                      {formatCouponCategoryPlural(cat)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.formRow}>
+                <label>Minimum Purchase ($, optional)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="leave empty for no minimum"
+                  value={couponForm.min_purchase_usd}
+                  onChange={(e) => setCouponForm(f => ({ ...f, min_purchase_usd: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Max Redemptions (leave empty for unlimited)</label>
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 100"
+                  value={couponForm.max_redemptions}
+                  onChange={(e) => setCouponForm(f => ({ ...f, max_redemptions: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Valid From (optional)</label>
+                <input
+                  type="datetime-local"
+                  value={couponForm.valid_from}
+                  onChange={(e) => setCouponForm(f => ({ ...f, valid_from: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label>Valid To (optional)</label>
+                <input
+                  type="datetime-local"
+                  value={couponForm.valid_to}
+                  onChange={(e) => setCouponForm(f => ({ ...f, valid_to: e.target.value }))}
+                />
+              </div>
+              <div className={styles.formRow}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input
+                    type="checkbox"
+                    checked={couponForm.is_active}
+                    onChange={(e) => setCouponForm(f => ({ ...f, is_active: e.target.checked }))}
+                  />
+                  Active (uncheck to disable without deleting)
+                </label>
+              </div>
+              {couponMessage && (
+                <p style={{ fontSize: '0.85rem', fontWeight: 600, color: couponMessage.toLowerCase().includes('fail') || couponMessage.toLowerCase().includes('error') || couponMessage.toLowerCase().includes('required') || couponMessage.toLowerCase().includes('positive') || couponMessage.toLowerCase().includes('select') ? '#dc2626' : '#16a34a', margin: '0.5rem 0 0' }}>
+                  {couponMessage}
+                </p>
+              )}
+              <div className={styles.modalFooter}>
+                <button type="button" className={styles.cancelBtn} onClick={() => setCouponFormOpen(false)}>Cancel</button>
+                <button type="submit" className={styles.saveBtn} disabled={couponBusy}>
+                  {couponBusy ? 'Saving...' : editingCouponId ? 'Update' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Booking Edit Modal */}
       {selectedBooking && (() => {
         const isGuest = !selectedBooking.guardian && selectedBooking.guestName;
@@ -1101,33 +2376,48 @@ export function AdminDashboardPage() {
               </button>
             </header>
             <div className={styles.modalBody}>
-              {/* Booking Info (Read-only) */}
+              {/* Package info (read-only) */}
               <div className={styles.bookingInfoList}>
                 <div className={styles.bookingInfoRow}>
-                  <span className={styles.bookingInfoLabel}>Customer</span>
-                  <span className={styles.bookingInfoValue}><b>Name:</b> {customerName || '—'} · <b>Email:</b> {customerEmail || '—'} · <b>Phone:</b> {customerPhone || '—'}</span>
-                </div>
-                <div className={styles.bookingInfoRow}>
-                  <span className={styles.bookingInfoLabel}>Booking</span>
-                  <span className={styles.bookingInfoValue}><b>Package:</b> {selectedBooking.partyPackage?.name || '—'} · <b>Guests:</b> {selectedBooking.guests || 0} · <b>Total:</b> {formatCurrency(selectedBooking.total)}</span>
-                </div>
-                <div className={styles.bookingInfoRow}>
-                  <span className={styles.bookingInfoLabel}>Payment</span>
-                  <span className={styles.bookingInfoValue}><b>Paid:</b> {formatCurrency(selectedBooking.depositAmount)} · <b>Due:</b> {formatCurrency(selectedBooking.balanceRemaining)}</span>
+                  <span className={styles.bookingInfoLabel}>Package</span>
+                  <span className={styles.bookingInfoValue}>{selectedBooking.partyPackage?.name || '—'}</span>
                 </div>
               </div>
 
-              {/* Editable Fields */}
-              <h4 className={styles.editSectionHeader}>Edit Booking Details</h4>
+              {/* All Editable Fields */}
               <div className={styles.formGrid}>
+                <label>
+                  Customer Name
+                  <input
+                    type="text"
+                    value={bookingForm.guestName ?? ''}
+                    onChange={(e) => setBookingForm((prev) => ({ ...prev, guestName: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    value={bookingForm.guestEmail ?? ''}
+                    onChange={(e) => setBookingForm((prev) => ({ ...prev, guestEmail: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  Phone
+                  <input
+                    type="text"
+                    value={bookingForm.guestPhone ?? ''}
+                    onChange={(e) => setBookingForm((prev) => ({ ...prev, guestPhone: e.target.value }))}
+                  />
+                </label>
                 <label>
                   Status
                   <select
                     value={bookingForm.status ?? ''}
-                    onChange={(event) =>
+                    onChange={(e) =>
                       setBookingForm((prev) => ({
                         ...prev,
-                        status: event.target.value as AdminBooking['status'],
+                        status: e.target.value as AdminBooking['status'],
                       }))
                     }
                   >
@@ -1137,22 +2427,22 @@ export function AdminDashboardPage() {
                   </select>
                 </label>
                 <label>
-                  Event date
+                  Event Date
                   <input
                     type="date"
                     value={bookingForm.eventDate ?? ''}
-                    onChange={(event) =>
-                      setBookingForm((prev) => ({ ...prev, eventDate: event.target.value }))
+                    onChange={(e) =>
+                      setBookingForm((prev) => ({ ...prev, eventDate: e.target.value }))
                     }
                   />
                 </label>
                 <label>
-                  Start time
+                  Start Time
                   <input
                     type="time"
                     value={bookingForm.startTime ?? ''}
-                    onChange={(event) =>
-                      setBookingForm((prev) => ({ ...prev, startTime: event.target.value }))
+                    onChange={(e) =>
+                      setBookingForm((prev) => ({ ...prev, startTime: e.target.value }))
                     }
                   />
                 </label>
@@ -1161,10 +2451,48 @@ export function AdminDashboardPage() {
                   <input
                     type="text"
                     value={bookingForm.location ?? ''}
-                    onChange={(event) =>
-                      setBookingForm((prev) => ({ ...prev, location: event.target.value }))
+                    onChange={(e) =>
+                      setBookingForm((prev) => ({ ...prev, location: e.target.value }))
                     }
                   />
+                </label>
+                <label>
+                  Guests
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={bookingForm.guests ?? 0}
+                    onChange={(e) =>
+                      setBookingForm((prev) => ({ ...prev, guests: parseInt(e.target.value) || 1 }))
+                    }
+                  />
+                </label>
+                <label>
+                  Total ($)
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={bookingForm.total ?? 0}
+                    onChange={(e) =>
+                      setBookingForm((prev) => ({ ...prev, total: parseFloat(e.target.value) || 0 }))
+                    }
+                  />
+                </label>
+                <label>
+                  Payment Status
+                  <select
+                    value={bookingForm.paymentStatus ?? ''}
+                    onChange={(e) =>
+                      setBookingForm((prev) => ({ ...prev, paymentStatus: e.target.value }))
+                    }
+                  >
+                    <option value="paid">Paid</option>
+                    <option value="deposit_paid">Deposit Paid</option>
+                    <option value="awaiting_deposit">Awaiting Deposit</option>
+                    <option value="awaiting_full_payment">Awaiting Full Payment</option>
+                  </select>
                 </label>
               </div>
               <label className={styles.notesField}>
@@ -1172,8 +2500,8 @@ export function AdminDashboardPage() {
                 <span className={styles.notesHint}>(visible to customer)</span>
                 <textarea
                   value={bookingForm.notes ?? ''}
-                  onChange={(event) =>
-                    setBookingForm((prev) => ({ ...prev, notes: event.target.value }))
+                  onChange={(e) =>
+                    setBookingForm((prev) => ({ ...prev, notes: e.target.value }))
                   }
                   placeholder="Notes visible to the customer..."
                 />
@@ -1183,8 +2511,8 @@ export function AdminDashboardPage() {
                 <span className={styles.notesHint}>(staff only)</span>
                 <textarea
                   value={bookingForm.privateNotes ?? ''}
-                  onChange={(event) =>
-                    setBookingForm((prev) => ({ ...prev, privateNotes: event.target.value }))
+                  onChange={(e) =>
+                    setBookingForm((prev) => ({ ...prev, privateNotes: e.target.value }))
                   }
                   placeholder="Internal notes for staff only..."
                 />
@@ -1240,9 +2568,12 @@ export function AdminDashboardPage() {
                       setMembershipForm((prev) => ({ ...prev, tier: event.target.value }))
                     }
                   >
-                    <option value="explorer">Silver (Explorer)</option>
-                    <option value="adventurer">Gold (Adventurer)</option>
-                    <option value="champion">Platinum (Champion)</option>
+                    <option value="mini">Mini Plan</option>
+                    <option value="super">Super Plan</option>
+                    <option value="mega">Mega Plan</option>
+                    <option value="explorer">Silver (Legacy)</option>
+                    <option value="adventurer">Gold (Legacy)</option>
+                    <option value="champion">Platinum (Legacy)</option>
                   </select>
                 </label>
                 <label>
@@ -1626,7 +2957,388 @@ export function AdminDashboardPage() {
         </div>
       )}
 
-      {/* Calendar Modal */}
+      {/* Create Membership Modal */}
+      {showCreateMembership && (
+        <div className={styles.modalOverlay} onClick={() => setShowCreateMembership(false)}>
+          <div className={styles.modalCard} style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>Create Membership</h2>
+              <button type="button" className={styles.modalCloseBtn} onClick={() => setShowCreateMembership(false)}>&#10005;</button>
+            </header>
+            <div className={styles.modalBody}>
+              <div className={styles.formGrid}>
+                <div className={styles.formRow}>
+                  <label>Customer Name *</label>
+                  <input type="text" value={membershipCreateForm.guestName} onChange={(e) => setMembershipCreateForm(f => ({ ...f, guestName: e.target.value }))} placeholder="Full name" />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Email *</label>
+                  <input type="email" value={membershipCreateForm.guestEmail ?? ''} onChange={(e) => setMembershipCreateForm(f => ({ ...f, guestEmail: e.target.value }))} placeholder="customer@email.com" />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Phone</label>
+                  <input type="text" value={membershipCreateForm.guestPhone ?? ''} onChange={(e) => setMembershipCreateForm(f => ({ ...f, guestPhone: e.target.value }))} placeholder="Phone number" />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Login Password *</label>
+                  <input type="text" value={membershipCreateForm.password ?? ''} onChange={(e) => setMembershipCreateForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Child Name</label>
+                  <input type="text" value={membershipCreateForm.childName ?? ''} onChange={(e) => setMembershipCreateForm(f => ({ ...f, childName: e.target.value }))} placeholder="Child's name" />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Membership Plan *</label>
+                  <select
+                    value={membershipCreateForm.planId || ''}
+                    onChange={(e) => {
+                      const plans: Record<string, { id: number; tier: string; price: number }> = {
+                        '12': { id: 12, tier: 'mini', price: 250 },
+                        '13': { id: 13, tier: 'super', price: 440 },
+                        '14': { id: 14, tier: 'mega', price: 630 },
+                      };
+                      const sel = plans[e.target.value];
+                      if (sel) {
+                        setMembershipCreateForm(f => ({ ...f, planId: sel.id, tier: sel.tier, monthlyPrice: sel.price, total: sel.price * f.durationMonths }));
+                      } else {
+                        setMembershipCreateForm(f => ({ ...f, planId: 0, tier: '', monthlyPrice: 0, total: 0 }));
+                      }
+                    }}
+                  >
+                    <option value="">Select plan...</option>
+                    <option value="12">Mini Plan — $250/mo (1 child)</option>
+                    <option value="13">Super Plan — $440/mo (2 children)</option>
+                    <option value="14">Mega Plan — $630/mo (3 children)</option>
+                  </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Duration (months)</label>
+                  <input type="number" min={1} max={24} value={membershipCreateForm.durationMonths} onChange={(e) => { const m = parseInt(e.target.value) || 1; setMembershipCreateForm(f => ({ ...f, durationMonths: m, total: f.monthlyPrice * m })); }} />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Total: <strong>${membershipCreateForm.total.toFixed(2)}</strong></label>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Payment Method *</label>
+                  <select value={membershipCreateForm.paymentMethod} onChange={(e) => setMembershipCreateForm(f => ({ ...f, paymentMethod: e.target.value }))}>
+                    <option value="cash">Cash</option>
+                    <option value="card">Card (in-person)</option>
+                    <option value="square">Square</option>
+                    <option value="other">Other</option>
+                    <option value="unpaid">Unpaid</option>
+                  </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Payment Status</label>
+                  <select value={membershipCreateForm.paymentStatus} onChange={(e) => setMembershipCreateForm(f => ({ ...f, paymentStatus: e.target.value }))}>
+                    <option value="paid">Paid</option>
+                    <option value="awaiting_full_payment">Awaiting Payment</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+                <button type="button" className={styles.cancelBtn} onClick={() => setShowCreateMembership(false)} disabled={createMembershipBusy}>Cancel</button>
+                <button type="button" className={styles.checkInBtn} onClick={handleCreateMembership} disabled={createMembershipBusy}>
+                  {createMembershipBusy ? 'Creating...' : 'Create Membership'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Issue Tickets Modal */}
+      {showIssueTickets && (
+        <div className={styles.modalOverlay} onClick={() => setShowIssueTickets(false)}>
+          <div className={styles.modalCard} style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>Issue Tickets</h2>
+              <button type="button" className={styles.modalCloseBtn} onClick={() => setShowIssueTickets(false)}>✕</button>
+            </header>
+            <div className={styles.modalBody}>
+              <div className={styles.formGrid}>
+                <div className={styles.formRow}>
+                  <label>Customer Name *</label>
+                  <input
+                    type="text"
+                    value={issueTicketForm.guestName}
+                    onChange={(e) => setIssueTicketForm(f => ({ ...f, guestName: e.target.value }))}
+                    placeholder="Full name"
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={issueTicketForm.guestEmail}
+                    onChange={(e) => setIssueTicketForm(f => ({ ...f, guestEmail: e.target.value }))}
+                    placeholder="customer@email.com"
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Phone</label>
+                  <input
+                    type="text"
+                    value={issueTicketForm.guestPhone}
+                    onChange={(e) => setIssueTicketForm(f => ({ ...f, guestPhone: e.target.value }))}
+                    placeholder="Phone number"
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Quantity *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={issueTicketForm.quantity}
+                    onChange={(e) => setIssueTicketForm(f => ({ ...f, quantity: parseInt(e.target.value) || 1 }))}
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Unit Price ($)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={issueTicketForm.unitPrice}
+                    onChange={(e) => setIssueTicketForm(f => ({ ...f, unitPrice: parseFloat(e.target.value) || 0 }))}
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Total: ${(issueTicketForm.quantity * issueTicketForm.unitPrice).toFixed(2)}</label>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Payment Method *</label>
+                  <select
+                    value={issueTicketForm.paymentMethod}
+                    onChange={(e) => setIssueTicketForm(f => ({ ...f, paymentMethod: e.target.value }))}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card (in-person)</option>
+                    <option value="square">Square</option>
+                    <option value="other">Other</option>
+                    <option value="comp">Complimentary</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+                <button type="button" className={styles.cancelBtn} onClick={() => setShowIssueTickets(false)} disabled={issueTicketsBusy}>
+                  Cancel
+                </button>
+                <button type="button" className={styles.checkInBtn} onClick={handleIssueTickets} disabled={issueTicketsBusy}>
+                  {issueTicketsBusy ? 'Issuing...' : 'Issue Tickets'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateBooking && (
+        <div className={styles.modalOverlay} onClick={() => setShowCreateBooking(false)}>
+          <div className={styles.modalCard} style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h2>Create Party Booking</h2>
+              <button type="button" className={styles.modalCloseBtn} onClick={() => setShowCreateBooking(false)}>✕</button>
+            </header>
+            <div className={styles.modalBody}>
+              <div className={styles.formGrid}>
+                <div className={styles.formRow}>
+                  <label>Customer Name *</label>
+                  <input
+                    type="text"
+                    value={createBookingForm.guestName}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, guestName: e.target.value }))}
+                    placeholder="Full name"
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Email</label>
+                  <input
+                    type="email"
+                    value={createBookingForm.guestEmail ?? ''}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, guestEmail: e.target.value }))}
+                    placeholder="customer@email.com"
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Phone</label>
+                  <input
+                    type="text"
+                    value={createBookingForm.guestPhone ?? ''}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, guestPhone: e.target.value }))}
+                    placeholder="Phone number"
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Birthday Child</label>
+                  <input
+                    type="text"
+                    value={createBookingForm.childName ?? ''}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, childName: e.target.value }))}
+                    placeholder="Child's name"
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Party Package *</label>
+                  <select
+                    value={createBookingForm.partyPackageId}
+                    onChange={(e) => {
+                      const pkgId = e.target.value;
+                      const pkg = partyPackages.find(p => p.id === pkgId);
+                      setCreateBookingForm(f => ({
+                        ...f,
+                        partyPackageId: pkgId,
+                        total: pkg?.basePrice ?? f.total,
+                        guests: pkg?.maxGuests ?? f.guests,
+                        endTime: pkg ? calcEndTime(f.startTime, pkg.durationMinutes) : f.endTime,
+                      }));
+                    }}
+                  >
+                    <option value="">Select package...</option>
+                    {partyPackages.map(pkg => (
+                      <option key={pkg.id} value={pkg.id}>
+                        {pkg.name} — ${pkg.basePrice}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Location</label>
+                  <select
+                    value={createBookingForm.location}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, location: e.target.value }))}
+                  >
+                    <option value="Albany">Albany</option>
+                  </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Event Date *</label>
+                  <input
+                    type="date"
+                    value={createBookingForm.eventDate}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, eventDate: e.target.value }))}
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Start Time *</label>
+                  <input
+                    type="time"
+                    value={createBookingForm.startTime}
+                    onChange={(e) => {
+                      const newStart = e.target.value;
+                      const pkg = partyPackages.find(p => p.id === createBookingForm.partyPackageId);
+                      setCreateBookingForm(f => ({
+                        ...f,
+                        startTime: newStart,
+                        endTime: pkg ? calcEndTime(newStart, pkg.durationMinutes) : f.endTime,
+                      }));
+                    }}
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>End Time</label>
+                  <input
+                    type="time"
+                    value={createBookingForm.endTime ?? ''}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, endTime: e.target.value }))}
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Guests</label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={createBookingForm.guests}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, guests: parseInt(e.target.value) || 1 }))}
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Total Amount ($)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={createBookingForm.total}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, total: parseFloat(e.target.value) || 0 }))}
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Payment Method *</label>
+                  <select
+                    value={createBookingForm.paymentMethod}
+                    onChange={(e) => {
+                      const method = e.target.value as AdminCreateBookingPayload['paymentMethod'];
+                      setCreateBookingForm(f => ({
+                        ...f,
+                        paymentMethod: method,
+                        // Auto-set payment status based on method
+                        paymentStatus: method === 'unpaid' ? 'awaiting_full_payment' : (f.paymentMethod === 'unpaid' ? 'paid' : f.paymentStatus),
+                      }));
+                    }}
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="card">Card (in-person)</option>
+                    <option value="square">Square</option>
+                    <option value="other">Other</option>
+                    <option value="unpaid">Unpaid</option>
+                  </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Payment Status</label>
+                  <select
+                    value={createBookingForm.paymentStatus}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, paymentStatus: e.target.value as AdminCreateBookingPayload['paymentStatus'] }))}
+                  >
+                    <option value="paid">Paid</option>
+                    <option value="deposit_paid">Deposit Paid</option>
+                    <option value="awaiting_deposit">Awaiting Deposit</option>
+                    <option value="awaiting_full_payment">Awaiting Full Payment</option>
+                  </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Notes</label>
+                  <textarea
+                    rows={2}
+                    value={createBookingForm.notes ?? ''}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, notes: e.target.value }))}
+                    placeholder="Any booking notes..."
+                  />
+                </div>
+                <div className={styles.formRow}>
+                  <label>Private Notes (admin only)</label>
+                  <textarea
+                    rows={2}
+                    value={createBookingForm.privateNotes ?? ''}
+                    onChange={(e) => setCreateBookingForm(f => ({ ...f, privateNotes: e.target.value }))}
+                    placeholder="Internal notes..."
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className={styles.cancelBtn}
+                  onClick={() => setShowCreateBooking(false)}
+                  disabled={createBookingBusy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className={styles.checkInBtn}
+                  onClick={handleCreateBooking}
+                  disabled={createBookingBusy}
+                >
+                  {createBookingBusy ? 'Creating...' : 'Create Party Booking'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {calendarOpen && (
         <div className={styles.modalOverlay} onClick={() => { setCalendarOpen(false); setSelectedCalendarBooking(null); }}>
           <div className={`${styles.modalCard} ${styles.calendarModal}`} onClick={(e) => e.stopPropagation()}>
@@ -1651,7 +3363,7 @@ export function AdminDashboardPage() {
                   ‹
                 </button>
                 <span className={styles.calendarMonthTitle}>
-                  {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  {calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'America/New_York' })}
                 </span>
                 <button
                   type="button"
@@ -1848,8 +3560,19 @@ function renderSummaryCard(title: string, value: string | number, valueLabel: st
       <strong>{value}</strong>
       <small className={styles.valueLabel}>{valueLabel}</small>
       <p>{subtitle}</p>
+      {scrollTo && <span className={styles.cardClickHint}>Click to view &rarr;</span>}
     </div>
   );
+}
+
+function formatPaymentStatus(status: string): string {
+  switch (status) {
+    case 'awaiting_deposit': return 'Awaiting Deposit';
+    case 'deposit_paid': return 'Deposit Paid';
+    case 'awaiting_full_payment': return 'Awaiting Full';
+    case 'paid': return 'Paid in Full';
+    default: return status;
+  }
 }
 
 function renderBookingTable(
@@ -1867,10 +3590,17 @@ function renderBookingTable(
       <table className={styles.bookingTable}>
         <thead>
           <tr>
-            <th style={{width: '50%'}}>Booking Details</th>
-            <th style={{width: '15%'}}>Status</th>
-            <th style={{width: '20%'}}>Payment</th>
-            <th style={{width: '15%'}}></th>
+            <th>Customer</th>
+            <th>Event Details</th>
+            <th>Party Time</th>
+            <th>Children</th>
+            <th>Extras</th>
+            <th>Payment</th>
+            <th>Receipt</th>
+            <th>Status</th>
+            <th>Booked On</th>
+            <th>Notes</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -1881,32 +3611,80 @@ function renderBookingTable(
               : formatGuardian(booking.guardian);
             const customerEmail = isGuest ? booking.guestEmail : booking.guardian?.email;
             const customerPhone = isGuest ? booking.guestPhone : booking.guardian?.phone;
-            // Calculate paid and due amounts based on payment status
             const isPaid = booking.paymentStatus === 'deposit_paid' || booking.paymentStatus === 'paid';
             const paidAmount = isPaid ? (booking.depositAmount ?? 0) : 0;
             const dueAmount = booking.balanceRemaining ?? 0;
-            const hasSplitPayment = dueAmount > 0 && paidAmount > 0;
             const isCancelled = booking.status === 'Cancelled';
+            const addOns = booking.addOns ?? [];
+            const children = booking.children ?? [];
             return (
               <tr
                 key={booking.id}
                 className={booking.id === selectedId ? styles.rowSelected : undefined}
               >
+                {/* Customer */}
                 <td>
                   <div className={styles.customerDetailsCell}>
                     <strong>{customerDisplay}</strong>
-                    <small><b>Email:</b> {customerEmail || '—'} · <b>Phone:</b> {customerPhone || '—'}</small>
-                    <small><b>Ref:</b> {booking.reference} · <b>Location:</b> {booking.location} · <b>Date:</b> {formatDate(booking.eventDate)} {booking.startTime}</small>
-                    <small><b>Package:</b> {booking.partyPackage?.name || '—'} · <b>Guests:</b> {booking.guests || 0}</small>
+                    <small>{customerEmail || '—'}</small>
+                    <small>{customerPhone || '—'}</small>
+                    <small className={styles.refCode}>Ref: {booking.reference}</small>
                   </div>
                 </td>
+                {/* Event Details */}
                 <td>
-                  <span className={isCancelled ? styles.statusCancelled : styles.statusActive}>
-                    {booking.status}
-                  </span>
+                  <div className={styles.customerDetailsCell}>
+                    <strong>{booking.partyPackage?.name || '—'}</strong>
+                    <small>{booking.location || '—'}</small>
+                    <small><b>{booking.guests || 0}</b> guests</small>
+                  </div>
                 </td>
+                {/* Party Time */}
+                <td>
+                  <div className={styles.customerDetailsCell}>
+                    <strong>{formatDate(booking.eventDate)}</strong>
+                    <small>
+                      {booking.startTime ? formatTime(booking.startTime) : '—'}
+                      {booking.endTime ? ` – ${formatTime(booking.endTime)}` : ''}
+                    </small>
+                  </div>
+                </td>
+                {/* Children */}
+                <td>
+                  <div className={styles.customerDetailsCell}>
+                    {children.length > 0 ? children.map((child, i) => (
+                      <small key={i}>
+                        <b>{child.name}</b>
+                        {child.birthDate && <span> (DOB: {formatDate(child.birthDate)})</span>}
+                      </small>
+                    )) : <small className={styles.mutedText}>—</small>}
+                  </div>
+                </td>
+                {/* Extras */}
+                <td>
+                  <div className={styles.customerDetailsCell}>
+                    {addOns.length > 0 ? addOns.map((addon, i) => {
+                      const addonLabel = addon.label || addon.name || addon.code
+                        || (typeof (addon as Record<string, unknown>).id === 'string'
+                          ? ((addon as Record<string, unknown>).id as string).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+                          : 'Add-on');
+                      return (
+                        <small key={i}>
+                          {addonLabel}
+                          {addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : ''}
+                          {addon.price ? ` (${formatCurrency(addon.price)})` : ''}
+                        </small>
+                      );
+                    }) : <small className={styles.mutedText}>None</small>}
+                  </div>
+                </td>
+                {/* Payment */}
                 <td>
                   <div className={styles.paymentCell}>
+                    <small><b>Total:</b> {formatCurrency(booking.total)}</small>
+                    {booking.cleaningFee > 0 && (
+                      <small className={styles.mutedText}>Cleaning: {formatCurrency(booking.cleaningFee)}</small>
+                    )}
                     {isPaid ? (
                       <>
                         <span className={styles.paymentPaid}>
@@ -1914,24 +3692,86 @@ function renderBookingTable(
                         </span>
                         {dueAmount > 0 && (
                           <small className={styles.paymentDue}>
-                            Due: {formatCurrency(dueAmount)}
+                            Balance: {formatCurrency(dueAmount)}
                           </small>
                         )}
                       </>
                     ) : (
+                      <span className={styles.paymentPending}>
+                        Awaiting: {formatCurrency(booking.depositAmount ?? 0)}
+                      </span>
+                    )}
+                    {booking.paymentOption === 'split' && (
+                      <small className={styles.mutedText}>
+                        Split: {formatCurrency(booking.onlinePaymentAmount ?? 0)} online / {formatCurrency(booking.venuePaymentAmount ?? 0)} venue
+                      </small>
+                    )}
+                    <small className={styles.mutedText}>{formatPaymentStatus(booking.paymentStatus)}</small>
+                  </div>
+                </td>
+                {/* Receipt */}
+                <td>
+                  {booking.receipt ? (
+                    <div className={styles.receiptCell}>
+                      <a
+                        href={`${API_BASE_URL}/receipts/${booking.receipt.receiptNumber}/pdf?inline=true`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.receiptLink}
+                        title="View receipt PDF"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        View
+                      </a>
+                      <a
+                        href={`${API_BASE_URL}/receipts/${booking.receipt.receiptNumber}/pdf`}
+                        download={`receipt-${booking.reference}.pdf`}
+                        className={styles.receiptDownload}
+                        title="Download receipt PDF"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Download
+                      </a>
+                      <small className={styles.mutedText}>{booking.receipt.receiptNumber}</small>
+                    </div>
+                  ) : (
+                    <small className={styles.mutedText}>No receipt</small>
+                  )}
+                </td>
+                {/* Status */}
+                <td>
+                  <span className={isCancelled ? styles.statusCancelled : styles.statusActive}>
+                    {booking.status}
+                  </span>
+                </td>
+                {/* Booked On */}
+                <td>
+                  <div className={styles.customerDetailsCell}>
+                    {booking.createdAt ? (
                       <>
-                        <span className={styles.paymentPending}>
-                          Awaiting: {formatCurrency(booking.depositAmount ?? 0)}
-                        </span>
-                        {hasSplitPayment && (
-                          <small className={styles.paymentDue}>
-                            + {formatCurrency(dueAmount)} at venue
-                          </small>
-                        )}
+                        <small>{formatDate(booking.createdAt)}</small>
+                        <small className={styles.mutedText}>
+                          {new Date(booking.createdAt).toLocaleTimeString('en-US', {
+                            timeZone: 'America/New_York',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </small>
                       </>
+                    ) : (
+                      <small className={styles.mutedText}>—</small>
                     )}
                   </div>
                 </td>
+                {/* Notes */}
+                <td>
+                  <div className={styles.customerDetailsCell}>
+                    {booking.notes && <small>{booking.notes}</small>}
+                    {booking.privateNotes && <small className={styles.privateNote}>{booking.privateNotes}</small>}
+                    {!booking.notes && !booking.privateNotes && <small className={styles.mutedText}>—</small>}
+                  </div>
+                </td>
+                {/* Actions */}
                 <td>
                   <div className={styles.bookingActions}>
                     <button
@@ -2168,8 +4008,11 @@ function renderMembershipList(
         <thead>
           <tr>
             <th>Family</th>
+            <th>ID</th>
+            <th>Child</th>
             <th>Tier</th>
             <th>Status</th>
+            <th>Expires</th>
             <th>Visits</th>
             <th>Last visit</th>
             <th>Actions</th>
@@ -2182,6 +4025,9 @@ function renderMembershipList(
             const status = member.membership?.status ?? 'active';
             const isCancelled = status === 'cancelled';
             const name = `${member.firstName} ${member.lastName ?? ''}`.trim();
+            const firstChild = member.children?.[0];
+            const extraChildCount = (member.children?.length ?? 0) - 1;
+            const remaining = member.membership?.remainingDays;
             return (
               <tr key={membershipId} className={isSelected ? styles.selectedRow : undefined}>
                 <td>
@@ -2191,11 +4037,35 @@ function renderMembershipList(
                     email: member.email,
                   })}
                 </td>
+                <td className={styles.memberIdCell}>{member.displayId ?? '--'}</td>
+                <td>
+                  {firstChild ? (
+                    <span className={styles.childCell}>
+                      {firstChild.photoUrl && (
+                        <img src={firstChild.photoUrl} alt="" className={styles.childThumb} />
+                      )}
+                      {firstChild.firstName} {firstChild.lastName ?? ''}
+                      {extraChildCount > 0 && <span className={styles.extraChildBadge}>+{extraChildCount}</span>}
+                    </span>
+                  ) : '--'}
+                </td>
                 <td>{member.membership?.tierName ?? '--'}</td>
                 <td>
                   <span className={isCancelled ? styles.statusCancelled : styles.statusActive}>
                     {status}
                   </span>
+                </td>
+                <td>
+                  {member.membership?.endDate ? (
+                    <span>
+                      {formatDate(member.membership.endDate)}
+                      {remaining != null && status === 'active' && (
+                        <span className={remaining <= 3 ? styles.daysExpiring : remaining <= 7 ? styles.daysWarning : styles.daysBadge}>
+                          {remaining}d
+                        </span>
+                      )}
+                    </span>
+                  ) : '--'}
                 </td>
                 <td>{formatVisitSummary(member.membership)}</td>
                 <td>
@@ -2250,6 +4120,7 @@ function renderMembershipList(
 }
 
 function toBookingForm(booking: AdminBooking): BookingFormState {
+  const isGuest = !booking.guardian && booking.guestName;
   return {
     status: booking.status,
     eventDate: booking.eventDate ? booking.eventDate.slice(0, 10) : '',
@@ -2257,6 +4128,12 @@ function toBookingForm(booking: AdminBooking): BookingFormState {
     location: booking.location ?? '',
     notes: booking.notes ?? '',
     privateNotes: booking.privateNotes ?? '',
+    guestName: isGuest ? (booking.guestName ?? '') : `${booking.guardian?.firstName ?? ''} ${booking.guardian?.lastName ?? ''}`.trim(),
+    guestEmail: isGuest ? (booking.guestEmail ?? '') : (booking.guardian?.email ?? ''),
+    guestPhone: isGuest ? (booking.guestPhone ?? '') : (booking.guardian?.phone ?? ''),
+    guests: booking.guests ?? 0,
+    total: booking.total ?? 0,
+    paymentStatus: booking.paymentStatus ?? '',
   };
 }
 
@@ -2268,6 +4145,12 @@ function cleanBookingForm(form: BookingFormState): AdminBookingUpdatePayload {
   if (form.location) payload.location = form.location;
   if (form.notes !== undefined) payload.notes = form.notes;
   if (form.privateNotes !== undefined) payload.privateNotes = form.privateNotes;
+  if (form.guestName !== undefined) payload.guestName = form.guestName;
+  if (form.guestEmail !== undefined) payload.guestEmail = form.guestEmail;
+  if (form.guestPhone !== undefined) payload.guestPhone = form.guestPhone;
+  if (form.guests !== undefined) payload.guests = form.guests;
+  if (form.total !== undefined) payload.total = form.total;
+  if (form.paymentStatus !== undefined) payload.paymentStatus = form.paymentStatus;
   return payload;
 }
 

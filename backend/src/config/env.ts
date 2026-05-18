@@ -43,11 +43,27 @@ const envSchema = z
     SMTP_FROM: z.string().optional(),
     SMTP_FROM_NAME: z.string().default('Playfunia'),
     // Twilio SMS Configuration
+    // Authentication accepts either:
+    //   (a) account-level: TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN, or
+    //   (b) API-key-based: TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET
+    // API keys (SK…) are preferred for production because they can be revoked
+    // independently of the account.
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
+    TWILIO_API_KEY_SID: z.string().optional(),
+    TWILIO_API_KEY_SECRET: z.string().optional(),
     TWILIO_PHONE_NUMBER: z.string().optional(),
+    // Messaging Service SID for A2P 10DLC campaign routing.
+    // When set, sends use messagingServiceSid instead of `from` so traffic
+    // is attributed to the registered campaign (CTU2FPY / brand BN4f2aa329…).
+    TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
     // Admin notification emails (comma-separated)
     ADMIN_EMAILS: z.string().optional(),
+    // Waiver-specific admin notification emails (comma-separated, overrides ADMIN_EMAILS for waivers)
+    WAIVER_ADMIN_EMAILS: z.string().optional(),
+    // Contact-form inbox (comma-separated). Kept narrow so customer inquiries
+    // do not fan out to personal admin inboxes.
+    CONTACT_INBOX_EMAILS: z.string().optional(),
   })
   .strip();
 
@@ -98,7 +114,16 @@ export const appConfig = {
   // Twilio SMS Configuration
   twilioAccountSid: env.TWILIO_ACCOUNT_SID,
   twilioAuthToken: env.TWILIO_AUTH_TOKEN,
+  twilioApiKeySid: env.TWILIO_API_KEY_SID,
+  twilioApiKeySecret: env.TWILIO_API_KEY_SECRET,
   twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
+  twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
   // Admin notification emails
-  adminEmails: env.ADMIN_EMAILS ?? 'playfunia@playfunia.com',
+  adminEmails: env.ADMIN_EMAILS ?? 'info@playfunia.com',
+  // Waiver-specific admin emails (falls back to adminEmails if not set)
+  waiverAdminEmails: env.WAIVER_ADMIN_EMAILS,
+  // Contact-form inbox — defaults to the business inbox only, never to the
+  // broader ADMIN_EMAILS list, so personal addresses don't receive customer
+  // inquiries and the "Reply" target lands on the customer via Reply-To.
+  contactInboxEmails: env.CONTACT_INBOX_EMAILS ?? 'info@playfunia.com',
 };

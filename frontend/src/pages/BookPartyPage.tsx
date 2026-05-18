@@ -22,6 +22,7 @@ import {
   estimateBooking,
   PartyPackageDto,
 } from '../api/bookings';
+import { addChild } from '../api/users';
 import { getPartyAddOns, getPricingConfig, type PartyAddOnPricing, type PricingConfig } from '../api/pricing';
 import styles from './BookPartyPage.module.css';
 
@@ -196,6 +197,18 @@ const ADD_ON_UI_CONFIG: Record<string, { type: 'toggle' | 'quantity' }> = {
   character_visit: { type: 'toggle' },
 };
 
+// Quick-tip highlights shown next to each package title.
+// Keyed by lowercase package name so DB renames stay in sync.
+const PACKAGE_QUICK_TIPS: Record<string, string> = {
+  'mini fun': 'Bring your own decor & treats — your way, your style',
+  'super fun': 'Party supplies included – everything you need for a fun and colorful celebration',
+  'mega fun': 'Custom themed decor – tableware, balloons & more',
+};
+
+function getPackageQuickTip(name: string): string | null {
+  return PACKAGE_QUICK_TIPS[name.trim().toLowerCase()] ?? null;
+}
+
 // Build add-on options from API data
 function buildAddOnOptions(addOns: PartyAddOnPricing[]) {
   return addOns.map(addOn => ({
@@ -282,8 +295,46 @@ export function BookPartyPage() {
   const addOnOptions = useMemo(() => buildAddOnOptions(addOnPricing), [addOnPricing]);
 
   // Add child form state
+  const [showAddChild, setShowAddChild] = useState(false);
+  const [addChildFirstName, setAddChildFirstName] = useState('');
+  const [addChildLastName, setAddChildLastName] = useState('');
+  const [addChildBirthDate, setAddChildBirthDate] = useState('');
+  const [addChildError, setAddChildError] = useState('');
+  const [addChildLoading, setAddChildLoading] = useState(false);
 
-
+  const handleAddChild = async () => {
+    const firstName = addChildFirstName.trim();
+    if (!firstName) {
+      setAddChildError('First name is required.');
+      return;
+    }
+    if (!isValidName(firstName)) {
+      setAddChildError('Name can only contain letters, spaces, hyphens, and apostrophes.');
+      return;
+    }
+    if (addChildBirthDate && !isValidChildDOB(addChildBirthDate)) {
+      setAddChildError('Please enter a valid birth date. Child must be between 0-13 years old.');
+      return;
+    }
+    setAddChildError('');
+    setAddChildLoading(true);
+    try {
+      await addChild({
+        firstName,
+        lastName: addChildLastName.trim() || undefined,
+        birthDate: addChildBirthDate || undefined,
+      });
+      await refreshProfile();
+      setAddChildFirstName('');
+      setAddChildLastName('');
+      setAddChildBirthDate('');
+      setShowAddChild(false);
+    } catch (err) {
+      setAddChildError(err instanceof Error ? err.message : 'Failed to add child. Please try again.');
+    } finally {
+      setAddChildLoading(false);
+    }
+  };
 
   // Children and notes
   const [childSelections, setChildSelections] = useState<Record<string, boolean>>({});
@@ -325,6 +376,7 @@ export function BookPartyPage() {
   const [refundPolicyAgreed, setRefundPolicyAgreed] = useState(false);
   const [guestPolicyAgreed, setGuestPolicyAgreed] = useState(false);
   const [waiverPolicyAgreed, setWaiverPolicyAgreed] = useState(false);
+  const [smsConsent, setSmsConsent] = useState(false);
 
   // FAQ accordion state
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
@@ -445,7 +497,7 @@ export function BookPartyPage() {
   );
 
   const selectedChildIds = useMemo(
-    () => (user?.children ?? []).filter((child) => childSelections[child.id]).map((child) => child.id),
+    () => (user?.children ?? []).filter((child) => childSelections[child.id]).map((child) => String(child.id)),
     [childSelections, user]
   );
 
@@ -577,16 +629,20 @@ export function BookPartyPage() {
 
     // First day of the month
     const firstDay = new Date(year, month, 1);
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     // Start from Sunday of the first week
     const startDate = new Date(firstDay);
     startDate.setDate(startDate.getDate() - firstDay.getDay());
 
+    // Only generate as many rows as needed (avoid showing extra next-month rows)
+    const rowsNeeded = Math.ceil((firstDay.getDay() + daysInMonth) / 7);
+    const totalCells = rowsNeeded * 7;
+
     const days: { date: Date; isCurrentMonth: boolean; isPast: boolean }[] = [];
     const current = new Date(startDate);
 
-    // Generate 42 days (6 weeks) to fill the calendar grid
-    for (let i = 0; i < 42; i++) {
+    for (let i = 0; i < totalCells; i++) {
       days.push({
         date: new Date(current),
         isCurrentMonth: current.getMonth() === month,
@@ -597,7 +653,7 @@ export function BookPartyPage() {
 
     return {
       days,
-      monthLabel: displayMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      monthLabel: displayMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'America/New_York' }),
       canGoPrev: calendarMonthOffset > 0,
     };
   }, [calendarMonthOffset]);
@@ -904,7 +960,7 @@ export function BookPartyPage() {
                 className={`${styles.locationButton} ${location === loc ? styles.locationActive : ''}`}
                 onClick={() => setLocation(loc)}
               >
-                {loc} Mall
+                Crossgates Mall / {loc}
               </button>
             ))}
           </div>
@@ -921,6 +977,8 @@ export function BookPartyPage() {
                 const features = pkg.features ?? [];
                 const additionalTerms = pkg.additionalTerms ?? [];
                 const extraAdultPrice = pkg.extraAdultPrice ?? 10;
+                const extraChildPrice = pkg.extraChildPrice ?? 40;
+                const quickTip = getPackageQuickTip(pkg.name);
 
                 return (
                   <button
@@ -933,15 +991,36 @@ export function BookPartyPage() {
                       <h3>{pkg.name}</h3>
                       <span className={styles.packageCardPrice}>${pkg.basePrice}</span>
                     </div>
-                    <div className={styles.packageCardSubheader}>
-                      <span>Up to {pkg.maxGuests} Children</span>
-                      <span>Additional guest (13+ years old) is ${extraAdultPrice}</span>
+                    {quickTip && (
+                      <div className={styles.packageQuickTip}>
+                        <span className={styles.packageQuickTipIcon} aria-hidden="true">👉</span>
+                        <span className={styles.packageQuickTipText}>{quickTip}</span>
+                      </div>
+                    )}
+                    <div className={styles.packageCardRules}>
+                      <div className={styles.packageCardRulesTitle}>What&apos;s included &amp; pricing rules</div>
+                      <ul className={styles.packageCardRulesList}>
+                        <li><strong>One adult per child included</strong></li>
+                        <li>Each additional kid is <strong>${extraChildPrice}</strong></li>
+                        <li>Each additional guest is <strong>${extraAdultPrice}</strong></li>
+                      </ul>
                     </div>
                     {features.length > 0 && (
                       <ul className={styles.packageCardFeatureList}>
-                        {features.map((feature, idx) => (
-                          <li key={idx}>{feature}</li>
-                        ))}
+                        {features.map((feature, idx) => {
+                          const [text, tip] = feature.split('|');
+                          return (
+                            <li key={idx}>
+                              {text}
+                              {tip && (
+                                <span className={styles.featureTooltipWrapper}>
+                                  <span className={styles.featureTooltipIcon}>i</span>
+                                  <span className={styles.featureTooltipContent}>{tip}</span>
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
                     {additionalTerms.length > 0 && (
@@ -983,6 +1062,22 @@ export function BookPartyPage() {
             </div>
           </div>
         )}
+
+        {/* Refund Policy Banner */}
+        <div className={styles.refundPolicyBanner}>
+          <div className={styles.refundPolicyIcon}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </div>
+          <div className={styles.refundPolicyText}>
+            <h3>Party Booking Refund Policy</h3>
+            <p>Please review our cancellation and refund terms before booking your party.</p>
+          </div>
+          <Link to="/refund-policy" className={styles.refundPolicyLink}>
+            View Full Policy &rarr;
+          </Link>
+        </div>
 
         {/* FAQ Section */}
         <div className={styles.faqSection}>
@@ -1104,7 +1199,7 @@ export function BookPartyPage() {
                       {selectedDate ? (
                         <>
                           <h3 className={styles.timeSlotsTitle}>
-                            {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                            {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York' })}
                           </h3>
                           {slotsLoading ? (
                             <p className={styles.slotsLoading}>Loading available times...</p>
@@ -1157,7 +1252,7 @@ export function BookPartyPage() {
                       <div className={styles.bookingSummaryItem}>
                         <span className={styles.bookingSummaryIcon}>📅</span>
                         <span>
-                          {formatTime(selectedSlot ?? '')} - {formatTime(getEndTime(selectedSlot ?? '', (modal.selectedPackage?.durationMinutes ?? 120) + (addOns.extraHour ? 60 : 0)))} | {selectedDate?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                          {formatTime(selectedSlot ?? '')} - {formatTime(getEndTime(selectedSlot ?? '', (modal.selectedPackage?.durationMinutes ?? 120) + (addOns.extraHour ? 60 : 0)))} | {selectedDate?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })}
                         </span>
                       </div>
                     </div>
@@ -1236,7 +1331,65 @@ export function BookPartyPage() {
                             ))}
                           </div>
                         ) : (
-                          <p className={styles.noChildrenMsg}>No children on your account.</p>
+                          <p className={styles.noChildrenMsg}>No children on your account. Add one below to continue.</p>
+                        )}
+                        {!showAddChild ? (
+                          <button
+                            type="button"
+                            className={styles.addChildLink}
+                            onClick={() => setShowAddChild(true)}
+                          >
+                            + Add a child
+                          </button>
+                        ) : (
+                          <div className={styles.addChildFormInline}>
+                            {addChildError && <p className={styles.addChildErrorMsg}>{addChildError}</p>}
+                            <div className={styles.formRowInline}>
+                              <input
+                                type="text"
+                                placeholder="First name *"
+                                value={addChildFirstName}
+                                onChange={(e) => setAddChildFirstName(formatNameInput(e.target.value))}
+                                maxLength={100}
+                                autoFocus
+                              />
+                              <input
+                                type="text"
+                                placeholder="Last name"
+                                value={addChildLastName}
+                                onChange={(e) => setAddChildLastName(formatNameInput(e.target.value))}
+                                maxLength={100}
+                              />
+                              <input
+                                type="date"
+                                placeholder="Birth date"
+                                value={addChildBirthDate}
+                                onChange={(e) => setAddChildBirthDate(e.target.value)}
+                              />
+                            </div>
+                            <div className={styles.addChildFormActions}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowAddChild(false);
+                                  setAddChildError('');
+                                  setAddChildFirstName('');
+                                  setAddChildLastName('');
+                                  setAddChildBirthDate('');
+                                }}
+                                disabled={addChildLoading}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleAddChild}
+                                disabled={addChildLoading}
+                              >
+                                {addChildLoading ? 'Adding...' : 'Add Child'}
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}
@@ -1394,6 +1547,22 @@ export function BookPartyPage() {
                             </span>
                             <p className={styles.policyText}>
                               I understand all children must have a waiver signed by their parent/guardian before participating.
+                            </p>
+                          </div>
+                        </label>
+
+                        <label className={styles.policyCheckbox}>
+                          <input
+                            type="checkbox"
+                            checked={smsConsent}
+                            onChange={(e) => setSmsConsent(e.target.checked)}
+                          />
+                          <div className={styles.policyContent}>
+                            <span className={styles.policyTitle}>
+                              SMS Text Message Consent
+                            </span>
+                            <p className={styles.policyText}>
+                              By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., booking confirmations, reminders, and updates). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to unsubscribe at any time. <Link to="/privacy" target="_blank">Privacy Policy</Link> &amp; <Link to="/waiver-policy" target="_blank">Terms</Link>.
                             </p>
                           </div>
                         </label>

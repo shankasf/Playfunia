@@ -1,6 +1,6 @@
-const CACHE_NAME = 'playfunia-v5';
-const STATIC_CACHE = 'playfunia-static-v5';
-const IMAGE_CACHE = 'playfunia-images-v5';
+const CACHE_NAME = 'playfunia-v8';
+const STATIC_CACHE = 'playfunia-static-v8';
+const IMAGE_CACHE = 'playfunia-images-v8';
 
 // Track if user has consented to enhanced caching
 let imageCacheEnabled = true; // Default to true for performance
@@ -124,8 +124,8 @@ self.addEventListener('fetch', (event) => {
 
           // Not in cache, fetch from network and cache for future
           return fetch(request).then((networkResponse) => {
-            if (networkResponse.ok) {
-              // Clone and cache the response
+            if (networkResponse.ok && networkResponse.status === 200) {
+              // Clone and cache the response (skip 206 partial responses)
               cache.put(request, networkResponse.clone());
             }
             return networkResponse;
@@ -140,14 +140,17 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Handle video requests - cache first
+  // Skip range requests (videos use Range headers which return 206 partial responses
+  // that cannot be stored in the Cache API)
   if (request.destination === 'video' || url.pathname.match(/\.(mov|mp4|webm)$/i)) {
+    if (request.headers.get('range')) return;
     event.respondWith(
       caches.open(STATIC_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {
           if (cachedResponse) return cachedResponse;
 
           return fetch(request).then((networkResponse) => {
-            if (networkResponse.ok) {
+            if (networkResponse.ok && networkResponse.status === 200) {
               cache.put(request, networkResponse.clone());
             }
             return networkResponse;
@@ -164,7 +167,7 @@ self.addEventListener('fetch', (event) => {
       caches.open(STATIC_CACHE).then((cache) => {
         return cache.match(request).then((cachedResponse) => {
           const fetchPromise = fetch(request).then((networkResponse) => {
-            if (networkResponse.ok) {
+            if (networkResponse.ok && networkResponse.status === 200) {
               cache.put(request, networkResponse.clone());
             }
             return networkResponse;
@@ -181,7 +184,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        if (response.ok) {
+        if (response.ok && response.status === 200) {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(request, responseClone);

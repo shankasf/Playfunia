@@ -13,6 +13,11 @@ import {
   getExistingReservation,
   extendReservation,
 } from '../services/slot-reservation.service';
+import {
+  createCheckoutSession,
+  cancelCheckoutSession,
+  getCheckoutSession,
+} from '../services/checkout-session.service';
 import { optionalSupabaseAuthGuard } from '../middleware/supabase-auth.middleware';
 import { AppError } from '../utils/app-error';
 import { logger } from '../utils/logger';
@@ -105,6 +110,107 @@ reservationRouter.get(
       } else {
         res.json({ exists: false });
       }
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ============================================================
+// CHECKOUT SESSION ROUTES (must be before /:reservationId wildcard)
+// Track the 5-minute payment countdown timer in the database
+// ============================================================
+
+/**
+ * Create a checkout session (starts 5-minute countdown)
+ * POST /api/reservations/checkout-sessions
+ */
+reservationRouter.post(
+  '/checkout-sessions',
+  optionalSupabaseAuthGuard,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { items, subtotal, tax, total, guestEmail } = req.body;
+
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        throw new AppError('Items array is required', 400);
+      }
+      if (typeof subtotal !== 'number' || typeof tax !== 'number' || typeof total !== 'number') {
+        throw new AppError('subtotal, tax, and total are required numbers', 400);
+      }
+
+      const customerId = req.user?.customer_id ?? null;
+
+      const session = await createCheckoutSession({
+        customerId,
+        guestEmail: guestEmail ?? null,
+        items,
+        subtotal,
+        tax,
+        total,
+      });
+
+      res.status(201).json({
+        success: true,
+        sessionId: session.session_id,
+        expiresAt: session.expires_at,
+        status: session.status,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * Get checkout session status
+ * GET /api/reservations/checkout-sessions/:sessionId
+ */
+reservationRouter.get(
+  '/checkout-sessions/:sessionId',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = req.params;
+
+      if (!sessionId) {
+        throw new AppError('Session ID is required', 400);
+      }
+
+      const session = await getCheckoutSession(sessionId);
+
+      if (!session) {
+        throw new AppError('Checkout session not found', 404);
+      }
+
+      res.json({
+        sessionId: session.session_id,
+        status: session.status,
+        expiresAt: session.expires_at,
+        createdAt: session.created_at,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * Cancel a checkout session (user navigated away)
+ * POST /api/reservations/checkout-sessions/:sessionId/cancel
+ */
+reservationRouter.post(
+  '/checkout-sessions/:sessionId/cancel',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { sessionId } = req.params;
+
+      if (!sessionId) {
+        throw new AppError('Session ID is required', 400);
+      }
+
+      await cancelCheckoutSession(sessionId);
+
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }
@@ -225,3 +331,4 @@ reservationRouter.delete(
     }
   }
 );
+

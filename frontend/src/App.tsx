@@ -15,6 +15,7 @@ const BookPartyPage = lazy(() => import("./pages/BookPartyPage").then(m => ({ de
 const BuyTicketPage = lazy(() => import("./pages/BuyTicketPage").then(m => ({ default: m.BuyTicketPage })));
 const CheckoutPage = lazy(() => import("./pages/CheckoutPage").then(m => ({ default: m.CheckoutPage })));
 const EventsPage = lazy(() => import("./pages/EventsPage").then(m => ({ default: m.EventsPage })));
+const EventDetailPage = lazy(() => import("./pages/EventDetailPage").then(m => ({ default: m.EventDetailPage })));
 const TestimonialsPage = lazy(() => import("./pages/TestimonialsPage").then(m => ({ default: m.TestimonialsPage })));
 const FaqPage = lazy(() => import("./pages/FaqPage").then(m => ({ default: m.FaqPage })));
 const ContactPage = lazy(() => import("./pages/ContactPage").then(m => ({ default: m.ContactPage })));
@@ -31,6 +32,7 @@ const PrivacyPage = lazy(() => import("./pages/PrivacyPage").then(m => ({ defaul
 const GuestPolicyPage = lazy(() => import("./pages/GuestPolicyPage").then(m => ({ default: m.GuestPolicyPage })));
 const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage").then(m => ({ default: m.RefundPolicyPage })));
 const WaiverPolicyPage = lazy(() => import("./pages/WaiverPolicyPage").then(m => ({ default: m.WaiverPolicyPage })));
+const SmsTermsPage = lazy(() => import("./pages/SmsTermsPage").then(m => ({ default: m.SmsTermsPage })));
 const CareersPage = lazy(() => import("./pages/CareersPage").then(m => ({ default: m.CareersPage })));
 const CareerApplyPage = lazy(() => import("./pages/CareerApplyPage").then(m => ({ default: m.CareerApplyPage })));
 
@@ -92,6 +94,14 @@ function App() {
           element={
             <Suspense fallback={<PageLoader />}>
               <EventsPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="events/:id"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <EventDetailPage />
             </Suspense>
           }
         />
@@ -244,6 +254,14 @@ function App() {
           element={
             <Suspense fallback={<PageLoader />}>
               <CareerApplyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="sms-terms"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <SmsTermsPage />
             </Suspense>
           }
         />

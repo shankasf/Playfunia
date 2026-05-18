@@ -36,10 +36,10 @@ async function addAdminUsers() {
       fullName: 'Playfunia Admin',
     },
     {
-      email: 'sagarshankaranusa@gmail.com',
-      firstName: 'Sagar',
-      lastName: 'Shankaran',
-      fullName: 'Sagar Shankaran',
+      email: 'sstressfree@gmail.com',
+      firstName: 'Admin',
+      lastName: '',
+      fullName: 'Admin',
     },
     {
       email: 'playfuniausa@gmail.com',

@@ -24,6 +24,7 @@ const supportLinks = [
   { label: "FAQ", href: "/faq" },
   { label: "Contact Us", href: "/contact" },
   { label: "Waiver Form", href: "/waiver" },
+  { label: "Refund Policy", href: "/refund-policy" },
   { label: "My Account", href: "/account" },
   { label: "Careers", href: "/careers" },
 ];
@@ -99,8 +100,7 @@ export function Footer() {
             {/* Brand Column */}
             <div className={styles.brandColumn}>
               <Link to="/" className={styles.logo}>
-                <img src="/images/logo.png" alt="Playfunia" />
-                <span>Playfunia</span>
+                <img src="/images/logo-text.png" alt="Playfunia" />
               </Link>
               <p className={styles.tagline}>
                 Where every day is an adventure! Indoor playgrounds designed for active kids and relaxed parents.

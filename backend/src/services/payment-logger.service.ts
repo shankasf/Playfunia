@@ -83,6 +83,14 @@ function maskSensitiveData(payload: Record<string, unknown>): Record<string, unk
     masked.verificationToken = '[MASKED]';
   }
 
+  // Convert BigInt values to numbers (e.g., amountMoney.amount from Square SDK)
+  if (masked.amountMoney && typeof masked.amountMoney === 'object') {
+    const money = masked.amountMoney as Record<string, unknown>;
+    if (typeof money.amount === 'bigint') {
+      masked.amountMoney = { ...money, amount: Number(money.amount) };
+    }
+  }
+
   return masked;
 }
 
@@ -220,7 +228,9 @@ export async function logPaymentCompleted(
         avs_status: cardDetails.avsStatus,
         risk_level: riskDetails.riskLevel,
         processing_time_ms: processingTimeMs,
-        response_payload: payment as unknown as Record<string, unknown>,
+        response_payload: JSON.parse(JSON.stringify(payment, (_key, value) =>
+          typeof value === 'bigint' ? Number(value) : value
+        )),
         completed_at: completedAt,
       });
     }

@@ -13,21 +13,8 @@ const HOW_HEARD_OPTIONS = [
 ];
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024; // 100MB
 const NAME_REGEX = /^[A-Za-zÀ-ÿ\s'-]+$/;
 const ALLOWED_FILE_TYPES = ['.pdf', '.doc', '.docx', '.txt'];
-const ALLOWED_VIDEO_TYPES = ['.mp4', '.mov', '.avi', '.webm', '.mkv'];
-
-const VIDEO_QUESTIONS = [
-  'Tell us about yourself.',
-  'Do you have any experience with party planning or event decorating?',
-  'Are you comfortable creating balloon arches or working with balloon decorations?',
-  'Do you have any skills with videography or social media?',
-  'Do you have open availability? If not, what is your availability?',
-  'Are you comfortable enforcing rules politely but firmly?',
-  'This job involves cleaning, standing, and moving throughout the shift; are you comfortable with that?',
-  'Do you have reliable transportation?',
-];
 
 export function CareerApplyPage() {
   const { listingId } = useParams<{ listingId: string }>();
@@ -37,8 +24,6 @@ export function CareerApplyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [videoMethod, setVideoMethod] = useState<'link' | 'upload'>('link');
-  const [videoUrl, setVideoUrl] = useState('');
 
   useEffect(() => {
     getJobListings()
@@ -127,42 +112,6 @@ export function CareerApplyPage() {
       }
     }
 
-    // Validate video (required: file upload)
-    const videoInput = form.elements.namedItem('video') as HTMLInputElement;
-    const hasVideoFile = videoInput?.files && videoInput.files[0];
-    const hasVideoUrl = videoUrl.trim().length > 0;
-
-    if (!hasVideoFile && !hasVideoUrl) {
-      setErrorMsg('Please upload your video introduction.');
-      setSubmitting(false);
-      return;
-    }
-
-    if (hasVideoUrl) {
-      try {
-        new URL(videoUrl.trim());
-      } catch {
-        setErrorMsg('Please enter a valid video URL.');
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    if (hasVideoFile) {
-      const vFile = videoInput.files![0];
-      if (vFile.size > MAX_VIDEO_SIZE) {
-        setErrorMsg('Video file must be under 100MB. Please choose a smaller file.');
-        setSubmitting(false);
-        return;
-      }
-      const vExt = vFile.name.toLowerCase().slice(vFile.name.lastIndexOf('.'));
-      if (!ALLOWED_VIDEO_TYPES.includes(vExt)) {
-        setErrorMsg('Video must be an MP4, MOV, AVI, WebM, or MKV file.');
-        setSubmitting(false);
-        return;
-      }
-    }
-
     // Validate start date is not in the past
     const startDateVal = (form.elements.namedItem('availableStartDate') as HTMLInputElement).value;
     if (startDateVal) {
@@ -221,21 +170,11 @@ export function CareerApplyPage() {
       fd.append('resume', resumeInput.files[0]);
     }
 
-    // Video
-    if (hasVideoUrl) {
-      fd.append('videoUrl', videoUrl.trim());
-    }
-    if (hasVideoFile) {
-      fd.append('video', videoInput.files![0]);
-    }
-
     try {
       const result = await submitApplication(fd);
       setSuccessMsg(result.message);
       form.reset();
       setSelectedListingId('');
-      setVideoUrl('');
-      setVideoMethod('link');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
       setErrorMsg(message);
@@ -403,61 +342,6 @@ export function CareerApplyPage() {
                 maxLength={5000}
                 placeholder="Tell us what excites you about working at Playfunia..."
               />
-            </div>
-
-            {/* Video Introduction */}
-            <div className={styles.formGroupFull}>
-              <label>Video Introduction <span className={styles.required}>*</span></label>
-              <p className={styles.videoInstructions}>
-                Record a short video answering the questions below, then share it via a link or upload it directly.
-              </p>
-              <ol className={styles.videoQuestions}>
-                {VIDEO_QUESTIONS.map((q, i) => (
-                  <li key={i}>{q}</li>
-                ))}
-              </ol>
-              <div className={styles.videoToggle}>
-                <button
-                  type="button"
-                  className={`${styles.toggleBtn} ${videoMethod === 'link' ? styles.toggleActive : ''}`}
-                  onClick={() => setVideoMethod('link')}
-                >
-                  Paste a link
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.toggleBtn} ${videoMethod === 'upload' ? styles.toggleActive : ''}`}
-                  onClick={() => setVideoMethod('upload')}
-                >
-                  Upload a file
-                </button>
-              </div>
-              {videoMethod === 'link' && (
-                <div>
-                  <input
-                    type="url"
-                    id="videoUrl"
-                    placeholder="https://youtube.com/watch?v=... or Google Drive / Loom link"
-                    value={videoUrl}
-                    onChange={e => setVideoUrl(e.target.value)}
-                    maxLength={2000}
-                    className={styles.videoUrlInput}
-                  />
-                  <span className={styles.fileHint}>YouTube, Google Drive, Loom, or any shareable video link</span>
-                </div>
-              )}
-              {videoMethod === 'upload' && (
-                <div>
-                  <input
-                    type="file"
-                    id="video"
-                    name="video"
-                    accept=".mp4,.mov,.avi,.webm,.mkv"
-                    className={styles.fileInput}
-                  />
-                  <span className={styles.fileHint}>MP4, MOV, AVI, or WebM - max 100MB</span>
-                </div>
-              )}
             </div>
 
             {/* Emergency Contact */}

@@ -6,6 +6,11 @@ import { logger } from '../utils/logger';
 
 // Admin emails for receiving copies of all notifications (from env config)
 const ADMIN_EMAILS = appConfig.adminEmails;
+// Waiver-specific admin emails (falls back to ADMIN_EMAILS if not configured)
+const WAIVER_ADMIN_EMAILS = appConfig.waiverAdminEmails ?? ADMIN_EMAILS;
+// Contact-form inbox — kept narrow so customer inquiries don't fan out to
+// personal admin inboxes and so "Reply" lands on the customer's address.
+const CONTACT_INBOX_EMAILS = appConfig.contactInboxEmails;
 
 // Create reusable transporter - lazy initialized
 let transporter: nodemailer.Transporter | null = null;
@@ -232,6 +237,7 @@ async function sendEmail(options: {
   html: string;
   text?: string;
   bcc?: string;
+  replyTo?: string;
   attachments?: EmailAttachment[];
 }): Promise<boolean> {
   const transport = getTransporter();
@@ -246,6 +252,7 @@ async function sendEmail(options: {
       from: `"${appConfig.smtpFromName}" <${appConfig.smtpFrom || appConfig.smtpUser}>`,
       to: options.to,
       bcc: options.bcc,
+      replyTo: options.replyTo,
       subject: options.subject,
       html: options.html,
       text: options.text,
@@ -335,7 +342,13 @@ export interface BookingEmailData {
   durationMinutes?: number; // Party duration for calendar event (defaults to 120)
   receiptPdf?: Buffer;
   receiptNumber?: string;
-  // Package details for PDF
+  // Customer contact
+  phone?: string;
+  // Children celebrating
+  children?: Array<{ name: string; birthDate?: string }>;
+  // Special requests / notes
+  notes?: string;
+  // Package details for PDF and email
   packageDetails?: {
     priceUsd: number;
     baseChildren: number;
@@ -344,6 +357,10 @@ export interface BookingEmailData {
     includesDrinks: boolean;
     includesDecor: boolean;
     notes?: string;
+    features?: string[];
+    additionalTerms?: Array<{ title: string; description: string }>;
+    extraChildPrice?: number;
+    extraAdultPrice?: number;
   };
 }
 
@@ -351,6 +368,50 @@ export interface BookingEmailData {
 export async function sendBookingConfirmation(data: BookingEmailData): Promise<boolean> {
   const addOnsHtml = data.addOns?.length
     ? `<tr><td style="padding: 8px 0; color: #4b5563;">Add-ons</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.addOns.map(a => `${a.name} x${a.quantity}`).join(', ')}</td></tr>`
+    : '';
+
+  // Children celebrating section
+  const childrenHtml = data.children?.length
+    ? `<div style="background: #faf5ff; padding: 20px; border-radius: 12px; margin: 20px 0; border-left: 4px solid #7c3aed;">
+        <h3 style="color: #7c3aed; margin: 0 0 10px 0; font-size: 14px;">Birthday Celebrant${data.children.length > 1 ? 's' : ''}</h3>
+        ${data.children.map(c => `<p style="color: #4b5563; margin: 4px 0; font-size: 14px;"><strong>${escapeHtml(c.name)}</strong>${c.birthDate ? ` <span style="color: #6b7280;">(DOB: ${escapeHtml(c.birthDate)})</span>` : ''}</p>`).join('')}
+      </div>`
+    : '';
+
+  // Phone number row
+  const phoneHtml = data.phone
+    ? `<tr><td style="padding: 8px 0; color: #4b5563;">Phone</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${escapeHtml(data.phone)}</td></tr>`
+    : '';
+
+  // Package info section (one adult per child, extra pricing, features, additional terms)
+  const pkgDetails = data.packageDetails;
+  const packageInfoHtml = pkgDetails ? (() => {
+    const extraChildPrice = pkgDetails.extraChildPrice ?? 40;
+    const extraAdultPrice = pkgDetails.extraAdultPrice ?? 10;
+    const features = (pkgDetails.features ?? []).map(f => f.split('|')[0] ?? '');
+    const terms = pkgDetails.additionalTerms ?? [];
+    const featuresHtml = features.length > 0
+      ? `<div style="margin-top: 12px;">${features.map(f => `<p style="color: #4b5563; margin: 4px 0; font-size: 13px;">✓ ${escapeHtml(f)}</p>`).join('')}</div>`
+      : '';
+    const termsHtml = terms.length > 0
+      ? `<div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid #e5e7eb;"><p style="color: #7c3aed; font-weight: 600; font-size: 13px; margin: 0 0 6px 0;">Additional Terms</p>${terms.map((t, i) => `<p style="color: #4b5563; margin: 3px 0; font-size: 12px;">${i + 1}. <strong>${escapeHtml(t.title)}</strong> — ${escapeHtml(t.description)}</p>`).join('')}</div>`
+      : '';
+    return `<div style="background: #faf5ff; padding: 20px; border-radius: 12px; margin: 20px 0; border-left: 4px solid #7c3aed;">
+        <h3 style="color: #7c3aed; margin: 0 0 10px 0; font-size: 14px;">Package Info</h3>
+        <p style="color: #4b5563; margin: 4px 0; font-size: 13px;">• One adult per child included</p>
+        <p style="color: #4b5563; margin: 4px 0; font-size: 13px;">• Each additional kid is $${extraChildPrice.toFixed(0)}</p>
+        <p style="color: #4b5563; margin: 4px 0; font-size: 13px;">• Each additional guest is $${extraAdultPrice.toFixed(0)}</p>
+        ${featuresHtml}
+        ${termsHtml}
+      </div>`;
+  })() : '';
+
+  // Special requests section
+  const notesHtml = data.notes
+    ? `<div style="background: #fffbeb; padding: 15px 20px; border-radius: 12px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+        <h3 style="color: #92400e; margin: 0 0 8px 0; font-size: 14px;">Special Requests / Notes</h3>
+        <p style="color: #92400e; font-size: 14px; margin: 0;">${escapeHtml(data.notes)}</p>
+      </div>`
     : '';
 
   // Generate calendar event data
@@ -429,9 +490,14 @@ export async function sendBookingConfirmation(data: BookingEmailData): Promise<b
             <tr><td style="padding: 8px 0; color: #4b5563;">Time</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${escapeHtml(data.startTime)}</td></tr>
             <tr><td style="padding: 8px 0; color: #4b5563;">Location</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${escapeHtml(data.location)}</td></tr>
             <tr><td style="padding: 8px 0; color: #4b5563;">Guests</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.guestCount}</td></tr>
+            ${phoneHtml}
             ${addOnsHtml}
           </table>
         </div>
+
+        ${packageInfoHtml}
+        ${childrenHtml}
+        ${notesHtml}
 
         ${calendarButtonsHtml}
 
@@ -461,7 +527,7 @@ export async function sendBookingConfirmation(data: BookingEmailData): Promise<b
       </div>
     `,
     attachments,
-    text: `Party Booking Confirmed!\n\nHi ${data.guestName},\n\nReference: ${data.reference}\nPackage: ${data.packageName}\nDate: ${data.eventDate} at ${data.startTime}\nLocation: ${data.location}\nGuests: ${data.guestCount}\n\n${data.subtotal !== undefined ? `Subtotal: $${data.subtotal.toFixed(2)}\n` : ''}${data.cleaningFee !== undefined ? `Cleaning Fee: $${data.cleaningFee.toFixed(2)}\n` : ''}${data.taxAmount !== undefined ? `Tax${data.taxRate ? ` (${data.taxRate}%)` : ''}: $${data.taxAmount.toFixed(2)}\n` : ''}Total Paid: $${data.totalAmount.toFixed(2)}\nPayment complete - no balance due${data.receiptNumber ? `\n\nReceipt #${data.receiptNumber} is attached.` : ''}\n\nWe can't wait to celebrate with you!`,
+    text: `Party Booking Confirmed!\n\nHi ${data.guestName},\n\nReference: ${data.reference}\nPackage: ${data.packageName}\nDate: ${data.eventDate} at ${data.startTime}\nLocation: ${data.location}\nGuests: ${data.guestCount}${data.phone ? `\nPhone: ${data.phone}` : ''}${pkgDetails ? `\n\nPackage Info:\n- One adult per child included\n- Each additional kid is $${(pkgDetails.extraChildPrice ?? 40).toFixed(0)}\n- Each additional guest is $${(pkgDetails.extraAdultPrice ?? 10).toFixed(0)}${(pkgDetails.features ?? []).length > 0 ? `\n${(pkgDetails.features ?? []).map(f => `- ${f.split('|')[0]}`).join('\n')}` : ''}${(pkgDetails.additionalTerms ?? []).length > 0 ? `\n\nAdditional Terms:\n${(pkgDetails.additionalTerms ?? []).map((t, i) => `${i + 1}. ${t.title} — ${t.description}`).join('\n')}` : ''}` : ''}${data.children?.length ? `\n\nBirthday Celebrant${data.children.length > 1 ? 's' : ''}:\n${data.children.map(c => `  - ${c.name}${c.birthDate ? ` (DOB: ${c.birthDate})` : ''}`).join('\n')}` : ''}${data.notes ? `\n\nSpecial Requests: ${data.notes}` : ''}\n\n${data.subtotal !== undefined ? `Subtotal: $${data.subtotal.toFixed(2)}\n` : ''}${data.cleaningFee !== undefined ? `Cleaning Fee: $${data.cleaningFee.toFixed(2)}\n` : ''}${data.taxAmount !== undefined ? `Tax${data.taxRate ? ` (${data.taxRate}%)` : ''}: $${data.taxAmount.toFixed(2)}\n` : ''}Total Paid: $${data.totalAmount.toFixed(2)}\nPayment complete - no balance due${data.receiptNumber ? `\n\nReceipt #${data.receiptNumber} is attached.` : ''}\n\nWe can't wait to celebrate with you!`,
   });
 }
 
@@ -637,7 +703,9 @@ export async function sendTicketConfirmation(data: TicketEmailData): Promise<boo
 export interface MembershipEmailData {
   email: string;
   customerName: string;
+  parentFullName?: string;
   tierName: string;
+  displayId?: string;
   startDate: string;
   expiryDate: string;
   visitsPerMonth: number | null;
@@ -653,6 +721,11 @@ export interface MembershipEmailData {
   total?: number;
   receiptPdf?: Buffer;
   receiptNumber?: string;
+  childName?: string;
+  childBirthDate?: string;
+  maxChildren?: number;
+  maxAdults?: number;
+  loginPassword?: string;
 }
 
 // Send membership confirmation email
@@ -700,12 +773,16 @@ export async function sendMembershipConfirmation(data: MembershipEmailData): Pro
 
         <div style="background: #f9fafb; padding: 20px; border-radius: 12px; margin: 20px 0;">
           <table style="width: 100%; border-collapse: collapse;">
-            <tr><td style="padding: 8px 0; color: #4b5563;">Membership Tier</td><td style="padding: 8px 0; text-align: right; color: #7c3aed; font-weight: bold;">${data.tierName}</td></tr>
+            ${data.displayId ? `<tr><td style="padding: 8px 0; color: #4b5563;">Membership ID</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b; font-weight: bold;">${data.displayId}</td></tr>` : ''}
+            <tr><td style="padding: 8px 0; color: #4b5563;">Plan</td><td style="padding: 8px 0; text-align: right; color: #7c3aed; font-weight: bold;">${data.tierName}</td></tr>
+            ${data.parentFullName ? `<tr><td style="padding: 8px 0; color: #4b5563;">Account Holder</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${escapeHtml(data.parentFullName)}</td></tr>` : ''}
+            ${data.childName ? `<tr><td style="padding: 8px 0; color: #4b5563;">Child Name</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${escapeHtml(data.childName)}</td></tr>` : ''}
+            ${data.childBirthDate ? `<tr><td style="padding: 8px 0; color: #4b5563;">Child Date of Birth</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.childBirthDate}</td></tr>` : ''}
             <tr><td style="padding: 8px 0; color: #4b5563;">Start Date</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.startDate}</td></tr>
             <tr><td style="padding: 8px 0; color: #4b5563;">Expires</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.expiryDate}</td></tr>
-            <tr><td style="padding: 8px 0; color: #4b5563;">Allowed Visits Per Month</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b; font-weight: bold;">${data.visitsPerMonth ?? 'Unlimited'}</td></tr>
-            <tr><td style="padding: 8px 0; color: #4b5563;">Guest Passes Per Month</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.guestPassesPerMonth ?? '0'}</td></tr>
-            ${data.discountPercent ? `<tr><td style="padding: 8px 0; color: #4b5563;">Discount on Extras</td><td style="padding: 8px 0; text-align: right; color: #22c55e; font-weight: bold;">${data.discountPercent}% off</td></tr>` : ''}
+            <tr><td style="padding: 8px 0; color: #4b5563;">Duration</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.durationMonths ?? 1} month${(data.durationMonths ?? 1) > 1 ? 's' : ''} (30 days)</td></tr>
+            ${data.maxChildren ? `<tr><td style="padding: 8px 0; color: #4b5563;">Included</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.maxChildren} Kid${data.maxChildren > 1 ? 's' : ''} + ${data.maxAdults ?? data.maxChildren} Adult${(data.maxAdults ?? data.maxChildren) > 1 ? 's' : ''}</td></tr>` : ''}
+            <tr><td style="padding: 8px 0; color: #4b5563;">Visits Per Month</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b; font-weight: bold;">${data.visitsPerMonth ?? 'Unlimited'}</td></tr>
             <tr><td style="padding: 8px 0; color: #4b5563;">Monthly Price</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">$${data.monthlyPrice.toFixed(2)}</td></tr>
             <tr><td style="padding: 8px 0; color: #4b5563;">Auto-Renew</td><td style="padding: 8px 0; text-align: right; color: #1e1b4b;">${data.autoRenew ? 'Yes' : 'No'}</td></tr>
           </table>
@@ -724,13 +801,25 @@ export async function sendMembershipConfirmation(data: MembershipEmailData): Pro
 
         ${benefitsHtml}
 
+        ${data.loginPassword ? `
+        <div style="background: #eff6ff; border: 1px solid #3b82f6; padding: 20px; border-radius: 12px; margin: 20px 0;">
+          <h3 style="color: #1e40af; font-size: 16px; margin: 0 0 12px 0;">Your Login Credentials</h3>
+          <p style="color: #4b5563; margin: 0 0 8px 0;">You can log in to your Playfunia account to manage your membership, check in, and more.</p>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr><td style="padding: 6px 0; color: #4b5563; font-weight: bold;">Email:</td><td style="padding: 6px 0; color: #1e1b4b;">${data.email}</td></tr>
+            <tr><td style="padding: 6px 0; color: #4b5563; font-weight: bold;">Password:</td><td style="padding: 6px 0; color: #1e1b4b;">${escapeHtml(data.loginPassword)}</td></tr>
+          </table>
+          <p style="color: #6b7280; font-size: 12px; margin: 10px 0 0 0;">We recommend changing your password after your first login.</p>
+        </div>
+        ` : ''}
+
         ${receiptInfoHtml}
         <p style="color: #6b7280; font-size: 14px; margin-top: 20px;">Enjoy unlimited fun with your membership! See you at Playfunia!</p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
         <p style="color: #9ca3af; font-size: 12px; text-align: center;">Playfunia - Where fun happens!</p>
       </div>
     `,
-    text: `Welcome to Playfunia ${data.tierName}!\n\nHi ${data.customerName},\n\nYour membership is now active.\n\nMembership Tier: ${data.tierName}\nStart Date: ${data.startDate}\nExpires: ${data.expiryDate}\nAllowed Visits Per Month: ${data.visitsPerMonth ?? 'Unlimited'}\nGuest Passes Per Month: ${data.guestPassesPerMonth ?? '0'}${data.discountPercent ? `\nDiscount on Extras: ${data.discountPercent}% off` : ''}\nMonthly Price: $${data.monthlyPrice.toFixed(2)}\nAuto-Renew: ${data.autoRenew ? 'Yes' : 'No'}${data.subtotal !== undefined && data.taxAmount !== undefined && data.total !== undefined ? `\n\nPayment Summary:\nSubtotal${data.durationMonths ? ` (${data.durationMonths} month${data.durationMonths > 1 ? 's' : ''})` : ''}: $${data.subtotal.toFixed(2)}\nTax${data.taxRate ? ` (${data.taxRate}%)` : ''}: $${data.taxAmount.toFixed(2)}\nTotal Paid: $${data.total.toFixed(2)}` : ''}${benefitsText}${data.receiptNumber ? `\n\nReceipt #${data.receiptNumber} is attached.` : ''}\n\nSee you at Playfunia!`,
+    text: `Welcome to Playfunia ${data.tierName}!\n\nHi ${data.customerName},\n\nYour membership is now active.\n\nMembership Tier: ${data.tierName}\nStart Date: ${data.startDate}\nExpires: ${data.expiryDate}\nAllowed Visits Per Month: ${data.visitsPerMonth ?? 'Unlimited'}\nGuest Passes Per Month: ${data.guestPassesPerMonth ?? '0'}${data.discountPercent ? `\nDiscount on Extras: ${data.discountPercent}% off` : ''}\nMonthly Price: $${data.monthlyPrice.toFixed(2)}\nAuto-Renew: ${data.autoRenew ? 'Yes' : 'No'}${data.subtotal !== undefined && data.taxAmount !== undefined && data.total !== undefined ? `\n\nPayment Summary:\nSubtotal${data.durationMonths ? ` (${data.durationMonths} month${data.durationMonths > 1 ? 's' : ''})` : ''}: $${data.subtotal.toFixed(2)}\nTax${data.taxRate ? ` (${data.taxRate}%)` : ''}: $${data.taxAmount.toFixed(2)}\nTotal Paid: $${data.total.toFixed(2)}` : ''}${benefitsText}${data.loginPassword ? `\n\nYour Login Credentials:\nEmail: ${data.email}\nPassword: ${data.loginPassword}\nPlease change your password after first login.` : ''}${data.receiptNumber ? `\n\nReceipt #${data.receiptNumber} is attached.` : ''}\n\nSee you at Playfunia!`,
     attachments: attachments.length > 0 ? attachments : undefined,
   });
 }
@@ -865,7 +954,8 @@ export async function sendContactInquiry(data: ContactInquiryEmailData): Promise
     : '';
 
   return sendEmail({
-    to: ADMIN_EMAILS,
+    to: CONTACT_INBOX_EMAILS,
+    replyTo: `"${data.name}" <${data.email}>`,
     subject: `New Contact Inquiry from ${safeName}`,
     html: `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -885,12 +975,12 @@ export async function sendContactInquiry(data: ContactInquiryEmailData): Promise
           </table>
         </div>
 
-        <p style="color: #6b7280; font-size: 14px;">Please respond to this inquiry within one business day.</p>
+        <p style="color: #6b7280; font-size: 14px;">Please respond to this inquiry within one business day. Hitting <strong>Reply</strong> will send your response directly to the customer.</p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
         <p style="color: #9ca3af; font-size: 12px; text-align: center;">This message was sent from the Playfunia website contact form.</p>
       </div>
     `,
-    text: `New Contact Inquiry\n\nName: ${data.name}\nEmail: ${data.email}${data.preferredDate ? `\nPreferred Date: ${data.preferredDate}` : ''}${data.message ? `\n\nMessage:\n${data.message}` : ''}\n\nPlease respond within one business day.`,
+    text: `New Contact Inquiry\n\nName: ${data.name}\nEmail: ${data.email}${data.preferredDate ? `\nPreferred Date: ${data.preferredDate}` : ''}${data.message ? `\n\nMessage:\n${data.message}` : ''}\n\nPlease respond within one business day. Hitting Reply will send your response directly to the customer.`,
   });
 }
 
@@ -1651,7 +1741,7 @@ export async function sendWaiverConfirmation(data: WaiverConfirmationEmailData):
 
   return sendEmail({
     to: data.email,
-    bcc: ADMIN_EMAILS,
+    bcc: WAIVER_ADMIN_EMAILS,
     subject: `Waiver Confirmation - ${safeCode}`,
     html: `
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -1698,5 +1788,109 @@ export async function sendWaiverConfirmation(data: WaiverConfirmationEmailData):
     `,
     text: `Hi ${data.guardianName}! Your Playfunia waiver has been confirmed.\n\nWaiver Reference: ${data.waiverCode}\nDate & Time: ${formattedDate}\nLocation: ${data.location}\nChildren (${data.childCount}): ${childNamesText}\n\nIMPORTANT: Waivers must be completed on the same day as your visit. Please show your waiver code ${data.waiverCode} to staff at the door.\n\nPlayfunia - Where fun happens!`,
     ...(attachments.length > 0 ? { attachments } : {}),
+  });
+}
+
+// ============= Membership Expiration Reminders =============
+
+interface MembershipExpirationReminderData {
+  email: string;
+  customerName: string;
+  tierName: string;
+  expirationDate: string;
+  daysRemaining: number;
+  autoRenew: boolean;
+  displayId?: string;
+}
+
+export async function sendMembershipExpirationReminder(data: MembershipExpirationReminderData): Promise<boolean> {
+  const safeName = escapeHtml(data.customerName);
+  const safeTier = escapeHtml(data.tierName);
+  const safeDate = escapeHtml(data.expirationDate);
+  const safeDisplayId = data.displayId ? escapeHtml(data.displayId) : '';
+
+  const urgencyColor = data.daysRemaining === 0 ? '#dc2626' : data.daysRemaining === 1 ? '#f59e0b' : '#3b82f6';
+  const urgencyText = data.daysRemaining === 0 ? 'expires today'
+    : data.daysRemaining === 1 ? 'expires tomorrow'
+    : `expires in ${data.daysRemaining} days`;
+
+  const renewalNote = data.autoRenew
+    ? `<p style="color: #059669; font-size: 14px;">Auto-renew is <strong>enabled</strong>. Visit Playfunia to renew your membership and continue enjoying benefits.</p>`
+    : `<p style="color: #dc2626; font-size: 14px;">Auto-renew is <strong>disabled</strong>. Renew your membership to keep your benefits!</p>`;
+
+  return sendEmail({
+    to: data.email,
+    bcc: ADMIN_EMAILS || undefined,
+    subject: `Your Playfunia ${safeTier} membership ${urgencyText}`,
+    html: `
+      <div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+        <div style="background: linear-gradient(135deg, ${urgencyColor}, #7c3aed); padding: 30px; border-radius: 16px 16px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">Membership Expiring Soon</h1>
+          <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0; font-size: 16px;">Your ${safeTier} ${urgencyText}</p>
+        </div>
+
+        <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 16px 16px;">
+          <p style="font-size: 16px; color: #374151;">Hi ${safeName},</p>
+          <p style="font-size: 14px; color: #6b7280;">This is a friendly reminder that your Playfunia membership is coming up for renewal.</p>
+
+          <div style="background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin: 20px 0;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Plan</td><td style="padding: 8px 0; text-align: right; font-weight: 600; color: #111827;">${safeTier}</td></tr>
+              ${safeDisplayId ? `<tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Membership ID</td><td style="padding: 8px 0; text-align: right; font-weight: 600; color: #111827;">${safeDisplayId}</td></tr>` : ''}
+              <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Expiration Date</td><td style="padding: 8px 0; text-align: right; font-weight: 600; color: ${urgencyColor};">${safeDate}</td></tr>
+              <tr><td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Auto-Renew</td><td style="padding: 8px 0; text-align: right; font-weight: 600; color: #111827;">${data.autoRenew ? 'Enabled' : 'Disabled'}</td></tr>
+            </table>
+          </div>
+
+          ${renewalNote}
+
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="https://playfunia.com/memberships" style="background: linear-gradient(135deg, #7c3aed, #a855f7); color: white; padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block;">Renew Membership</a>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">Playfunia - Where fun happens!</p>
+        </div>
+      </div>
+    `,
+    text: `Hi ${data.customerName}! Your Playfunia ${data.tierName} membership ${urgencyText}. Expiration date: ${data.expirationDate}. ${data.autoRenew ? 'Auto-renew is enabled.' : 'Auto-renew is disabled. Visit playfunia.com/memberships to renew.'} Playfunia - Where fun happens!`,
+  });
+}
+
+interface MembershipExpiredNoticeData {
+  email: string;
+  customerName: string;
+  tierName: string;
+  displayId?: string;
+}
+
+export async function sendMembershipExpiredNotice(data: MembershipExpiredNoticeData): Promise<boolean> {
+  const safeName = escapeHtml(data.customerName);
+  const safeTier = escapeHtml(data.tierName);
+
+  return sendEmail({
+    to: data.email,
+    bcc: ADMIN_EMAILS || undefined,
+    subject: `Your Playfunia ${safeTier} membership has expired`,
+    html: `
+      <div style="max-width: 600px; margin: 0 auto; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #dc2626, #7c3aed); padding: 30px; border-radius: 16px 16px 0 0; text-align: center;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">Membership Expired</h1>
+        </div>
+
+        <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 16px 16px;">
+          <p style="font-size: 16px; color: #374151;">Hi ${safeName},</p>
+          <p style="font-size: 14px; color: #6b7280;">Your Playfunia <strong>${safeTier}</strong> membership has expired. We'd love to have you back!</p>
+
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="https://playfunia.com/memberships" style="background: linear-gradient(135deg, #7c3aed, #a855f7); color: white; padding: 14px 32px; border-radius: 12px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block;">Get a New Membership</a>
+          </div>
+
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          <p style="color: #9ca3af; font-size: 12px; text-align: center;">Playfunia - Where fun happens!</p>
+        </div>
+      </div>
+    `,
+    text: `Hi ${data.customerName}! Your Playfunia ${data.tierName} membership has expired. Visit playfunia.com/memberships to get a new one. Playfunia - Where fun happens!`,
   });
 }

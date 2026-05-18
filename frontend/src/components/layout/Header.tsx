@@ -52,7 +52,7 @@ export function Header() {
                 Book a Party
               </PrimaryButton>
               <PrimaryButton to="/buy-ticket" className={styles.ctaSecondary}>
-                Buy Tickets
+                Buy Ticket
               </PrimaryButton>
               <PrimaryButton to="/account" className={styles.accountButton}>
                 {user ? 'Account' : 'Sign in'}
@@ -79,7 +79,8 @@ export function Header() {
           </div>
         </div>
 
-        <nav className={`${styles.nav} ${open ? styles.navOpen : ''}`}>
+        {/* Nav links — always visible, scrollable on mobile */}
+        <nav className={styles.nav}>
           {navLinks.map((link) => (
             <NavLink
               key={link.label}
@@ -87,28 +88,29 @@ export function Header() {
               className={({ isActive }) =>
                 `${styles.navLink} ${isActive ? styles.activeLink : ''}`.trim()
               }
-              onClick={closeMenu}
             >
               {link.label}
             </NavLink>
           ))}
-          <div className={styles.mobileCtas}>
-            <PrimaryButton to="/book-party" onClick={closeMenu}>
-              Book a Party
-            </PrimaryButton>
-            <PrimaryButton to="/buy-ticket" onClick={closeMenu}>
-              Buy Tickets
-            </PrimaryButton>
-            <PrimaryButton to="/account" onClick={closeMenu}>
-              {user ? 'Account' : 'Sign in'}
-            </PrimaryButton>
-            {isTeamMember && (
-              <PrimaryButton to="/admin" onClick={closeMenu} className={styles.adminButton}>
-                Admin
-              </PrimaryButton>
-            )}
-          </div>
         </nav>
+
+        {/* Mobile CTA drawer — toggled by hamburger */}
+        <div className={`${styles.mobileDrawer} ${open ? styles.drawerOpen : ''}`}>
+          <PrimaryButton to="/book-party" onClick={closeMenu} className={styles.drawerBtn}>
+            Book a Party
+          </PrimaryButton>
+          <PrimaryButton to="/buy-ticket" onClick={closeMenu} className={styles.drawerBtn}>
+            Buy Tickets
+          </PrimaryButton>
+          <PrimaryButton to="/account" onClick={closeMenu} className={styles.drawerBtn}>
+            {user ? 'Account' : 'Sign in'}
+          </PrimaryButton>
+          {isTeamMember && (
+            <PrimaryButton to="/admin" onClick={closeMenu} className={styles.adminButton}>
+              Admin
+            </PrimaryButton>
+          )}
+        </div>
       </div>
     </header>
   );

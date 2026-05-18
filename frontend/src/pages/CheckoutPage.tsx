@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { PrimaryButton } from "../components/common/PrimaryButton";
 import { SquarePaymentForm } from "../components/checkout/SquarePaymentForm";
@@ -18,6 +18,7 @@ import {
 } from "../api/square";
 import type { CheckoutSummary } from "../api/checkout";
 import { useAuth } from "../context/AuthContext";
+import { MEMBERSHIP_REFUND_POLICY_ITEMS } from "../data/membershipRefundPolicy";
 import styles from "./CheckoutPage.module.css";
 
 // Booking payment state no longer needed - bookings go through cart checkout
@@ -39,9 +40,13 @@ export function CheckoutPage() {
   const { items, removeItem, clear, markTicketFulfilled, markMembershipActivated } =
     useCheckout();
   const location = useLocation();
+  const navigate = useNavigate();
   const [status, setStatus] = useState<string | null>(null);
   const [cartPayment, setCartPayment] = useState<CartPaymentState>({ loading: false });
   const [, setSquareAvailable] = useState(false);
+  const [refundPolicyAccepted, setRefundPolicyAccepted] = useState(false);
+  const [refundPolicyAcceptedAt, setRefundPolicyAcceptedAt] = useState<string | null>(null);
+  const [showRefundPolicy, setShowRefundPolicy] = useState(false);
 
   // Check if Square is available on mount
   useEffect(() => {
@@ -71,6 +76,7 @@ export function CheckoutPage() {
     ],
     [ticketItems, membershipItems],
   );
+  const hasMembershipItems = membershipItems.some(item => item.status !== "activated");
 
   const isEmpty = items.length === 0;
 
@@ -79,6 +85,14 @@ export function CheckoutPage() {
       setStatus("Cart updated. Review and complete checkout below.");
     }
   }, [location.state]);
+
+  // Memberships require the parent + child info collection form on /cart.
+  // Redirect any memberships landing on this legacy page to the cart flow.
+  useEffect(() => {
+    if (membershipItems.some(item => item.status !== "activated")) {
+      navigate("/cart", { replace: true });
+    }
+  }, [membershipItems, navigate]);
 
   const totalBookingsDueNow = bookingItems
     .filter(item => item.status === "pending")
@@ -104,28 +118,25 @@ export function CheckoutPage() {
       setStatus("Please complete the waiver before paying.");
       return;
     }
+    if (hasMembershipItems && !refundPolicyAccepted) {
+      setStatus("You must agree to the Refund Policy to continue.");
+      return;
+    }
 
     setCartPayment({ loading: true });
     try {
+      // Memberships redirect to /cart for the full info-collection flow, so this
+      // legacy page only ever submits ticket items to the Square checkout API.
       const payload = {
-        items: payableItems.map(item =>
-          item.type === "ticket"
-            ? {
-              type: "ticket" as const,
-              label: item.label,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              metadata: { cartId: item.id },
-            }
-            : {
-              type: "membership" as const,
-              label: item.label,
-              membershipId: item.membershipId,
-              durationMonths: item.durationMonths,
-              autoRenew: item.autoRenew,
-              unitPrice: item.total,
-            },
-        ),
+        items: payableItems
+          .filter((item): item is TicketCartItem => item.type === "ticket")
+          .map(item => ({
+            type: "ticket" as const,
+            label: item.label,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            metadata: { cartId: item.id },
+          })),
       };
 
       const intent = await createSquareCheckoutIntent(payload);
@@ -150,27 +161,20 @@ export function CheckoutPage() {
   const handleSquarePaymentSuccess = async (sourceId: string, verificationToken?: string) => {
     if (payableItems.length === 0) return;
     try {
+      // Memberships redirect to /cart for the full info-collection flow, so this
+      // legacy page only ever submits ticket items to the Square checkout API.
       const payload = {
         sourceId,
         verificationToken,
-        items: payableItems.map(item =>
-          item.type === "ticket"
-            ? {
-              type: "ticket" as const,
-              label: item.label,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              metadata: { cartId: item.id },
-            }
-            : {
-              type: "membership" as const,
-              label: item.label,
-              membershipId: item.membershipId,
-              durationMonths: item.durationMonths,
-              autoRenew: item.autoRenew,
-              unitPrice: item.total,
-            },
-        ),
+        items: payableItems
+          .filter((item): item is TicketCartItem => item.type === "ticket")
+          .map(item => ({
+            type: "ticket" as const,
+            label: item.label,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            metadata: { cartId: item.id },
+          })),
       };
 
       const result = await finalizeSquareCheckout(payload);
@@ -373,10 +377,22 @@ export function CheckoutPage() {
               </div>
             )}
             {cartSubtotal > 0 && (
-              <div>
-                <dt>Tickets & memberships</dt>
-                <dd>{formatCurrency(orderSummary?.total ?? cartSubtotal)}</dd>
-              </div>
+              <>
+                <div>
+                  <dt>Subtotal</dt>
+                  <dd>{formatCurrency(orderSummary?.subtotal ?? cartSubtotal)}</dd>
+                </div>
+                {orderSummary?.taxAmount != null && orderSummary.taxAmount > 0 && (
+                  <div>
+                    <dt>Tax ({orderSummary.taxRate ?? 8}%)</dt>
+                    <dd>{formatCurrency(orderSummary.taxAmount)}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt><strong>Total</strong></dt>
+                  <dd><strong>{formatCurrency(orderSummary?.total ?? cartSubtotal)}</strong></dd>
+                </div>
+              </>
             )}
           </dl>
 
@@ -385,6 +401,49 @@ export function CheckoutPage() {
             <p className={styles.success}>Receipt sent to {cartPayment.receiptEmail}</p>
           ) : null}
 
+
+          {hasMembershipItems && !cartPayment.squareReady ? (
+            <div className={styles.refundPolicySection}>
+              <label className={styles.refundPolicyCheckbox}>
+                <input
+                  type="checkbox"
+                  checked={refundPolicyAccepted}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setRefundPolicyAccepted(checked);
+                    setRefundPolicyAcceptedAt(checked ? new Date().toISOString() : null);
+                  }}
+                />
+                <span>
+                  I have read and agree to the{" "}
+                  <button
+                    type="button"
+                    className={styles.refundPolicyLink}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setShowRefundPolicy(prev => !prev);
+                    }}
+                  >
+                    Refund Policy
+                  </button>
+                </span>
+              </label>
+              {showRefundPolicy ? (
+                <div className={styles.refundPolicyContent}>
+                  <h4>Membership Refund Policy</h4>
+                  <p className={styles.refundPolicyIntro}>
+                    All membership purchases are final. By purchasing a membership, you agree to the following terms:
+                  </p>
+                  <ul className={styles.refundPolicyList}>
+                    {MEMBERSHIP_REFUND_POLICY_ITEMS.map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {payableItems.length > 0 ? (
             cartPayment.squareReady ? (
@@ -397,7 +456,7 @@ export function CheckoutPage() {
                 onSuccess={handleSquarePaymentSuccess}
               />
             ) : (
-              <PrimaryButton type="button" onClick={prepareCartPayment} disabled={!hasValidWaiver || cartPayment.loading}>
+              <PrimaryButton type="button" onClick={prepareCartPayment} disabled={!hasValidWaiver || cartPayment.loading || (hasMembershipItems && !refundPolicyAccepted)}>
                 {cartPayment.loading ? "Preparing..." : hasValidWaiver ? "Prepare secure payment" : "Waiver required"}
               </PrimaryButton>
             )

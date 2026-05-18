@@ -56,7 +56,7 @@ export function EventsCalendar({ events, isLoading }: Props) {
 
 function groupEventsByMonth(events: EventItem[]) {
   return events.reduce<Record<string, EventItem[]>>((acc, event) => {
-    const key = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(new Date(event.startDate));
+    const key = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "America/New_York" }).format(new Date(event.startDate));
     if (!acc[key]) acc[key] = [];
     acc[key].push(event);
     acc[key].sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
@@ -69,8 +69,8 @@ function formatDateRange(start: string, end: string) {
   const endDate = new Date(end);
   const sameDay = startDate.toDateString() === endDate.toDateString();
 
-  const dateFormatter = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" });
-  const timeFormatter = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+  const dateFormatter = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "America/New_York" });
+  const timeFormatter = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
 
   if (sameDay) {
     return `${dateFormatter.format(startDate)} at ${timeFormatter.format(startDate)} - ${timeFormatter.format(endDate)}`;

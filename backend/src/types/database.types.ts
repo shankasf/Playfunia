@@ -421,6 +421,8 @@ export interface Database {
           redemptions: number | null;
           is_active: boolean | null;
           created_at: string | null;
+          applies_to: string[] | null;
+          min_purchase_usd: number | null;
         };
         Insert: {
           promotion_id?: number;
@@ -434,6 +436,8 @@ export interface Database {
           redemptions?: number | null;
           is_active?: boolean | null;
           created_at?: string | null;
+          applies_to?: string[] | null;
+          min_purchase_usd?: number | null;
         };
         Update: {
           promotion_id?: number;
@@ -447,6 +451,8 @@ export interface Database {
           redemptions?: number | null;
           is_active?: boolean | null;
           created_at?: string | null;
+          applies_to?: string[] | null;
+          min_purchase_usd?: number | null;
         };
       };
       users: {
@@ -516,6 +522,8 @@ export interface Database {
           allergies: string | null;
           notes: string | null;
           membership_tier: string | null;
+          photo_url: string | null;
+          photo_storage_path: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -529,6 +537,8 @@ export interface Database {
           allergies?: string | null;
           notes?: string | null;
           membership_tier?: string | null;
+          photo_url?: string | null;
+          photo_storage_path?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -542,6 +552,8 @@ export interface Database {
           allergies?: string | null;
           notes?: string | null;
           membership_tier?: string | null;
+          photo_url?: string | null;
+          photo_storage_path?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -589,6 +601,7 @@ export interface Database {
           monthly_price: number;
           benefits: string[] | null;
           max_children: number | null;
+          max_adults: number | null;
           visits_per_month: number | null;
           discount_percent: number | null;
           guest_passes_per_month: number | null;
@@ -603,6 +616,7 @@ export interface Database {
           monthly_price: number;
           benefits?: string[] | null;
           max_children?: number | null;
+          max_adults?: number | null;
           visits_per_month?: number | null;
           discount_percent?: number | null;
           guest_passes_per_month?: number | null;
@@ -617,6 +631,7 @@ export interface Database {
           monthly_price?: number;
           benefits?: string[] | null;
           max_children?: number | null;
+          max_adults?: number | null;
           visits_per_month?: number | null;
           discount_percent?: number | null;
           guest_passes_per_month?: number | null;
@@ -639,6 +654,13 @@ export interface Database {
           visits_used_this_period: number | null;
           visit_period_start: string | null;
           last_visit_at: string | null;
+          display_id: string | null;
+          grace_period_end: string | null;
+          first_used_at: string | null;
+          referral_name: string | null;
+          referral_normalized: string | null;
+          referral_status: string | null;
+          matched_staff_user_id: number | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -655,6 +677,13 @@ export interface Database {
           visits_used_this_period?: number | null;
           visit_period_start?: string | null;
           last_visit_at?: string | null;
+          display_id?: string | null;
+          grace_period_end?: string | null;
+          first_used_at?: string | null;
+          referral_name?: string | null;
+          referral_normalized?: string | null;
+          referral_status?: string | null;
+          matched_staff_user_id?: number | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -671,6 +700,13 @@ export interface Database {
           visits_used_this_period?: number | null;
           visit_period_start?: string | null;
           last_visit_at?: string | null;
+          display_id?: string | null;
+          grace_period_end?: string | null;
+          first_used_at?: string | null;
+          referral_name?: string | null;
+          referral_normalized?: string | null;
+          referral_status?: string | null;
+          matched_staff_user_id?: number | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -707,6 +743,47 @@ export interface Database {
           created_at?: string | null;
         };
       };
+      membership_visits: {
+        Row: {
+          visit_id: number;
+          membership_id: number;
+          checked_in_at: string;
+          children_count: number;
+          adults_count: number;
+          extra_children: number;
+          extra_adults: number;
+          extra_charge: number;
+          checked_in_by: number | null;
+          notes: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          visit_id?: number;
+          membership_id: number;
+          checked_in_at?: string;
+          children_count?: number;
+          adults_count?: number;
+          extra_children?: number;
+          extra_adults?: number;
+          extra_charge?: number;
+          checked_in_by?: number | null;
+          notes?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          visit_id?: number;
+          membership_id?: number;
+          checked_in_at?: string;
+          children_count?: number;
+          adults_count?: number;
+          extra_children?: number;
+          extra_adults?: number;
+          extra_charge?: number;
+          checked_in_by?: number | null;
+          notes?: string | null;
+          created_at?: string | null;
+        };
+      };
       orders: {
         Row: {
           order_id: number;
@@ -719,6 +796,8 @@ export interface Database {
           tax_usd: number;
           total_usd: number;
           notes: string | null;
+          promotion_id: number | null;
+          coupon_code: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -733,6 +812,8 @@ export interface Database {
           tax_usd?: number;
           total_usd?: number;
           notes?: string | null;
+          promotion_id?: number | null;
+          coupon_code?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -747,6 +828,8 @@ export interface Database {
           tax_usd?: number;
           total_usd?: number;
           notes?: string | null;
+          promotion_id?: number | null;
+          coupon_code?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -1498,6 +1581,10 @@ export interface Database {
           created_at: string | null;
           reference_type: string | null;
           reference_id: number | null;
+          provider_message_sid: string | null;
+          delivery_status: string | null;
+          delivery_error_code: string | null;
+          delivery_updated_at: string | null;
         };
         Insert: {
           id?: number;
@@ -1515,6 +1602,10 @@ export interface Database {
           created_at?: string | null;
           reference_type?: string | null;
           reference_id?: number | null;
+          provider_message_sid?: string | null;
+          delivery_status?: string | null;
+          delivery_error_code?: string | null;
+          delivery_updated_at?: string | null;
         };
         Update: {
           id?: number;
@@ -1532,6 +1623,10 @@ export interface Database {
           created_at?: string | null;
           reference_type?: string | null;
           reference_id?: number | null;
+          provider_message_sid?: string | null;
+          delivery_status?: string | null;
+          delivery_error_code?: string | null;
+          delivery_updated_at?: string | null;
         };
       };
       refunds: {
@@ -1802,6 +1897,7 @@ export type Event = Database['public']['Tables']['events']['Row'];
 export type MembershipPlan = Database['public']['Tables']['membership_plans']['Row'];
 export type Membership = Database['public']['Tables']['memberships']['Row'];
 export type MembershipReminder = Database['public']['Tables']['membership_reminders']['Row'];
+export type MembershipVisit = Database['public']['Tables']['membership_visits']['Row'];
 export type Order = Database['public']['Tables']['orders']['Row'];
 export type PartyBooking = Database['public']['Tables']['party_bookings']['Row'];
 export type OrderItem = Database['public']['Tables']['order_items']['Row'];

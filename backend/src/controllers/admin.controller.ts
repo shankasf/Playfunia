@@ -2,7 +2,9 @@ import type { Request, Response } from 'express';
 import { DateTime } from 'luxon';
 
 import * as AdminService from '../services/admin.service';
-import { recordMembershipVisitByMembershipId } from '../services/membership.service';
+import { recordMembershipVisitByMembershipId, getMembershipDetails } from '../services/membership.service';
+import type { SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
+import { MembershipPlanRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { asyncHandler } from '../utils/async-handler';
 import {
@@ -22,7 +24,11 @@ import {
   adminMembershipPlanUpdateSchema,
   adminWaiverUpdateSchema,
   adminJobApplicationStatusUpdateSchema,
+  adminJobApplicationUpdateSchema,
+  adminJobListingCreateSchema,
+  adminJobListingUpdateSchema,
 } from '../schemas/admin.schema';
+import { adminCreateBookingSchema } from '../schemas/booking.schema';
 
 // ============= Helper Functions =============
 function parseIntParam(value: string | undefined): number {
@@ -308,65 +314,178 @@ export const deleteMembershipPlanHandler = asyncHandler(async (req, res) => {
 
 // ============= Customer Memberships CRUD =============
 
-// Define membership tier info for transformation
-const MEMBERSHIP_TIERS: Record<string, { name: string; discountPercent: number; guestPassesPerMonth: number; visitsPerMonth: number | null }> = {
-  explorer: { name: 'Silver', discountPercent: 5, guestPassesPerMonth: 1, visitsPerMonth: 8 },
-  adventurer: { name: 'Gold', discountPercent: 10, guestPassesPerMonth: 2, visitsPerMonth: 12 },
-  champion: { name: 'Platinum', discountPercent: 15, guestPassesPerMonth: 3, visitsPerMonth: 16 },
+// Tier code to plan name mapping (structural domain model, not pricing data)
+const REVERSE_TIER_MAP: Record<string, string[]> = {
+  'explorer': ['Silver'],
+  'adventurer': ['Gold'],
+  'champion': ['Platinum', 'VIP Platinum'],
+  'mini': ['Mini Plan'],
+  'super': ['Super Plan'],
+  'mega': ['Mega Plan'],
 };
 
-// Transform DB membership to frontend format
-function transformMembership(m: Record<string, unknown>): Record<string, unknown> {
+// Plan info type used by buildPlansMap and transformMembership
+type PlanInfo = {
+  name: string;
+  discount_percent: number;
+  guest_passes_per_month: number;
+  visits_per_month: number | null;
+  max_children: number | null;
+  max_adults: number | null;
+};
+
+// Transform DB membership to frontend format using DB plan data
+function transformMembership(
+  m: Record<string, unknown>,
+  plansMap: Map<string, PlanInfo>,
+): Record<string, unknown> {
   const customer = m.customers as Record<string, unknown> | null;
   const tier = (m.tier as string) ?? 'explorer';
-  const tierInfo = MEMBERSHIP_TIERS[tier] ?? MEMBERSHIP_TIERS.explorer!;
-  
-  const visitsPerMonth = (m.visits_per_month as number | null) ?? tierInfo!.visitsPerMonth;
+
+  // Look up plan info from DB plans map
+  const planNames = REVERSE_TIER_MAP[tier] ?? [];
+  let planInfo: PlanInfo | undefined;
+  for (const name of planNames) {
+    if (plansMap.has(name)) {
+      planInfo = plansMap.get(name);
+      break;
+    }
+  }
+
+  // Also try direct plan name from joined membership_plans
+  if (!planInfo) {
+    const joinedPlan = m.membership_plans as Record<string, unknown> | null;
+    const joinedPlanName = joinedPlan?.name as string | undefined;
+    if (joinedPlanName && plansMap.has(joinedPlanName)) {
+      planInfo = plansMap.get(joinedPlanName);
+    }
+  }
+
+  const tierName = planInfo?.name ?? tier;
+  const discountPercent = planInfo?.discount_percent ?? 0;
+  const guestPassesPerMonth = planInfo?.guest_passes_per_month ?? 0;
+
+  const visitsPerMonth = (m.visits_per_month as number | null) ?? planInfo?.visits_per_month ?? null;
   const visitsUsed = (m.visits_used_this_period as number) ?? 0;
   const visitsRemaining = visitsPerMonth !== null ? visitsPerMonth - visitsUsed : null;
-  
+
+  // Calculate remaining days from end_date
+  const endDateStr = m.end_date as string | null;
+  const status = (m.status as string) ?? 'active';
+  let remainingDays: number | null = null;
+  if (endDateStr && status === 'active') {
+    const endDt = DateTime.fromISO(endDateStr).setZone('America/New_York');
+    const nowDt = DateTime.now().setZone('America/New_York').startOf('day');
+    remainingDays = Math.max(0, Math.ceil(endDt.diff(nowDt, 'days').days));
+  }
+
+  // Extract children attached by service layer
+  const rawChildren = (m._children as Array<Record<string, unknown>>) ?? [];
+  const children = rawChildren.map(c => ({
+    id: c.child_id as number,
+    firstName: c.first_name as string,
+    lastName: (c.last_name as string | null) ?? null,
+    photoUrl: (c.photo_url as string | null) ?? null,
+  }));
+
   // Try to get user info from customer
   const fullName = customer?.full_name?.toString() ?? '';
   const nameParts = fullName.split(' ');
-  
+
   return {
     userId: String(m.customer_id ?? ''),
     firstName: nameParts[0] ?? '',
     lastName: nameParts.slice(1).join(' ') ?? '',
     email: customer?.email ?? '',
+    displayId: (m.display_id as string | null) ?? null,
+    children,
     membership: {
       membershipId: String(m.membership_id),
-      tierName: tierInfo!.name,
-      status: (m.status as string) ?? 'active',
+      tierName,
+      status,
       autoRenew: m.auto_renew ?? true,
+      startDate: (m.start_date as string | null) ?? null,
+      endDate: endDateStr ?? null,
+      remainingDays,
       visitsPerMonth,
       visitsUsed,
       visitsRemaining,
+      maxChildren: planInfo?.max_children ?? 1,
+      maxAdults: planInfo?.max_adults ?? 1,
       visitPeriodStart: m.visit_period_start?.toString() ?? null,
       lastVisitAt: m.last_visit_at?.toString() ?? null,
-      discountPercent: tierInfo!.discountPercent,
-      guestPassesPerMonth: tierInfo!.guestPassesPerMonth,
+      discountPercent,
+      guestPassesPerMonth,
+      referralName: (m.referral_name as string | null) ?? null,
+      referralStatus: (m.referral_status as string | null) ?? null,
     },
   };
+}
+
+// Build plans map from DB for membership transformation (include inactive plans for legacy memberships)
+async function buildPlansMap() {
+  const plans = await MembershipPlanRepository.findAll(false);
+  return new Map(plans.map(p => [p.name, {
+    name: p.name,
+    discount_percent: p.discount_percent ?? 0,
+    guest_passes_per_month: p.guest_passes_per_month ?? 0,
+    visits_per_month: p.visits_per_month,
+    max_children: ((p as Record<string, unknown>).max_children as number | null) ?? 1,
+    max_adults: ((p as Record<string, unknown>).max_adults as number | null) ?? 1,
+  }]));
 }
 
 export const listMembershipsHandler = asyncHandler(async (req, res) => {
   const status = req.query.status as string | undefined;
   const limit = parseInt(req.query.limit as string) || 100;
-  
-  const rawMemberships = await AdminService.listMemberships({ status, limit });
-  const memberships = rawMemberships.map((m: Record<string, unknown>) => transformMembership(m));
+
+  const [rawMemberships, plansMap] = await Promise.all([
+    AdminService.listMemberships({ status, limit }),
+    buildPlansMap(),
+  ]);
+  const memberships = rawMemberships.map((m: Record<string, unknown>) => transformMembership(m, plansMap));
   return res.status(200).json({ memberships });
 });
 
 export const getMembershipHandler = asyncHandler(async (req, res) => {
   const membershipId = parseIntParam(req.params.id);
-  const membership = await AdminService.getMembershipById(membershipId);
+  const [membership, plansMap] = await Promise.all([
+    AdminService.getMembershipById(membershipId),
+    buildPlansMap(),
+  ]);
   if (!membership) throw new AppError('Membership not found', 404);
-  return res.status(200).json({ membership: transformMembership(membership as Record<string, unknown>) });
+  return res.status(200).json({ membership: transformMembership(membership as Record<string, unknown>, plansMap) });
 });
 
 export const createMembershipHandler = asyncHandler(async (req, res) => {
+  // Check if this is a manual membership creation (has guestName field)
+  if (req.body.guestName) {
+    const { guestName, guestEmail, guestPhone, childName, password, planId, tier, durationMonths, monthlyPrice, total, paymentMethod, paymentStatus, notes } = req.body;
+    if (!planId || !tier) throw new AppError('Plan and tier are required', 400);
+    if (!guestEmail) throw new AppError('Email is required to create a user account', 400);
+    if (!password || password.length < 6) throw new AppError('Password is required (min 6 characters)', 400);
+
+    const result = await AdminService.createMembershipManually({
+      guestName,
+      guestEmail,
+      guestPhone: guestPhone || undefined,
+      childName: childName || undefined,
+      password,
+      planId: typeof planId === 'string' ? parseInt(planId, 10) : planId,
+      tier,
+      durationMonths: durationMonths || 1,
+      monthlyPrice: monthlyPrice || 0,
+      total: total || 0,
+      paymentMethod: paymentMethod || 'cash',
+      paymentStatus: paymentStatus || 'paid',
+      notes: notes || undefined,
+    });
+
+    publishAdminEvent('membership.created', { membershipId: result.membershipId, displayId: result.displayId, manual: true });
+    return res.status(201).json(result);
+  }
+
+  // Original: create from standard data
   const membership = await AdminService.createMembership(req.body);
   return res.status(201).json({ membership });
 });
@@ -394,10 +513,50 @@ export const validateMembershipHandler = asyncHandler(async (req, res) => {
   return res.status(200).json(result);
 });
 
-export const recordMembershipVisitHandler = asyncHandler(async (req, res) => {
+export const recordMembershipVisitHandler = asyncHandler(async (req: Request, res: Response) => {
   const membershipId = parseIntParam(req.params.membershipId);
-  const result = await recordMembershipVisitByMembershipId(membershipId);
+  const authReq = req as SupabaseAuthenticatedRequest;
+  const staffUserId = authReq.user?.id ? parseInt(authReq.user.id, 10) : undefined;
+  const { childrenCount, adultsCount, notes } = req.body ?? {};
+  const result = await recordMembershipVisitByMembershipId(membershipId, {
+    childrenCount: typeof childrenCount === 'number' ? childrenCount : 0,
+    adultsCount: typeof adultsCount === 'number' ? adultsCount : 0,
+    notes: typeof notes === 'string' ? notes : undefined,
+    staffUserId,
+  });
   return res.status(200).json(result);
+});
+
+// ============= Enhanced Membership Stats =============
+export const getMembershipStatsHandler = asyncHandler(async (_req, res) => {
+  const stats = await AdminService.getMembershipStats();
+  return res.status(200).json(stats);
+});
+
+export const listUnmatchedReferralsHandler = asyncHandler(async (_req, res) => {
+  const referrals = await AdminService.listUnmatchedReferrals();
+  return res.status(200).json({ referrals });
+});
+
+export const matchReferralHandler = asyncHandler(async (req, res) => {
+  const membershipId = parseIntParam(req.params.membershipId);
+  const { staffUserId } = req.body;
+  if (!staffUserId || typeof staffUserId !== 'number') {
+    throw new AppError('staffUserId is required', 400);
+  }
+  const result = await AdminService.matchReferral(membershipId, staffUserId);
+  return res.status(200).json({ membership: result });
+});
+
+export const listStaffMembersHandler = asyncHandler(async (_req, res) => {
+  const staff = await AdminService.listStaffMembers();
+  return res.status(200).json({ staff });
+});
+
+export const getStaffReferralStatsHandler = asyncHandler(async (req, res) => {
+  const userId = parseIntParam(req.params.userId);
+  const stats = await AdminService.getStaffReferralStats(userId);
+  return res.status(200).json(stats);
 });
 
 // ============= Party Packages CRUD =============
@@ -438,20 +597,24 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
   const customer = b.customers as Record<string, unknown> | null;
   const pkg = b.party_packages as Record<string, unknown> | null;
   
-  // Parse scheduled_start for date and time
+  // Parse scheduled_start for date and time in ET (America/New_York)
   let eventDate = '';
   let startTime = '';
   let endTime = '';
-  
+
   if (b.scheduled_start) {
-    const start = new Date(b.scheduled_start as string);
-    eventDate = start.toISOString().split('T')[0] ?? '';
-    startTime = start.toTimeString().slice(0, 5) ?? '';
+    const start = DateTime.fromISO(b.scheduled_start as string).setZone('America/New_York');
+    eventDate = start.toFormat('yyyy-MM-dd');
+    startTime = start.toFormat('HH:mm');
   }
-  
-  if (b.scheduled_end) {
-    const end = new Date(b.scheduled_end as string);
-    endTime = end.toTimeString().slice(0, 5) ?? '';
+
+  if (b.end_time) {
+    // Use the stored party end time (without cleaning buffer)
+    endTime = (b.end_time as string).slice(0, 5);
+  } else if (b.scheduled_end) {
+    // Fallback for older bookings: scheduled_end includes 30-min cleaning buffer
+    const end = DateTime.fromISO(b.scheduled_end as string).setZone('America/New_York').minus({ minutes: 30 });
+    endTime = end.toFormat('HH:mm');
   }
 
   // Use actual DB column names
@@ -473,12 +636,25 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
     endTime,
     guests: Number(b.guests) || 0,
     total: Number(b.total) || 0,
+    subtotal: Number(b.subtotal) || 0,
+    cleaningFee: Number(b.cleaning_fee) || 0,
     status: b.status ?? 'Pending',
     paymentStatus: b.payment_status ?? 'awaiting_deposit',
     depositAmount: depositPaid,
     balanceRemaining,
+    paymentOption: b.payment_option?.toString() ?? null,
+    onlinePaymentAmount: Number(b.online_payment_amount) || 0,
+    venuePaymentAmount: Number(b.venue_payment_amount) || 0,
     notes: b.notes ?? null,
     privateNotes: b.private_notes ?? null,
+    addOns: Array.isArray(b.add_ons) ? b.add_ons : [],
+    children: Array.isArray(b._resolvedChildren)
+      ? (b._resolvedChildren as Record<string, unknown>[]).map((c) => ({
+          name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+          birthDate: c.birth_date?.toString() ?? null,
+        }))
+      : [],
+    createdAt: b.created_at?.toString() ?? null,
     guardian: customer ? {
       firstName: customer.full_name?.toString().split(' ')[0] ?? '',
       lastName: customer.full_name?.toString().split(' ').slice(1).join(' ') ?? '',
@@ -492,6 +668,12 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
     guestName,
     guestEmail,
     guestPhone,
+    receipt: b._receipt ? {
+      receiptNumber: (b._receipt as Record<string, unknown>).receipt_number?.toString() ?? null,
+      totalUsd: Number((b._receipt as Record<string, unknown>).total_usd) || 0,
+      taxUsd: Number((b._receipt as Record<string, unknown>).tax_usd) || 0,
+      subtotalUsd: Number((b._receipt as Record<string, unknown>).subtotal_usd) || 0,
+    } : null,
   };
 }
 
@@ -510,7 +692,10 @@ export const getBookingHandler = asyncHandler(async (req, res) => {
   const bookingId = parseIntParam(req.params.id);
   const rawBooking = await AdminService.getBookingById(bookingId);
   if (!rawBooking) throw new AppError('Booking not found', 404);
-  const booking = transformBooking(rawBooking as unknown as Record<string, unknown>);
+  // Resolve children and receipt for single booking
+  let resolvedArr = await AdminService.resolveBookingChildrenPublic([rawBooking as unknown as Record<string, unknown>]);
+  resolvedArr = await AdminService.resolveBookingReceiptsPublic(resolvedArr);
+  const booking = transformBooking(resolvedArr[0] ?? rawBooking as unknown as Record<string, unknown>);
   return res.status(200).json({ booking });
 });
 
@@ -518,13 +703,20 @@ export const updateBookingHandler = asyncHandler(async (req, res) => {
   const bookingId = parseIntParam(req.params.id);
   
   // Transform frontend field names to database field names
-  const { status, eventDate, startTime, location, notes, privateNotes } = req.body as {
+  const { status, eventDate, startTime, location, notes, privateNotes,
+    guestName, guestEmail, guestPhone, guests, total, paymentStatus } = req.body as {
     status?: string;
     eventDate?: string;
     startTime?: string;
     location?: string;
     notes?: string;
     privateNotes?: string;
+    guestName?: string;
+    guestEmail?: string;
+    guestPhone?: string;
+    guests?: number;
+    total?: number;
+    paymentStatus?: string;
   };
 
   const dbUpdates: Record<string, unknown> = {};
@@ -533,6 +725,26 @@ export const updateBookingHandler = asyncHandler(async (req, res) => {
   if (notes !== undefined) dbUpdates.notes = notes;
   if (privateNotes !== undefined) dbUpdates.private_notes = privateNotes;
   if (location !== undefined) dbUpdates.location_name = location;
+  if (guestName !== undefined) dbUpdates.guest_name = guestName;
+  if (guestEmail !== undefined) dbUpdates.guest_email = guestEmail || null;
+  if (guestPhone !== undefined) dbUpdates.guest_phone = guestPhone || null;
+  if (guests !== undefined) dbUpdates.guests = guests;
+  if (total !== undefined) {
+    dbUpdates.total = total;
+    dbUpdates.subtotal = total;
+  }
+  if (paymentStatus !== undefined) {
+    dbUpdates.payment_status = paymentStatus;
+    // Auto-update deposit/balance based on payment status
+    const currentTotal = total ?? (await AdminService.getBookingById(bookingId) as any)?.total ?? 0;
+    if (paymentStatus === 'paid') {
+      dbUpdates.deposit_amount = currentTotal;
+      dbUpdates.balance_remaining = 0;
+    } else if (paymentStatus === 'awaiting_deposit' || paymentStatus === 'awaiting_full_payment') {
+      dbUpdates.deposit_amount = 0;
+      dbUpdates.balance_remaining = currentTotal;
+    }
+  }
   
   // If eventDate or startTime changed, recalculate scheduled_start/scheduled_end
   if (eventDate !== undefined || startTime !== undefined) {
@@ -550,8 +762,8 @@ export const updateBookingHandler = asyncHandler(async (req, res) => {
     }
     
     // Build new scheduled_start
-    const newDate = eventDate ?? (existingStart?.toISOString().split('T')[0] ?? '');
-    const newTime = startTime ?? (existingStart?.toTimeString().slice(0, 5) ?? '10:00');
+    const newDate = eventDate ?? (existingStart ? DateTime.fromJSDate(existingStart).setZone('America/New_York').toFormat('yyyy-MM-dd') : '');
+    const newTime = startTime ?? (existingStart ? DateTime.fromJSDate(existingStart).setZone('America/New_York').toFormat('HH:mm') : '10:00');
     
     if (newDate && newTime) {
       const newStart = DateTime.fromISO(`${newDate}T${newTime}`, { zone: 'America/New_York' });
@@ -584,6 +796,83 @@ export const deleteBookingHandler = asyncHandler(async (req, res) => {
   await AdminService.deleteBooking(bookingId);
   publishAdminEvent('booking.deleted', { bookingId });
   return res.status(200).json({ success: true });
+});
+
+// ============= Admin Manual Booking =============
+export const createManualBookingHandler = asyncHandler(async (req, res) => {
+  const validated = adminCreateBookingSchema.parse(req.body);
+
+  const packageId = parseInt(validated.partyPackageId, 10);
+  if (isNaN(packageId)) throw new AppError('Invalid package ID', 400);
+
+  const booking = await AdminService.createManualBooking({
+    packageId,
+    guestName: validated.guestName,
+    guestEmail: validated.guestEmail || undefined,
+    guestPhone: validated.guestPhone || undefined,
+    childName: validated.childName || undefined,
+    location: validated.location,
+    eventDate: validated.eventDate,
+    startTime: validated.startTime,
+    endTime: validated.endTime || undefined,
+    guests: validated.guests,
+    total: validated.total,
+    paymentMethod: validated.paymentMethod,
+    paymentStatus: validated.paymentStatus,
+    notes: validated.notes || undefined,
+    privateNotes: validated.privateNotes || undefined,
+  });
+
+  publishAdminEvent('booking.created', {
+    bookingId: (booking as any).booking_id,
+    reference: (booking as any).reference,
+    manual: true,
+    paymentMethod: validated.paymentMethod,
+  });
+
+  const transformed = transformBooking(booking as unknown as Record<string, unknown>);
+  // Include receipt info if generated
+  if ((booking as any)._receiptNumber) {
+    (transformed as any).receiptNumber = (booking as any)._receiptNumber;
+  }
+  return res.status(201).json({ booking: transformed });
+});
+
+// ============= Admin Issue Tickets =============
+export const issueTicketsHandler = asyncHandler(async (req, res) => {
+  const { guestName, guestEmail, guestPhone, ticketTypeId, quantity, unitPrice, total, paymentMethod } = req.body as {
+    guestName: string;
+    guestEmail?: string;
+    guestPhone?: string;
+    ticketTypeId?: number;
+    quantity: number;
+    unitPrice: number;
+    total: number;
+    paymentMethod: string;
+  };
+
+  if (!guestName || !quantity || quantity < 1) {
+    throw new AppError('Customer name and quantity are required', 400);
+  }
+
+  const result = await AdminService.issueTicketsManually({
+    guestName,
+    guestEmail,
+    guestPhone,
+    ticketTypeId,
+    quantity,
+    unitPrice,
+    total,
+    paymentMethod,
+  });
+
+  publishAdminEvent('ticket.created', {
+    purchaseId: result.purchaseId,
+    manual: true,
+    quantity,
+  });
+
+  return res.status(201).json(result);
 });
 
 // ============= Waiver Users CRUD =============
@@ -642,7 +931,7 @@ function transformWaiver(w: Record<string, unknown>): Record<string, unknown> {
 }
 
 export const listWaiverSubmissionsHandler = asyncHandler(async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+  const limit = Math.min(parseInt(req.query.limit as string) || 5000, 5000);
   const rawWaivers = await AdminService.listWaiverSubmissions({ limit });
   const waivers = rawWaivers.map(transformWaiver);
   return res.status(200).json({ waivers });
@@ -1073,6 +1362,7 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
   }
 
   const header = [
+    'Parent Name',
     'Guardian First Name',
     'Guardian Last Name',
     'Guardian Email',
@@ -1081,7 +1371,8 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
     'Relationship',
     ...childHeaders,
     'Digital Signature',
-    'Date Signed',
+    'Signature Image',
+    'Timestamp',
     'Expires At',
     'Archive Until',
     'Accepted Policies',
@@ -1090,6 +1381,7 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
   ];
 
   const rows = waivers.map(waiver => {
+    const parentName = `${waiver.guardian_first_name || ''} ${waiver.guardian_last_name || ''}`.trim();
     const children = (waiver.children ?? []) as Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>;
     const childData: string[] = [];
     for (let i = 0; i < maxChildren; i++) {
@@ -1104,6 +1396,7 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
     }
 
     return [
+      parentName,
       waiver.guardian_first_name ?? '',
       waiver.guardian_last_name ?? '',
       waiver.guardian_email ?? '',
@@ -1112,6 +1405,7 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
       waiver.relationship_to_minor ?? '',
       ...childData,
       waiver.digital_signature ?? '',
+      waiver.signature_image_url ?? '',
       waiver.date_signed ?? '',
       waiver.expires_at ?? '',
       waiver.archive_until ?? '',
@@ -1125,6 +1419,8 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
 
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="playfunia-waivers.csv"');
+  res.setHeader('Cache-Control', 'no-store');
+  res.removeHeader('ETag');
   return res.status(200).send(csv);
 });
 
@@ -1210,6 +1506,51 @@ export const listJobListingsForFilterHandler = asyncHandler(async (_req, res) =>
   return res.status(200).json({ listings });
 });
 
+export const updateJobApplicationHandler = asyncHandler(async (req, res) => {
+  const applicationId = parseIntParam(req.params.id);
+  const validated = adminJobApplicationUpdateSchema.parse(req.body);
+  const application = await AdminService.updateJobApplication(applicationId, validated);
+  return res.status(200).json({ application });
+});
+
+// ============= Job Listings CRUD =============
+export const listJobListingsHandler = asyncHandler(async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+  const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+  const search = req.query.search as string | undefined;
+  const isActiveParam = req.query.isActive as string | undefined;
+  const isActive = isActiveParam === 'true' ? true : isActiveParam === 'false' ? false : undefined;
+
+  const result = await AdminService.listJobListingsForAdmin({ isActive, search, limit, offset });
+  return res.status(200).json({ listings: result.data, total: result.count });
+});
+
+export const getJobListingHandler = asyncHandler(async (req, res) => {
+  const listingId = parseIntParam(req.params.id);
+  const listing = await AdminService.getJobListingById(listingId);
+  if (!listing) throw new AppError('Job listing not found', 404);
+  return res.status(200).json({ listing });
+});
+
+export const createJobListingHandler = asyncHandler(async (req, res) => {
+  const validated = adminJobListingCreateSchema.parse(req.body);
+  const listing = await AdminService.createJobListing(validated);
+  return res.status(201).json({ listing });
+});
+
+export const updateJobListingHandler = asyncHandler(async (req, res) => {
+  const listingId = parseIntParam(req.params.id);
+  const validated = adminJobListingUpdateSchema.parse(req.body);
+  const listing = await AdminService.updateJobListing(listingId, validated);
+  return res.status(200).json({ listing });
+});
+
+export const deleteJobListingHandler = asyncHandler(async (req, res) => {
+  const listingId = parseIntParam(req.params.id);
+  await AdminService.deleteJobListing(listingId);
+  return res.status(200).json({ message: 'Job listing deleted successfully' });
+});
+
 // ============= Admin Event Stream =============
 export function adminEventStreamHandler(req: Request, res: Response) {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -1260,3 +1601,66 @@ export function adminEventStreamHandler(req: Request, res: Response) {
     cleanup();
   });
 }
+
+// ============= Product Promotions CRUD =============
+export const listProductPromotionsHandler = asyncHandler(async (req, res) => {
+  const promotions = await AdminService.listProductPromotions();
+  return res.status(200).json({ promotions });
+});
+
+export const getProductPromotionHandler = asyncHandler(async (req, res) => {
+  const promotionId = parseIntParam(req.params.id);
+  const promotion = await AdminService.getProductPromotionById(promotionId);
+  if (!promotion) throw new AppError('Promotion not found', 404);
+  return res.status(200).json({ promotion });
+});
+
+export const createProductPromotionHandler = asyncHandler(async (req, res) => {
+  const promotion = await AdminService.createProductPromotion(req.body);
+  return res.status(201).json({ promotion });
+});
+
+export const updateProductPromotionHandler = asyncHandler(async (req, res) => {
+  const promotionId = parseIntParam(req.params.id);
+  const promotion = await AdminService.updateProductPromotion(promotionId, req.body);
+  return res.status(200).json({ promotion });
+});
+
+export const deleteProductPromotionHandler = asyncHandler(async (req, res) => {
+  const promotionId = parseIntParam(req.params.id);
+  await AdminService.deleteProductPromotion(promotionId);
+  return res.status(200).json({ success: true });
+});
+
+// ============= Promo Offers CRUD =============
+export const listPromoOffersHandler = asyncHandler(async (_req, res) => {
+  const offers = await AdminService.listPromoOffers();
+  return res.status(200).json({ offers });
+});
+
+export const getPromoOfferHandler = asyncHandler(async (req, res) => {
+  const offerId = parseIntParam(req.params.id);
+  const offer = await AdminService.getPromoOfferById(offerId);
+  if (!offer) throw new AppError('Promo offer not found', 404);
+  return res.status(200).json({ offer });
+});
+
+export const createPromoOfferHandler = asyncHandler(async (req, res) => {
+  const offer = await AdminService.createPromoOffer(req.body);
+  publishAdminEvent('promoOffer.created', { offerId: offer.offer_id });
+  return res.status(201).json({ offer });
+});
+
+export const updatePromoOfferHandler = asyncHandler(async (req, res) => {
+  const offerId = parseIntParam(req.params.id);
+  const offer = await AdminService.updatePromoOffer(offerId, req.body);
+  publishAdminEvent('promoOffer.updated', { offerId });
+  return res.status(200).json({ offer });
+});
+
+export const deletePromoOfferHandler = asyncHandler(async (req, res) => {
+  const offerId = parseIntParam(req.params.id);
+  await AdminService.deletePromoOffer(offerId);
+  publishAdminEvent('promoOffer.deleted', { offerId });
+  return res.status(200).json({ success: true });
+});

@@ -36,7 +36,7 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 1.75rem;
 }
 
@@ -72,6 +72,27 @@
 
 .card:hover::after {
   opacity: 1;
+}
+
+.promoBadge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #ef4444, #f97316);
+  padding: 0.3rem 0.75rem;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  align-self: flex-start;
+}
+
+.originalPrice {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+  opacity: 0.7;
 }
 
 .cardHeader {
@@ -118,9 +139,14 @@
   color: var(--color-secondary);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .card {
     padding: 2rem 1.75rem;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
   }
 }
 

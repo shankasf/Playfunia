@@ -34,6 +34,24 @@ export const squareCheckoutItemSchema = z.discriminatedUnion('type', [
     durationMonths: z.number().int().positive().max(24),
     autoRenew: z.boolean().optional(),
     unitPrice: z.number().min(MIN_UNIT_PRICE, 'Minimum price is $0.50').max(MAX_UNIT_PRICE),
+    refundPolicyAccepted: z.boolean().optional(),
+    refundPolicyAcceptedAt: z.string().datetime().optional(),
+    referralName: z.string().trim().max(100).optional(),
+    // childInfo is required for memberships. Either reference an existing child by ID
+    // (which must already have a photo on file) or provide full child details for a new
+    // child record. The service layer enforces the photo requirement after creation.
+    childInfo: z.union([
+      z.object({
+        childId: z.number().int().positive(),
+      }),
+      z.object({
+        firstName: z.string().min(1, 'Child first name is required').max(100),
+        lastName: z.string().min(1, 'Child last name is required').max(100),
+        birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Child birth date must be YYYY-MM-DD'),
+      }),
+    ]),
+    parentZipCode: z.string().trim().min(5, 'Parent ZIP code is required').max(10),
+    parentPhone: phoneSchema,
   }),
   z.object({
     type: z.literal('booking'),
@@ -88,6 +106,7 @@ export const squareCheckoutFinalizeSchema = z.object({
   sourceId: z.string().min(1), // Payment token from Square Web Payments SDK
   verificationToken: z.string().optional(), // SCA verification token if required
   reservationId: z.string().uuid().optional(), // Existing slot reservation from frontend
+  checkoutSessionId: z.string().uuid().optional(), // Checkout session ID for 5-minute timer tracking
   items: z.array(squareCheckoutItemSchema).min(1),
   promoCode: z
     .string()
@@ -122,6 +141,7 @@ export const squareGuestCheckoutFinalizeSchema = z.object({
   sourceId: z.string().min(1), // Payment token from Square Web Payments SDK
   verificationToken: z.string().optional(),
   reservationId: z.string().uuid().optional(), // Existing slot reservation from frontend
+  checkoutSessionId: z.string().uuid().optional(), // Checkout session ID for 5-minute timer tracking
   guestFirstName: z.string().min(1).max(100).regex(nameRegex, 'Name must contain only letters'),
   guestLastName: z.string().min(1).max(100).regex(nameRegex, 'Name must contain only letters'),
   guestEmail: z.string().trim().email().toLowerCase(),

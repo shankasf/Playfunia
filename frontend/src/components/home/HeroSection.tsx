@@ -20,30 +20,37 @@ export const HeroSection = memo(function HeroSection() {
 
   return (
     <section className={styles.hero} id="hero">
-      <div className={styles.videoArea}>
-        <video
-          ref={videoRef}
-          className={styles.heroVideo}
-          autoPlay
-          muted
-          loop
-          playsInline
-          src="/videos/hero-showcase.mp4"
-        />
-      </div>
-      <div className={styles.bottomBar}>
-        <div className={styles.content}>
-          <span className={styles.tag}>{greeting}</span>
-          <h1>The most fun indoor playground experience for kids ages 1-13.</h1>
-          <div className={styles.row}>
-            <p className={styles.note}>Grip socks required for play (available on-site for $3).</p>
-            <div className={styles.actions}>
-              <PrimaryButton to="/buy-ticket">Buy Tickets</PrimaryButton>
-              <PrimaryButton to="/book-party" className={styles.outlineButton}>
-                Book a Party
-              </PrimaryButton>
-            </div>
-          </div>
+      {/* Full-bleed video background */}
+      <video
+        ref={videoRef}
+        className={styles.heroVideo}
+        autoPlay
+        muted
+        loop
+        playsInline
+        src="/videos/hero-showcase.mp4"
+      />
+
+      {/* Cinematic overlays */}
+      <div className={styles.vignette} />
+      <div className={styles.gradientOverlay} />
+
+      {/* Content floating over the video */}
+      <div className={styles.content}>
+        <span className={styles.tag}>{greeting}</span>
+        <h1 className={styles.headline}>
+          The most fun indoor playground<br />experience for kids ages 1–13.
+        </h1>
+        <p className={styles.note}>
+          Grip socks required for play (available on-site for $3).
+        </p>
+        <div className={styles.actions}>
+          <PrimaryButton to="/buy-ticket" className={styles.btnPrimary}>
+            Buy Tickets
+          </PrimaryButton>
+          <PrimaryButton to="/book-party" className={styles.btnOutline}>
+            Book a Party
+          </PrimaryButton>
         </div>
       </div>
     </section>

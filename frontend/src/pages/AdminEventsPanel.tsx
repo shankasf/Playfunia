@@ -45,6 +45,7 @@ function formatDateDisplay(dateStr: string | null): string {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone: 'America/New_York',
   });
 }
 
@@ -68,6 +69,7 @@ export function AdminEventsPanel() {
   const [photosLoading, setPhotosLoading] = useState(false);
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const loadEvents = useCallback(async () => {
     setLoadState('loading');
@@ -192,7 +194,8 @@ export function AdminEventsPanel() {
 
       // Upload new photos/videos if selected
       if (photoFiles.length > 0) {
-        await uploadEventPhotos(eventId, photoFiles);
+        setUploadProgress(0);
+        await uploadEventPhotos(eventId, photoFiles, setUploadProgress);
       }
 
       await loadEvents();
@@ -239,14 +242,16 @@ export function AdminEventsPanel() {
   const handleUploadNewPhotos = async () => {
     if (!editingEvent || photoFiles.length === 0) return;
     setUploadingPhotos(true);
+    setUploadProgress(0);
     try {
-      const newPhotos = await uploadEventPhotos(editingEvent.event_id, photoFiles);
+      const newPhotos = await uploadEventPhotos(editingEvent.event_id, photoFiles, setUploadProgress);
       setEventPhotos(prev => [...prev, ...newPhotos]);
       setPhotoFiles([]);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploadingPhotos(false);
+      setUploadProgress(0);
     }
   };
 
@@ -495,20 +500,32 @@ export function AdminEventsPanel() {
 
                 <div className={styles.photoUploadRow}>
                   <input type="file" accept="image/*,video/*" multiple onChange={handlePhotoSelect} />
-                  {modalMode === 'edit' && photoFiles.length > 0 && (
+                  {modalMode === 'edit' && photoFiles.length > 0 && !uploadingPhotos && (
                     <>
                       <span>{photoFiles.length} file(s) selected</span>
                       <button
                         className={styles.uploadButton}
                         onClick={handleUploadNewPhotos}
-                        disabled={uploadingPhotos}
                       >
-                        {uploadingPhotos ? 'Uploading...' : 'Upload Now'}
+                        Upload Now
                       </button>
                     </>
                   )}
-                  {modalMode === 'create' && photoFiles.length > 0 && (
+                  {modalMode === 'create' && photoFiles.length > 0 && !saving && (
                     <span>{photoFiles.length} file(s) will be uploaded on save</span>
+                  )}
+                  {(uploadingPhotos || (saving && photoFiles.length > 0 && uploadProgress > 0)) && (
+                    <div className={styles.uploadProgressWrapper}>
+                      <div className={styles.uploadProgressBar}>
+                        <div
+                          className={styles.uploadProgressFill}
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                      <span className={styles.uploadProgressText}>
+                        Uploading... {uploadProgress}%
+                      </span>
+                    </div>
                   )}
                 </div>
               </div>

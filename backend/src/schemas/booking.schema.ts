@@ -134,3 +134,24 @@ export const rescheduleBookingSchema = z.object({
 });
 
 export type RescheduleBookingInput = z.infer<typeof rescheduleBookingSchema>;
+
+// Admin manual booking - relaxed rules (past dates allowed, no checkout required)
+export const adminCreateBookingSchema = z.object({
+  guestName: z.string().min(1).max(200),
+  guestEmail: z.string().trim().email().toLowerCase().optional().or(z.literal('')),
+  guestPhone: z.string().max(20).optional().or(z.literal('')),
+  childName: z.string().max(100).optional().or(z.literal('')),
+  partyPackageId: z.string().min(1),
+  location: z.string().min(1),
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format'),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/, 'Time must be in HH:MM format'),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/, 'Time must be in HH:MM format').optional().or(z.literal('')),
+  guests: z.number().int().positive().max(60),
+  total: z.number().min(0),
+  paymentMethod: z.enum(['cash', 'card', 'square', 'other', 'unpaid']),
+  paymentStatus: z.enum(['paid', 'awaiting_deposit', 'awaiting_full_payment', 'deposit_paid']).default('paid'),
+  notes: z.string().max(1000).optional().or(z.literal('')),
+  privateNotes: z.string().max(1000).optional().or(z.literal('')),
+});
+
+export type AdminCreateBookingInput = z.infer<typeof adminCreateBookingSchema>;

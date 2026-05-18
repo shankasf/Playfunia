@@ -10,6 +10,7 @@ import type {
   Customer,
   Child,
   Membership,
+  MembershipVisit,
   PartyPackage,
   PartyBooking,
   WaiverUser,
@@ -38,6 +39,7 @@ export type {
   Customer,
   Child,
   Membership,
+  MembershipVisit,
   PartyPackage,
   PartyBooking,
   WaiverUser,
@@ -366,6 +368,16 @@ export const ChildRepository = {
     return data;
   },
 
+  async findByIds(childIds: number[]) {
+    if (childIds.length === 0) return [];
+    const { data, error } = await supabase
+      .from('children')
+      .select('*')
+      .in('child_id', childIds);
+    if (error) throw error;
+    return data ?? [];
+  },
+
   async create(childData: {
     customer_id: number;
     first_name: string;
@@ -467,6 +479,13 @@ export const MembershipRepository = {
     end_date?: string;
     visits_per_month?: number;
     status?: string;
+    auto_renew?: boolean;
+    refund_policy_accepted?: boolean;
+    refund_policy_accepted_at?: string;
+    referral_name?: string;
+    referral_normalized?: string;
+    referral_status?: string;
+    matched_staff_user_id?: number;
   }) {
     const { data, error } = await supabase
       .from('memberships')
@@ -553,6 +572,125 @@ export const MembershipRepository = {
     }
 
     return data;
+  },
+
+  async findByDisplayId(displayId: string) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*, customers(*)')
+      .eq('display_id', displayId.toUpperCase())
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  },
+
+  async findExpiringBetween(startDate: string, endDate: string) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*, customers(*)')
+      .eq('status', 'active')
+      .gte('end_date', startDate)
+      .lte('end_date', endDate);
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async findExpiredWithGracePeriod(today: string) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*, customers(*)')
+      .eq('status', 'active')
+      .lt('end_date', today)
+      .gte('grace_period_end', today);
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async findPastGracePeriod(today: string) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*, customers(*)')
+      .eq('status', 'active')
+      .not('grace_period_end', 'is', null)
+      .lt('grace_period_end', today);
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async findWithReferralStatus(status: string) {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('*, customers(*)')
+      .eq('referral_status', status)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  async countByTier() {
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('tier, status')
+      .eq('status', 'active');
+    if (error) throw error;
+    const counts: Record<string, number> = {};
+    for (const m of (data ?? [])) {
+      counts[m.tier] = (counts[m.tier] ?? 0) + 1;
+    }
+    return counts;
+  },
+};
+
+// ============= Membership Visit Repository =============
+export const MembershipVisitRepository = {
+  async create(visitData: {
+    membership_id: number;
+    children_count?: number;
+    adults_count?: number;
+    extra_children?: number;
+    extra_adults?: number;
+    extra_charge?: number;
+    checked_in_by?: number;
+    notes?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('membership_visits')
+      .insert(visitData)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as MembershipVisit;
+  },
+
+  async findByMembershipId(membershipId: number, limit = 50) {
+    const { data, error } = await supabase
+      .from('membership_visits')
+      .select('*')
+      .eq('membership_id', membershipId)
+      .order('checked_in_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data ?? []) as MembershipVisit[];
+  },
+
+  async countByMembershipId(membershipId: number) {
+    const { count, error } = await supabase
+      .from('membership_visits')
+      .select('*', { count: 'exact', head: true })
+      .eq('membership_id', membershipId);
+    if (error) throw error;
+    return count ?? 0;
+  },
+
+  async countTodayVisits() {
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const { count, error } = await supabase
+      .from('membership_visits')
+      .select('*', { count: 'exact', head: true })
+      .gte('checked_in_at', startOfDay);
+    if (error) throw error;
+    return count ?? 0;
   },
 };
 
@@ -688,6 +826,8 @@ export const PartyBookingRepository = {
     guest_name?: string;
     guest_email?: string;
     guest_phone?: string;
+    // Admin fields
+    private_notes?: string;
   }) {
     const { data, error } = await supabase
       .from('party_bookings')
@@ -1515,6 +1655,8 @@ export const OrderRepository = {
     tax_usd?: number;
     total_usd?: number;
     notes?: string;
+    promotion_id?: number | null;
+    coupon_code?: string | null;
   }) {
     const { data, error } = await supabase
       .from('orders')
@@ -1622,11 +1764,77 @@ export const PromotionRepository = {
   },
 
   async findAll(activeOnly = true) {
-    let query = supabaseAny.from('promotions').select('*');
+    let query = supabaseAny.from('promotions').select('*').order('created_at', { ascending: false });
     if (activeOnly) query = query.eq('is_active', true);
     const { data, error } = await query;
     if (error) throw error;
     return data ?? [];
+  },
+
+  async create(payload: {
+    code: string;
+    description?: string | null;
+    percent_off?: number | null;
+    amount_off_usd?: number | null;
+    valid_from?: string | null;
+    valid_to?: string | null;
+    max_redemptions?: number | null;
+    is_active?: boolean;
+    applies_to?: string[] | null;
+    min_purchase_usd?: number | null;
+  }) {
+    const { data, error } = await supabaseAny
+      .from('promotions')
+      .insert({
+        code: payload.code.toUpperCase(),
+        description: payload.description ?? null,
+        percent_off: payload.percent_off ?? null,
+        amount_off_usd: payload.amount_off_usd ?? null,
+        valid_from: payload.valid_from ?? null,
+        valid_to: payload.valid_to ?? null,
+        max_redemptions: payload.max_redemptions ?? null,
+        is_active: payload.is_active ?? true,
+        applies_to: payload.applies_to ?? ['all'],
+        min_purchase_usd: payload.min_purchase_usd ?? null,
+        redemptions: 0,
+      })
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async update(promotionId: number, updates: Partial<{
+    code: string;
+    description: string | null;
+    percent_off: number | null;
+    amount_off_usd: number | null;
+    valid_from: string | null;
+    valid_to: string | null;
+    max_redemptions: number | null;
+    is_active: boolean;
+    applies_to: string[] | null;
+    min_purchase_usd: number | null;
+  }>) {
+    const patch: Record<string, unknown> = { ...updates };
+    if (typeof updates.code === 'string') patch.code = updates.code.toUpperCase();
+    const { data, error } = await supabaseAny
+      .from('promotions')
+      .update(patch)
+      .eq('promotion_id', promotionId)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async delete(promotionId: number) {
+    const { error } = await supabaseAny
+      .from('promotions')
+      .delete()
+      .eq('promotion_id', promotionId);
+    if (error) throw error;
+    return { success: true };
   },
 
   async incrementRedemptions(promotionId: number) {
@@ -1854,36 +2062,22 @@ export const TicketPurchaseRepository = {
   },
 
   async findByCode(code: string) {
-    // Try RPC first for efficient server-side filtering
-    const { data: rpcData, error: rpcError } = await supabase.rpc('find_ticket_purchase_by_code', {
-      p_code: code,
-    });
-
-    if (!rpcError && rpcData) {
-      // RPC returns the purchase_id; fetch full record with joins
-      const purchaseId = typeof rpcData === 'object' && 'purchase_id' in rpcData
-        ? rpcData.purchase_id
-        : rpcData;
-      if (purchaseId) {
-        return this.findById(purchaseId);
-      }
-      return null;
-    }
-
-    // Fallback: use textual search with LIKE on the codes column
-    // This avoids loading ALL rows into memory
+    // Use Postgres jsonb containment (`codes @> '[{"code":"PF-..."}]'::jsonb`).
+    // We call `.filter(column, 'cs', value)` directly instead of `.contains()`
+    // because postgrest-js serializes a JS array passed to `.contains()` as a
+    // Postgres array literal (`{...}`), which Postgres then rejects on a jsonb
+    // column with "invalid input syntax for type json". Passing the value as a
+    // pre-stringified JSON array sends it as valid jsonb and uses the `@>`
+    // operator — index-friendly if a GIN index exists on `codes`, and immune
+    // to whitespace/ordering issues in the stored jsonb.
+    const containsValue = JSON.stringify([{ code }]);
     const { data, error } = await supabase
       .from('ticket_purchases')
       .select('*, events(*), ticket_types(*), customers(*)')
-      .like('codes', `%"code":"${code}"%`);
+      .filter('codes', 'cs', containsValue)
+      .limit(1);
     if (error) throw error;
-
-    // Verify exact match (LIKE is approximate)
-    const match = (data ?? []).find(row => {
-      const codes = typeof row.codes === 'string' ? JSON.parse(row.codes) : (row.codes ?? []);
-      return codes.some((c: { code: string }) => c.code === code);
-    });
-    return match ?? null;
+    return data?.[0] ?? null;
   },
 
   async create(purchaseData: {
@@ -2828,6 +3022,74 @@ export const JobListingRepository = {
     if (error) throw error;
     return data ?? [];
   },
+
+  async findAllForAdmin(options?: {
+    isActive?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    let query = supabaseAny
+      .from('job_listings')
+      .select('*', { count: 'exact' });
+
+    if (options?.isActive !== undefined) query = query.eq('is_active', options.isActive);
+    if (options?.search) {
+      const s = options.search.replace(/%/g, '\\%').replace(/_/g, '\\_').trim();
+      query = query.or(`title.ilike.%${s}%,department.ilike.%${s}%,slug.ilike.%${s}%`);
+    }
+
+    const limit = options?.limit ?? 100;
+    const offset = options?.offset ?? 0;
+    query = query.range(offset, offset + limit - 1);
+    query = query
+      .order('is_active', { ascending: false })
+      .order('display_order', { ascending: true })
+      .order('created_at', { ascending: false });
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+    return { data: data ?? [], count: count ?? 0 };
+  },
+
+  async create(input: Record<string, unknown>) {
+    const { data, error } = await supabaseAny
+      .from('job_listings')
+      .insert(input)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async update(listingId: number, input: Record<string, unknown>) {
+    const payload = { ...input, updated_at: new Date().toISOString() };
+    const { data, error } = await supabaseAny
+      .from('job_listings')
+      .update(payload)
+      .eq('listing_id', listingId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteById(listingId: number) {
+    const { error } = await supabaseAny
+      .from('job_listings')
+      .delete()
+      .eq('listing_id', listingId);
+    if (error) throw error;
+  },
+
+  async countApplications(listingId: number): Promise<number> {
+    const { count, error } = await supabaseAny
+      .from('job_applications')
+      .select('*', { count: 'exact', head: true })
+      .eq('listing_id', listingId);
+    if (error) throw error;
+    return count ?? 0;
+  },
 };
 
 // ============= Job Application Repository =============
@@ -2942,6 +3204,18 @@ export const JobApplicationRepository = {
       .update(updates)
       .eq('application_id', applicationId)
       .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async update(applicationId: number, updates: Record<string, unknown>) {
+    const payload = { ...updates, updated_at: new Date().toISOString() };
+    const { data, error } = await supabaseAny
+      .from('job_applications')
+      .update(payload)
+      .eq('application_id', applicationId)
+      .select('*, job_listings(*)')
       .single();
     if (error) throw error;
     return data;
@@ -3069,5 +3343,268 @@ export const BookingReminderRepository = {
         { onConflict: 'booking_id,reminder_type' }
       );
     if (error) throw error;
+  },
+};
+
+// ============= Product Promotion Repository =============
+export interface ProductPromotion {
+  promotion_id: number;
+  product_type: string;
+  product_id: number | null;
+  discount_type: 'percent' | 'fixed_price';
+  discount_value: number;
+  promo_label: string | null;
+  promo_note: string | null;
+  starts_at: string;
+  ends_at: string;
+  max_redemptions: number | null;
+  redemptions: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const ProductPromotionRepository = {
+  /**
+   * Find active promotion for a specific product or all products of a type.
+   * Returns the first matching active promo where NOW() is within the date range
+   * and redemption limit has not been reached.
+   */
+  async findActive(productType: string, productId?: number): Promise<ProductPromotion | null> {
+    const now = new Date().toISOString();
+
+    // First try product-specific promo
+    if (productId) {
+      const { data: specific, error: err1 } = await supabaseAny
+        .from('product_promotions')
+        .select('*')
+        .eq('product_type', productType)
+        .eq('product_id', productId)
+        .eq('is_active', true)
+        .lte('starts_at', now)
+        .gte('ends_at', now)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (err1) throw err1;
+      if (specific && (specific.max_redemptions === null || specific.redemptions < specific.max_redemptions)) {
+        return specific as ProductPromotion;
+      }
+    }
+
+    // Then try type-wide promo (product_id IS NULL)
+    const { data: global, error: err2 } = await supabaseAny
+      .from('product_promotions')
+      .select('*')
+      .eq('product_type', productType)
+      .is('product_id', null)
+      .eq('is_active', true)
+      .lte('starts_at', now)
+      .gte('ends_at', now)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (err2) throw err2;
+    if (global && (global.max_redemptions === null || global.redemptions < global.max_redemptions)) {
+      return global as ProductPromotion;
+    }
+
+    return null;
+  },
+
+  /**
+   * Find all active promotions for a product type (for bulk enrichment)
+   */
+  async findAllActive(productType: string): Promise<ProductPromotion[]> {
+    const now = new Date().toISOString();
+
+    const { data, error } = await supabaseAny
+      .from('product_promotions')
+      .select('*')
+      .eq('product_type', productType)
+      .eq('is_active', true)
+      .lte('starts_at', now)
+      .gte('ends_at', now)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return ((data ?? []) as ProductPromotion[]).filter(
+      p => p.max_redemptions === null || p.redemptions < p.max_redemptions
+    );
+  },
+
+  async findAll(): Promise<ProductPromotion[]> {
+    const { data, error } = await supabaseAny
+      .from('product_promotions')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []) as ProductPromotion[];
+  },
+
+  async findById(promotionId: number): Promise<ProductPromotion | null> {
+    const { data, error } = await supabaseAny
+      .from('product_promotions')
+      .select('*')
+      .eq('promotion_id', promotionId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return (data as ProductPromotion) ?? null;
+  },
+
+  async create(promo: {
+    product_type: string;
+    product_id?: number | null;
+    discount_type: 'percent' | 'fixed_price';
+    discount_value: number;
+    promo_label?: string;
+    promo_note?: string;
+    starts_at: string;
+    ends_at: string;
+    max_redemptions?: number | null;
+  }): Promise<ProductPromotion> {
+    const { data, error } = await supabaseAny
+      .from('product_promotions')
+      .insert(promo)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as ProductPromotion;
+  },
+
+  async update(promotionId: number, updates: Partial<ProductPromotion>): Promise<ProductPromotion> {
+    const { data, error } = await supabaseAny
+      .from('product_promotions')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('promotion_id', promotionId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as ProductPromotion;
+  },
+
+  async incrementRedemptions(promotionId: number): Promise<void> {
+    const { error } = await supabase.rpc('increment_product_promotion_redemptions', {
+      p_promotion_id: promotionId,
+    });
+    if (error) {
+      // Fallback: optimistic lock increment
+      const promo = await this.findById(promotionId);
+      if (promo) {
+        await supabaseAny
+          .from('product_promotions')
+          .update({ redemptions: promo.redemptions + 1, updated_at: new Date().toISOString() })
+          .eq('promotion_id', promotionId)
+          .eq('redemptions', promo.redemptions);
+      }
+    }
+  },
+};
+
+// ============= Promo Offer Types =============
+export interface PromoOfferPlan {
+  name: string;
+  normalValue: number;
+  regularPrice: number;
+  promoPrice: number;
+  savingsPercent: number;
+  planId?: number;
+}
+
+export interface PromoOffer {
+  offer_id: number;
+  title: string;
+  subtitle: string | null;
+  promo_label: string | null;
+  promo_note: string | null;
+  notes: string[];
+  plans: PromoOfferPlan[];
+  starts_at: string;
+  ends_at: string;
+  max_redemptions: number | null;
+  redemptions: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============= Promo Offer Repository =============
+export const PromoOfferRepository = {
+  async findActive(): Promise<PromoOffer[]> {
+    const now = new Date().toISOString();
+    const { data, error } = await supabaseAny
+      .from('promo_offers')
+      .select('*')
+      .eq('is_active', true)
+      .lte('starts_at', now)
+      .gte('ends_at', now)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return ((data ?? []) as PromoOffer[]).filter(
+      o => o.max_redemptions === null || o.redemptions < o.max_redemptions
+    );
+  },
+
+  async findAll(): Promise<PromoOffer[]> {
+    const { data, error } = await supabaseAny
+      .from('promo_offers')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []) as PromoOffer[];
+  },
+
+  async findById(offerId: number): Promise<PromoOffer | null> {
+    const { data, error } = await supabaseAny
+      .from('promo_offers')
+      .select('*')
+      .eq('offer_id', offerId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return (data as PromoOffer) ?? null;
+  },
+
+  async create(offer: {
+    title: string;
+    subtitle?: string;
+    promo_label?: string;
+    promo_note?: string;
+    notes?: string[];
+    plans: PromoOfferPlan[];
+    starts_at: string;
+    ends_at: string;
+    max_redemptions?: number | null;
+  }): Promise<PromoOffer> {
+    const { data, error } = await supabaseAny
+      .from('promo_offers')
+      .insert(offer)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as PromoOffer;
+  },
+
+  async update(offerId: number, updates: Partial<PromoOffer>): Promise<PromoOffer> {
+    const { data, error } = await supabaseAny
+      .from('promo_offers')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('offer_id', offerId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as PromoOffer;
   },
 };

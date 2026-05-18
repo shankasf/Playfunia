@@ -11,6 +11,7 @@ import {
   SquareConfig,
 } from '../../api/square';
 import { reserveSlot, cancelReservation } from '../../api/reservations';
+import { createCheckoutSession, cancelCheckoutSession } from '../../api/checkout-sessions';
 import { getAllPricing, type AllPricing } from '../../api/pricing';
 import {
   formatNameInput,
@@ -47,6 +48,8 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
   const [reservationExpired, setReservationExpired] = useState(false);
   const [reservingSlot, setReservingSlot] = useState(false);
   const [squareConfigError, setSquareConfigError] = useState(false);
+  // Checkout session tracking (DB-backed 5-minute timer)
+  const [checkoutSessionId, setCheckoutSessionId] = useState<string | null>(null);
 
   // Bug fix #14: Ref for success timer cleanup on unmount
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,7 +146,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     };
   }, [isOpen]);
 
-  // Cancel all reservations when drawer closes
+  // Cancel all reservations and checkout session when drawer closes
   useEffect(() => {
     if (!isOpen && allReservationIds.length > 0) {
       allReservationIds.forEach(resId => cancelReservation(resId).catch(() => {}));
@@ -155,6 +158,10 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     } else if (!isOpen) {
       setReservationExpiresAt(null);
       setReservationExpired(false);
+    }
+    if (!isOpen && checkoutSessionId) {
+      cancelCheckoutSession(checkoutSessionId).catch(() => {});
+      setCheckoutSessionId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -224,6 +231,26 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
     }
     setError(null);
     setReservationExpired(false);
+
+    // Create checkout session in DB to track the 5-minute payment countdown
+    try {
+      const sessionItems = pendingItems.map(item => ({
+        type: item.type,
+        label: item.type === 'booking' ? item.packageName : item.label,
+        unitPrice: item.type === 'ticket' ? item.unitPrice : item.total,
+      }));
+      const session = await createCheckoutSession({
+        items: sessionItems,
+        subtotal,
+        tax: taxAmount,
+        total,
+        guestEmail: !user ? guestEmail : undefined,
+      });
+      setCheckoutSessionId(session.sessionId);
+    } catch (err) {
+      // Non-blocking: session tracking is optional, don't block payment
+      console.error('Failed to create checkout session:', err);
+    }
 
     // Check for booking items that need slot reservation
     const bookingItems = pendingItems.filter(item => item.type === 'booking');
@@ -336,6 +363,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
           items: checkoutItems,
           sourceId,
           reservationId: reservationId ?? undefined,
+          checkoutSessionId: checkoutSessionId ?? undefined,
         });
       } else {
         result = await finalizeSquareGuestCheckout({
@@ -346,6 +374,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
           guestEmail: guestEmail.trim(),
           guestPhone: guestPhone.trim(),
           reservationId: reservationId ?? undefined,
+          checkoutSessionId: checkoutSessionId ?? undefined,
         });
       }
 

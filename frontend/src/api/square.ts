@@ -26,6 +26,14 @@ export interface SquareCheckoutIntentPayload {
         durationMonths: number;
         autoRenew?: boolean;
         unitPrice: number;
+        refundPolicyAccepted?: boolean;
+        refundPolicyAcceptedAt?: string;
+        referralName?: string;
+        parentZipCode: string;
+        parentPhone: string;
+        childInfo:
+          | { childId: number }
+          | { firstName: string; lastName: string; birthDate: string };
       }
   >;
   promoCode?: string;
@@ -44,6 +52,7 @@ export interface SquareCheckoutFinalizePayload extends SquareCheckoutIntentPaylo
   sourceId: string; // Payment token from Square Web Payments SDK
   verificationToken?: string; // SCA verification token if required
   reservationId?: string; // Existing slot reservation from frontend (prevents double-reservation)
+  checkoutSessionId?: string; // DB-backed 5-minute session tracking
 }
 
 // Square checkout finalize response
@@ -86,6 +95,7 @@ export interface SquareGuestCheckoutFinalizePayload extends SquareGuestCheckoutI
   sourceId: string;
   verificationToken?: string;
   reservationId?: string; // Existing slot reservation from frontend (prevents double-reservation)
+  checkoutSessionId?: string; // DB-backed 5-minute session tracking
 }
 
 // API functions

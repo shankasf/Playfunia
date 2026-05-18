@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   fetchAdminJobApplication,
-  updateAdminJobApplicationStatus,
+  updateAdminJobApplication,
   deleteAdminJobApplication,
+  fetchAdminJobListings,
   type AdminJobApplication,
+  type AdminJobApplicationUpdateInput,
+  type AdminJobListing,
 } from '../api/admin';
 import { formatDate } from '../lib/dateUtils';
 import styles from './AdminApplicantDetailPage.module.css';
@@ -22,17 +25,102 @@ const STATUS_LABELS: Record<string, string> = {
 
 const NA = 'N/A';
 
+type FormState = {
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  date_of_birth: string;
+  gender: string;
+  pronouns: string;
+  listing_id: string;
+  schedule_preference: string;
+  available_start_date: string;
+  has_experience_with_children: boolean;
+  how_heard: string;
+  emergency_contact_name: string;
+  emergency_contact_phone: string;
+  cover_letter: string;
+  status: string;
+  admin_notes: string;
+};
+
+function toForm(app: AdminJobApplication): FormState {
+  return {
+    first_name: app.first_name ?? '',
+    last_name: app.last_name ?? '',
+    email: app.email ?? '',
+    phone: app.phone ?? '',
+    date_of_birth: app.date_of_birth ?? '',
+    gender: app.gender ?? '',
+    pronouns: app.pronouns ?? '',
+    listing_id: String(app.listing_id ?? ''),
+    schedule_preference: app.schedule_preference ?? '',
+    available_start_date: app.available_start_date ?? '',
+    has_experience_with_children: !!app.has_experience_with_children,
+    how_heard: app.how_heard ?? '',
+    emergency_contact_name: app.emergency_contact_name ?? '',
+    emergency_contact_phone: app.emergency_contact_phone ?? '',
+    cover_letter: app.cover_letter ?? '',
+    status: app.status ?? 'new',
+    admin_notes: app.admin_notes ?? '',
+  };
+}
+
+function diffPayload(original: FormState, current: FormState): AdminJobApplicationUpdateInput {
+  const payload: AdminJobApplicationUpdateInput = {};
+  const orig = original as unknown as Record<string, unknown>;
+  const cur = current as unknown as Record<string, unknown>;
+
+  const stringFields: Array<keyof FormState> = [
+    'first_name', 'last_name', 'email', 'phone',
+    'date_of_birth', 'gender', 'pronouns',
+    'schedule_preference', 'available_start_date',
+    'how_heard', 'emergency_contact_name', 'emergency_contact_phone',
+    'cover_letter', 'status', 'admin_notes',
+  ];
+  const nullableFields: Array<keyof FormState> = [
+    'date_of_birth', 'gender', 'pronouns',
+    'schedule_preference', 'available_start_date',
+    'how_heard', 'emergency_contact_name', 'emergency_contact_phone',
+    'cover_letter', 'admin_notes',
+  ];
+
+  for (const field of stringFields) {
+    if (orig[field] !== cur[field]) {
+      const val = cur[field] as string;
+      if (nullableFields.includes(field) && val === '') {
+        (payload as Record<string, unknown>)[field] = null;
+      } else {
+        (payload as Record<string, unknown>)[field] = val;
+      }
+    }
+  }
+
+  if (original.has_experience_with_children !== current.has_experience_with_children) {
+    payload.has_experience_with_children = current.has_experience_with_children;
+  }
+
+  if (original.listing_id !== current.listing_id && current.listing_id) {
+    const parsed = parseInt(current.listing_id, 10);
+    if (!Number.isNaN(parsed) && parsed > 0) payload.listing_id = parsed;
+  }
+
+  return payload;
+}
+
 export function AdminApplicantDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [app, setApp] = useState<AdminJobApplication | null>(null);
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [listings, setListings] = useState<AdminJobListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [adminNotes, setAdminNotes] = useState('');
-  const [status, setStatus] = useState('');
+  const [original, setOriginal] = useState<FormState | null>(null);
+  const [form, setForm] = useState<FormState | null>(null);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
 
@@ -45,8 +133,9 @@ export function AdminApplicantDetailPage() {
       setApp(result.application);
       setResumeUrl(result.resumeUrl);
       setVideoUrl(result.videoUrl);
-      setAdminNotes(result.application.admin_notes ?? '');
-      setStatus(result.application.status);
+      const initial = toForm(result.application);
+      setOriginal(initial);
+      setForm(initial);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load applicant');
     } finally {
@@ -56,22 +145,36 @@ export function AdminApplicantDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    fetchAdminJobListings().then(setListings).catch(() => {});
+  }, []);
+
   const handleSave = async () => {
-    if (!app) return;
+    if (!app || !form || !original) return;
+    const payload = diffPayload(original, form);
+    if (Object.keys(payload).length === 0) {
+      setFeedback('No changes to save');
+      return;
+    }
+
     setSaving(true);
     setFeedback('');
     try {
-      const result = await updateAdminJobApplicationStatus(
-        app.application_id,
-        { status, admin_notes: adminNotes || undefined }
-      );
+      const result = await updateAdminJobApplication(app.application_id, payload);
       setApp(result.application);
+      const next = toForm(result.application);
+      setOriginal(next);
+      setForm(next);
       setFeedback('Saved successfully');
     } catch (err) {
       setFeedback(`Error: ${err instanceof Error ? err.message : 'Save failed'}`);
     } finally {
       setSaving(false);
     }
+  };
+
+  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
+    setForm(prev => (prev ? { ...prev, [key]: value } : prev));
   };
 
   if (loading) {
@@ -84,7 +187,7 @@ export function AdminApplicantDetailPage() {
     );
   }
 
-  if (error || !app) {
+  if (error || !app || !form) {
     return (
       <div className={styles.page}>
         <div className={styles.container}>
@@ -112,28 +215,62 @@ export function AdminApplicantDetailPage() {
           <h2>Contact Information</h2>
           <div className={styles.grid}>
             <div className={styles.field}>
+              <span className={styles.label}>First Name</span>
+              <input
+                className={styles.editInput}
+                value={form.first_name}
+                onChange={e => update('first_name', e.target.value)}
+              />
+            </div>
+            <div className={styles.field}>
+              <span className={styles.label}>Last Name</span>
+              <input
+                className={styles.editInput}
+                value={form.last_name}
+                onChange={e => update('last_name', e.target.value)}
+              />
+            </div>
+            <div className={styles.field}>
               <span className={styles.label}>Email</span>
-              <span className={styles.value}>
-                <a href={`mailto:${app.email}`}>{app.email}</a>
-              </span>
+              <input
+                className={styles.editInput}
+                type="email"
+                value={form.email}
+                onChange={e => update('email', e.target.value)}
+              />
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Phone</span>
-              <span className={styles.value}>
-                <a href={`tel:${app.phone}`}>{app.phone}</a>
-              </span>
+              <input
+                className={styles.editInput}
+                value={form.phone}
+                onChange={e => update('phone', e.target.value)}
+              />
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Date of Birth</span>
-              <span className={styles.value}>{app.date_of_birth ? formatDate(app.date_of_birth) : NA}</span>
+              <input
+                className={styles.editInput}
+                type="date"
+                value={form.date_of_birth}
+                onChange={e => update('date_of_birth', e.target.value)}
+              />
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Gender</span>
-              <span className={styles.value}>{app.gender || NA}</span>
+              <input
+                className={styles.editInput}
+                value={form.gender}
+                onChange={e => update('gender', e.target.value)}
+              />
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Pronouns</span>
-              <span className={styles.value}>{app.pronouns || NA}</span>
+              <input
+                className={styles.editInput}
+                value={form.pronouns}
+                onChange={e => update('pronouns', e.target.value)}
+              />
             </div>
           </div>
         </section>
@@ -144,7 +281,16 @@ export function AdminApplicantDetailPage() {
           <div className={styles.grid}>
             <div className={styles.field}>
               <span className={styles.label}>Position</span>
-              <span className={styles.value}>{app.job_listings?.title ?? NA}</span>
+              <select
+                className={styles.editSelect}
+                value={form.listing_id}
+                onChange={e => update('listing_id', e.target.value)}
+              >
+                <option value="">{app.job_listings?.title ?? 'Unknown'}</option>
+                {listings.map(l => (
+                  <option key={l.listing_id} value={l.listing_id}>{l.title}</option>
+                ))}
+              </select>
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Date Applied</span>
@@ -152,19 +298,40 @@ export function AdminApplicantDetailPage() {
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Schedule Preference</span>
-              <span className={styles.value}>{app.schedule_preference || NA}</span>
+              <input
+                className={styles.editInput}
+                value={form.schedule_preference}
+                onChange={e => update('schedule_preference', e.target.value)}
+                placeholder="weekdays, weekends, evenings, flexible"
+              />
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Available Start Date</span>
-              <span className={styles.value}>{app.available_start_date ? formatDate(app.available_start_date) : NA}</span>
+              <input
+                className={styles.editInput}
+                type="date"
+                value={form.available_start_date}
+                onChange={e => update('available_start_date', e.target.value)}
+              />
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Experience with Children</span>
-              <span className={styles.value}>{app.has_experience_with_children ? 'Yes' : 'No'}</span>
+              <label className={styles.value} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <input
+                  type="checkbox"
+                  checked={form.has_experience_with_children}
+                  onChange={e => update('has_experience_with_children', e.target.checked)}
+                />
+                {form.has_experience_with_children ? 'Yes' : 'No'}
+              </label>
             </div>
             <div className={styles.field}>
               <span className={styles.label}>How They Heard About Us</span>
-              <span className={styles.value}>{app.how_heard || NA}</span>
+              <input
+                className={styles.editInput}
+                value={form.how_heard}
+                onChange={e => update('how_heard', e.target.value)}
+              />
             </div>
           </div>
         </section>
@@ -175,15 +342,19 @@ export function AdminApplicantDetailPage() {
           <div className={styles.grid}>
             <div className={styles.field}>
               <span className={styles.label}>Name</span>
-              <span className={styles.value}>{app.emergency_contact_name || NA}</span>
+              <input
+                className={styles.editInput}
+                value={form.emergency_contact_name}
+                onChange={e => update('emergency_contact_name', e.target.value)}
+              />
             </div>
             <div className={styles.field}>
               <span className={styles.label}>Phone</span>
-              <span className={styles.value}>
-                {app.emergency_contact_phone
-                  ? <a href={`tel:${app.emergency_contact_phone}`}>{app.emergency_contact_phone}</a>
-                  : NA}
-              </span>
+              <input
+                className={styles.editInput}
+                value={form.emergency_contact_phone}
+                onChange={e => update('emergency_contact_phone', e.target.value)}
+              />
             </div>
           </div>
         </section>
@@ -191,12 +362,15 @@ export function AdminApplicantDetailPage() {
         {/* Cover Letter */}
         <section className={styles.card}>
           <h2>Cover Letter</h2>
-          <p className={styles.coverLetter}>
-            {app.cover_letter || NA}
-          </p>
+          <textarea
+            className={styles.editTextarea}
+            value={form.cover_letter}
+            onChange={e => update('cover_letter', e.target.value)}
+            rows={6}
+          />
         </section>
 
-        {/* Attachments */}
+        {/* Attachments (read-only) */}
         <section className={styles.card}>
           <h2>Attachments</h2>
           <div className={styles.attachments}>
@@ -223,14 +397,14 @@ export function AdminApplicantDetailPage() {
 
         {/* Status & Admin Notes */}
         <section className={styles.card}>
-          <h2>Status & Notes</h2>
+          <h2>Status &amp; Notes</h2>
           <div className={styles.statusRow}>
             <div className={styles.field}>
               <span className={styles.label}>Status</span>
               <select
                 className={styles.statusSelect}
-                value={status}
-                onChange={e => setStatus(e.target.value)}
+                value={form.status}
+                onChange={e => update('status', e.target.value)}
               >
                 {STATUSES.map(s => (
                   <option key={s} value={s}>{STATUS_LABELS[s]}</option>
@@ -241,8 +415,8 @@ export function AdminApplicantDetailPage() {
           <div className={styles.notesField}>
             <span className={styles.label}>Admin Notes</span>
             <textarea
-              value={adminNotes}
-              onChange={e => setAdminNotes(e.target.value)}
+              value={form.admin_notes}
+              onChange={e => update('admin_notes', e.target.value)}
               placeholder="Add internal notes about this applicant..."
               rows={4}
             />

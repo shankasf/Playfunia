@@ -95,8 +95,8 @@ export function WaiverPage() {
       }));
     }
     return existingChildren.map((child) => ({
-      id: child.id,
-      childId: typeof child.id === 'string' ? parseInt(child.id, 10) : child.id,
+      id: String(child.id),
+      childId: typeof child.id === 'number' ? child.id : parseInt(String(child.id), 10),
       name: [child.firstName, child.lastName].filter(Boolean).join(' ').trim(),
       birthDate: toDateInputValue(child.birthDate),
     }));
@@ -112,6 +112,7 @@ export function WaiverPage() {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
+      timeZone: 'America/New_York',
     });
   };
   const waiverSignedDate = formatSignedDateTime(latestWaiver?.signedAt);

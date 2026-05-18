@@ -1,0 +1,390 @@
+/* ============================================
+   Event Detail Page
+   ============================================ */
+
+.page {
+  padding-bottom: 4rem;
+  background: #fff;
+  min-height: calc(100vh - 80px);
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 2rem;
+}
+
+.backLink {
+  display: inline-block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #6366f1;
+  text-decoration: none;
+  margin-bottom: 1.25rem;
+  transition: color 0.15s;
+}
+
+.backLink:hover {
+  color: #4f46e5;
+}
+
+/* Event Detail Card */
+.eventDetail {
+  border-radius: 20px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+}
+
+/* Poster */
+.posterWrapper {
+  position: relative;
+  width: 100%;
+  background: #f1f5f9;
+}
+
+.posterImage {
+  width: 100%;
+  display: block;
+}
+
+.badgeOverlay {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+}
+
+.badgeInline {
+  padding: 1.25rem 1.5rem 0;
+}
+
+.completedBadge,
+.upcomingBadge {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  backdrop-filter: blur(8px);
+}
+
+.completedBadge {
+  background: rgba(241, 245, 249, 0.9);
+  color: #64748b;
+}
+
+.upcomingBadge {
+  background: rgba(238, 242, 255, 0.9);
+  color: #6366f1;
+}
+
+/* Content */
+.content {
+  padding: 1.75rem 1.75rem 1.5rem;
+}
+
+.title {
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 0.4rem;
+  line-height: 1.25;
+}
+
+.date {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #6366f1;
+  margin: 0 0 1.25rem;
+}
+
+.description {
+  font-size: 0.95rem;
+  line-height: 1.75;
+  color: #334155;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.shareSection {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.shareLabel {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+/* Gallery */
+.gallerySection {
+  padding: 0.5rem 1.75rem 2.5rem;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 0.5rem;
+}
+
+.galleryLabel {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 1.25rem 0 1rem;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.galleryImage {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  border-radius: 14px;
+  cursor: pointer;
+  background: #f8fafc;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.galleryImage:hover {
+  transform: scale(1.03);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* Video Autoplay Card */
+.videoCard {
+  position: relative;
+  cursor: pointer;
+  border-radius: 16px;
+  overflow: hidden;
+  aspect-ratio: 9 / 16;
+  background: #0f172a;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.videoCard:hover {
+  transform: translateY(-6px) scale(1.02);
+  box-shadow: 0 16px 48px rgba(99, 102, 241, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.videoCardPlayer {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Pause / Play toggle button */
+.videoPauseBtn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease, transform 0.15s ease;
+  z-index: 2;
+}
+
+.videoCard:hover .videoPauseBtn {
+  opacity: 1;
+}
+
+.videoPauseBtn:hover {
+  background: rgba(99, 102, 241, 0.85);
+  transform: scale(1.1);
+}
+
+.videoPauseBtn:active {
+  transform: scale(0.95);
+}
+
+/* Bottom caption area */
+.videoCardBottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 2rem 0.75rem 0.75rem;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.videoCardCaption {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  line-height: 1.3;
+}
+
+/* Lightbox */
+.lightboxOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  cursor: zoom-out;
+  animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.lightboxImage {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.lightboxVideo {
+  max-width: 90vw;
+  max-height: 85vh;
+  border-radius: 8px;
+  background: #000;
+}
+
+/* Error / Loading States */
+.errorState {
+  text-align: center;
+  padding: 4rem 1.5rem;
+}
+
+.errorState h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 0.5rem;
+}
+
+.errorState p {
+  color: #64748b;
+  margin: 0 0 1.5rem;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 4rem;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Responsive — Tablet */
+@media (max-width: 900px) {
+  .container {
+    max-width: 100%;
+    padding: 1.25rem 1.25rem 2rem;
+  }
+
+  .gallery {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+/* Responsive — Mobile */
+@media (max-width: 640px) {
+  .container {
+    padding: 1rem 0.75rem 2rem;
+  }
+
+  .eventDetail {
+    border-radius: 14px;
+  }
+
+  .content {
+    padding: 1.25rem 1.25rem 1rem;
+  }
+
+  .title {
+    font-size: 1.3rem;
+  }
+
+  .date {
+    font-size: 0.9rem;
+  }
+
+  .shareSection {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .gallerySection {
+    padding: 0.5rem 1rem 1.5rem;
+  }
+
+  .galleryLabel {
+    font-size: 1.05rem;
+  }
+
+  .gallery {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0.6rem;
+  }
+
+  .galleryImage {
+    border-radius: 10px;
+  }
+
+  .videoCard {
+    border-radius: 12px;
+  }
+
+  .lightboxOverlay {
+    padding: 0.75rem;
+  }
+}
+
+/* Responsive — Small phones */
+@media (max-width: 380px) {
+  .container {
+    padding: 0.75rem 0.5rem 2rem;
+  }
+
+  .gallery {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .content {
+    padding: 1rem 1rem 0.75rem;
+  }
+}

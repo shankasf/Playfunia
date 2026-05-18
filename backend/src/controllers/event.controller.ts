@@ -37,7 +37,7 @@ function mapEventToCamelCase(e: Record<string, unknown>) {
 export const getEventHandler = asyncHandler(async (req: Request, res: Response) => {
   const { eventId } = parseWithSchema(eventIdParamSchema, req.params);
   const event = await getEventById(eventId);
-  return res.status(200).json({ event });
+  return res.status(200).json(mapEventToCamelCase(event));
 });
 
 export const getEventPhotosPublicHandler = asyncHandler(async (req: Request, res: Response) => {

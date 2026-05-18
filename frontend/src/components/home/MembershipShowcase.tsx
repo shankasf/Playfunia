@@ -19,24 +19,33 @@ export function MembershipShowcase({ plans, isLoading }: Props) {
       <div className={styles.grid}>
         {(isLoading ? new Array(3).fill(null) : plans).map((plan, index) => (
           <article key={plan?.id ?? index} className={styles.card}>
+            {plan?.promoLabel ? (
+              <div className={styles.promoBadge}>{plan.promoLabel}</div>
+            ) : null}
             <div className={styles.cardHeader}>
               <h3>{plan?.name ?? "Loading"}</h3>
-              <span className={styles.price}>${plan?.monthlyPrice ?? "--"}</span>
-              <span className={styles.subText}>per month</span>
+              {plan?.originalPrice ? (
+                <>
+                  <span className={styles.originalPrice}>${plan.originalPrice}</span>
+                  <span className={styles.price}>${plan.monthlyPrice}</span>
+                </>
+              ) : (
+                <span className={styles.price}>${plan?.monthlyPrice ?? "--"}</span>
+              )}
+              <span className={styles.subText}>membership</span>
             </div>
-            <p className={styles.description}>{plan?.description ?? "Preparing something fun..."}</p>
             <p className={styles.meta}>
-              {typeof plan?.visitsPerMonth === "number"
-                ? `${plan?.visitsPerMonth} visits every month`
-                : "Unlimited weekday play"}
+              {plan
+                ? `${plan.maxChildren} Kid${plan.maxChildren > 1 ? "s" : ""} + ${plan.maxChildren} Adult${plan.maxChildren > 1 ? "s" : ""}`
+                : "Loading plan details..."}
             </p>
             <ul className={styles.benefits}>
               {(plan?.benefits ?? ["Curating benefits..."]).map((benefit: string, benefitIndex: number) => (
                 <li key={`${plan?.id ?? index}-${benefitIndex}`}>{benefit}</li>
               ))}
             </ul>
-            <PrimaryButton to="/contact" aria-label={`Ask about the ${plan?.name ?? "Playfunia"} play pass`}>
-              Reserve pass
+            <PrimaryButton to="/memberships" aria-label={`View the ${plan?.name ?? "Playfunia"} membership`}>
+              View plan
             </PrimaryButton>
           </article>
         ))}

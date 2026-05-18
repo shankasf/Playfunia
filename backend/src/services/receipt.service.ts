@@ -359,7 +359,7 @@ export async function generateMembershipReceiptPDF(data: MembershipReceiptData):
       doc.moveTo(margin, footerY).lineTo(pageWidth - margin, footerY).strokeColor('#e5e7eb').stroke();
       doc.fillColor(grayColor).fontSize(7).font('Helvetica')
         .text('Thank you for joining the Playfunia family!', margin, footerY + 8, { align: 'center', width: contentWidth })
-        .text('Questions? playfunia@playfunia.com | www.playfunia.com', margin, footerY + 18, { align: 'center', width: contentWidth });
+        .text('Questions? info@playfunia.com | www.playfunia.com', margin, footerY + 18, { align: 'center', width: contentWidth });
 
       // Ensure only first page is output
       const range = doc.bufferedPageRange();
@@ -402,6 +402,12 @@ export interface BookingReceiptData {
   total: number;
   paymentMethod: string;
   paymentId: string;
+  // Customer contact
+  customerPhone?: string;
+  // Children celebrating
+  children?: Array<{ name: string; birthDate?: string }>;
+  // Special requests / notes
+  notes?: string;
   // Package details for comprehensive PDF
   packageDetails?: {
     priceUsd: number;
@@ -494,16 +500,33 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
 
       y += 14;
       doc.fillColor(grayColor).fontSize(9).font('Helvetica').text(data.customerEmail, margin, y);
+      if (data.customerPhone) {
+        y += 12;
+        doc.fillColor(grayColor).fontSize(9).font('Helvetica').text(data.customerPhone, margin, y);
+      }
 
       // Party Details Box
       y += 25;
       doc.fillColor(primaryColor).fontSize(11).font('Helvetica-Bold').text('Party Details', margin, y);
 
       y += 15;
-      doc.rect(margin, y, contentWidth, 70).fill(lightGray);
-
       const col1 = margin + 10;
       const col2 = margin + 260;
+
+      // Pre-compute box height to avoid content overflow
+      // Set font before measuring text heights
+      doc.fontSize(9).font('Helvetica');
+      let detailBoxHeight = 70; // base: 12 top pad + 3 rows × 18px + 4 bottom pad
+      const childrenCount = data.children?.length ?? 0;
+      if (childrenCount > 0) {
+        detailBoxHeight += 18 + ((childrenCount - 1) * 14); // 18 for first child row, 14 for each additional
+      }
+      if (data.notes) {
+        const notesTextHeight = doc.heightOfString(data.notes, { width: contentWidth - 80 });
+        detailBoxHeight += 18 + Math.max(0, notesTextHeight - 10); // 18 for label row + overflow
+      }
+
+      doc.rect(margin, y, contentWidth, detailBoxHeight).fill(lightGray);
 
       y += 12;
       doc.fillColor(textColor).fontSize(9).font('Helvetica');
@@ -521,6 +544,27 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
       y += 18;
       doc.font('Helvetica').text('Guests:', col1, y);
       doc.font('Helvetica-Bold').text(String(data.guestCount), col1 + 60, y);
+
+      // Birthday children
+      if (data.children && data.children.length > 0) {
+        y += 18;
+        doc.font('Helvetica').fillColor(textColor).text('Celebrant' + (data.children.length > 1 ? 's:' : ':'), col1, y);
+        for (const child of data.children) {
+          const childText = child.birthDate ? `${child.name} (DOB: ${child.birthDate})` : child.name;
+          doc.font('Helvetica-Bold').fillColor(primaryColor).text(childText, col1 + 70, y);
+          y += 14;
+        }
+        y -= 14; // undo last increment since next section adds its own
+      }
+
+      // Special requests / notes
+      if (data.notes) {
+        y += 18;
+        doc.font('Helvetica').fillColor(textColor).text('Requests:', col1, y);
+        doc.font('Helvetica').fillColor(grayColor).text(data.notes, col1 + 60, y, { width: contentWidth - 80 });
+        const notesHeight = doc.heightOfString(data.notes, { width: contentWidth - 80 });
+        if (notesHeight > 12) y += notesHeight - 10;
+      }
 
       // Line items header
       y += 35;
@@ -623,7 +667,7 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
       doc.moveTo(margin, y).lineTo(pageWidth - margin, y).strokeColor('#e5e7eb').stroke();
       doc.fillColor(grayColor).fontSize(8).font('Helvetica')
         .text('We can\'t wait to celebrate with you!', margin, y + 10, { align: 'center', width: contentWidth })
-        .text('playfunia@playfunia.com | www.playfunia.com', margin, y + 22, { align: 'center', width: contentWidth });
+        .text('info@playfunia.com | www.playfunia.com', margin, y + 22, { align: 'center', width: contentWidth });
 
       // ==================== PAGE 2: PACKAGE DETAILS ====================
       if (data.packageDetails) {
@@ -677,6 +721,9 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
         const baseInfo: Array<{ label: string; value: string; highlight?: boolean }> = [
           { label: 'Base Price', value: `$${pkg.priceUsd.toFixed(2)}` },
           { label: 'Children Included', value: `${pkg.baseChildren} kids` },
+          { label: 'Adults Included', value: 'One adult per child' },
+          { label: 'Extra Child Price', value: `$${(pkg.extraChildPrice ?? 40).toFixed(2)} each` },
+          { label: 'Extra Guest Price', value: `$${(pkg.extraAdultPrice ?? 10).toFixed(2)} each` },
           { label: 'Party Room Time', value: `${pkg.baseRoomHours} hour${pkg.baseRoomHours > 1 ? 's' : ''}` },
           { label: 'All-Day Park Access', value: 'Unlimited' },
         ];
@@ -718,7 +765,8 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
           doc.fontSize(9).font('Helvetica').fillColor(textColor);
 
           for (const feature of features) {
-            doc.text(`• ${feature}`, margin + 10, y, { width: contentWidth - 20 });
+            const featureText = feature.split('|')[0];
+            doc.text(`• ${featureText}`, margin + 10, y, { width: contentWidth - 20 });
             y += 16;
           }
         }
@@ -761,7 +809,6 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
           '• Please arrive 15 minutes before your scheduled party time',
           '• Bring socks for all children (required for play areas)',
           '• Let us know about any food allergies in advance',
-          '• Decorations can be set up 30 minutes before the party starts',
         ];
         for (const reminder of reminders) {
           doc.text(reminder, margin + 10, y);
@@ -773,7 +820,7 @@ export async function generateBookingReceiptPDF(data: BookingReceiptData): Promi
         doc.moveTo(margin, y).lineTo(pageWidth - margin, y).strokeColor('#e5e7eb').stroke();
         doc.fillColor(grayColor).fontSize(8).font('Helvetica')
           .text('Thank you for choosing Playfunia for your celebration!', margin, y + 10, { align: 'center', width: contentWidth })
-          .text('playfunia@playfunia.com | www.playfunia.com', margin, y + 22, { align: 'center', width: contentWidth });
+          .text('info@playfunia.com | www.playfunia.com', margin, y + 22, { align: 'center', width: contentWidth });
       }
 
       doc.end();
@@ -1064,7 +1111,7 @@ export async function generateReceiptPDF(data: ReceiptData): Promise<Buffer> {
         .fontSize(9)
         .font('Helvetica')
         .text('Thank you for choosing Playfunia!', 50, footerY + 15, { align: 'center', width: 495 })
-        .text('Questions? Contact us at playfunia@playfunia.com', 50, footerY + 28, { align: 'center', width: 495 })
+        .text('Questions? Contact us at info@playfunia.com', 50, footerY + 28, { align: 'center', width: 495 })
         .text('www.playfunia.com', 50, footerY + 41, { align: 'center', width: 495 });
 
       doc.end();

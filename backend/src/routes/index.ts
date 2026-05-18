@@ -21,6 +21,7 @@ import { reservationRouter } from './reservation.routes';
 import { webhookRouter } from './webhook.routes';
 import { refundRouter } from './refund.routes';
 import { careersRouter } from './careers.routes';
+import { couponRouter } from './coupon.routes';
 
 export const apiRouter = Router();
 
@@ -45,3 +46,4 @@ apiRouter.use('/reservations', reservationRouter);
 apiRouter.use('/webhooks', webhookRouter);
 apiRouter.use('/refunds', refundRouter);
 apiRouter.use('/careers', careersRouter);
+apiRouter.use('/coupons', couponRouter);

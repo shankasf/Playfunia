@@ -340,6 +340,12 @@
   .header {
     margin-bottom: 2rem;
   }
+
+  .reelGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 640px) {

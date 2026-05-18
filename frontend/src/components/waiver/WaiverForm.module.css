@@ -162,6 +162,22 @@ textarea:focus {
   margin-top: 0.25rem;
 }
 
+.smsConsentText {
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+.smsConsentText a {
+  color: #0ea5e9;
+  text-decoration: none;
+}
+
+.smsConsentText a:hover {
+  text-decoration: underline;
+}
+
 .helper {
   color: var(--color-text-muted);
   margin: 0;

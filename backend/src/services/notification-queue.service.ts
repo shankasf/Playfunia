@@ -32,8 +32,10 @@ import {
   sendOrderConfirmationSms,
   sendTicketConfirmationSms,
   sendWaiverConfirmationSms,
+  sendBirthdayOfferSms,
   type BookingSmsData,
   type WaiverSmsData,
+  type BirthdayOfferSmsData,
 } from './sms.service';
 
 export interface QueuedNotification {
@@ -67,7 +69,8 @@ export type NotificationTemplate =
   | 'booking_sms'
   | 'order_sms'
   | 'ticket_sms'
-  | 'waiver_sms';
+  | 'waiver_sms'
+  | 'birthday_offer_sms';
 
 /**
  * Queue an email notification for delivery.
@@ -267,48 +270,62 @@ export async function queueWaiverConfirmation(
 }
 
 /**
+ * Queue the Playfunia Birthday Offer marketing SMS.
+ * Fired after every waiver sign (new + returning) per business rules.
+ */
+export async function queueBirthdayOfferSms(
+  data: BirthdayOfferSmsData,
+  reference?: { type: string; id: number }
+): Promise<number | null> {
+  return queueSmsNotification(
+    data.phone,
+    'birthday_offer_sms',
+    data as unknown as Record<string, unknown>,
+    reference
+  );
+}
+
+interface DirectSendResult {
+  success: boolean;
+  // Twilio MessageSid, only populated for SMS sends that reached Twilio.
+  messageSid?: string;
+}
+
+/**
  * Send a notification immediately (bypasses queue).
  * Used when you need synchronous delivery confirmation.
  */
-async function sendNotificationDirect(notification: QueuedNotification): Promise<boolean> {
-  const { type, template, payload } = notification;
+async function sendNotificationDirect(notification: QueuedNotification): Promise<DirectSendResult> {
+  const { id, type, template, payload } = notification;
 
   try {
     if (type === 'email') {
+      let success = false;
       switch (template) {
         case 'booking_confirmation':
-          return await sendBookingConfirmation(payload as unknown as BookingEmailData);
-
+          success = await sendBookingConfirmation(payload as unknown as BookingEmailData); break;
         case 'order_confirmation':
-          return await sendOrderConfirmation(payload as unknown as OrderConfirmationEmailData);
-
+          success = await sendOrderConfirmation(payload as unknown as OrderConfirmationEmailData); break;
         case 'membership_confirmation':
-          return await sendMembershipConfirmation(payload as unknown as MembershipEmailData);
-
+          success = await sendMembershipConfirmation(payload as unknown as MembershipEmailData); break;
         case 'ticket_confirmation':
-          return await sendTicketConfirmation(payload as unknown as TicketEmailData);
-
+          success = await sendTicketConfirmation(payload as unknown as TicketEmailData); break;
         case 'admin_booking':
-          return await sendAdminBookingNotification(payload as unknown as AdminBookingNotificationData);
-
+          success = await sendAdminBookingNotification(payload as unknown as AdminBookingNotificationData); break;
         case 'admin_ticket':
-          return await sendAdminTicketNotification(payload as unknown as AdminTicketNotificationData);
-
+          success = await sendAdminTicketNotification(payload as unknown as AdminTicketNotificationData); break;
         case 'admin_membership':
-          return await sendAdminMembershipNotification(payload as unknown as AdminMembershipNotificationData);
-
+          success = await sendAdminMembershipNotification(payload as unknown as AdminMembershipNotificationData); break;
         case 'waiver_confirmation':
-          return await sendWaiverConfirmation(payload as unknown as WaiverConfirmationEmailData);
-
+          success = await sendWaiverConfirmation(payload as unknown as WaiverConfirmationEmailData); break;
         default:
           logger.warn({ template }, 'Unknown email template');
-          return false;
       }
+      return { success };
     } else if (type === 'sms') {
       switch (template) {
         case 'booking_sms':
-          return await sendBookingConfirmationSms(payload as unknown as BookingSmsData);
-
+          return await sendBookingConfirmationSms(payload as unknown as BookingSmsData, id);
         case 'order_sms':
           return await sendOrderConfirmationSms({
             phone: payload.phone as string,
@@ -316,8 +333,7 @@ async function sendNotificationDirect(notification: QueuedNotification): Promise
             orderNumber: payload.orderNumber as string,
             total: payload.total as number,
             itemCount: payload.itemCount as number,
-          });
-
+          }, id);
         case 'ticket_sms':
           return await sendTicketConfirmationSms({
             phone: payload.phone as string,
@@ -328,18 +344,18 @@ async function sendNotificationDirect(notification: QueuedNotification): Promise
               codes: string[];
             }>,
             totalAmount: payload.totalAmount as number,
-          });
-
+          }, id);
         case 'waiver_sms':
-          return await sendWaiverConfirmationSms(payload as unknown as WaiverSmsData);
-
+          return await sendWaiverConfirmationSms(payload as unknown as WaiverSmsData, id);
+        case 'birthday_offer_sms':
+          return await sendBirthdayOfferSms(payload as unknown as BirthdayOfferSmsData, id);
         default:
           logger.warn({ template }, 'Unknown SMS template');
-          return false;
+          return { success: false };
       }
     }
 
-    return false;
+    return { success: false };
   } catch (err) {
     logger.error({
       error: err,
@@ -347,7 +363,7 @@ async function sendNotificationDirect(notification: QueuedNotification): Promise
       template,
       recipient: notification.recipient,
     }, 'Error sending notification');
-    return false;
+    return { success: false };
   }
 }
 
@@ -380,15 +396,18 @@ export async function processNotificationQueue(batchSize: number = 10): Promise<
 
     for (const notification of notifications as QueuedNotification[]) {
       try {
-        const success = await sendNotificationDirect(notification);
+        const { success, messageSid } = await sendNotificationDirect(notification);
 
         if (success) {
-          // Mark as sent
+          // Mark as sent. provider_message_sid lets the
+          // /api/webhooks/twilio/status endpoint update delivery_status
+          // when carriers acknowledge or reject the message.
           await supabaseAny
             .from('notification_queue')
             .update({
               status: 'sent',
               sent_at: new Date().toISOString(),
+              ...(messageSid ? { provider_message_sid: messageSid } : {}),
             })
             .eq('id', notification.id);
 
@@ -398,6 +417,7 @@ export async function processNotificationQueue(batchSize: number = 10): Promise<
             type: notification.type,
             template: notification.template,
             recipient: notification.recipient,
+            messageSid,
           }, 'Notification sent successfully');
         } else {
           // Increment attempts and schedule retry with exponential backoff

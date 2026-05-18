@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 
 import { supabase } from '../lib/supabase';
@@ -27,10 +27,11 @@ type MembershipStatus = {
 };
 
 export type ChildProfile = {
-  id: string;
+  id: number;
   firstName: string;
   lastName?: string;
   birthDate?: string;
+  photoUrl?: string;
 };
 
 type User = {
@@ -106,8 +107,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // Guard against concurrent loadProfile calls (race condition between getSession and onAuthStateChange)
+  const loadProfileLockRef = useRef(false);
+
   // Load user profile from backend
   const loadProfile = useCallback(async (accessToken: string) => {
+    // Prevent concurrent calls — second caller skips instead of racing
+    if (loadProfileLockRef.current) return;
+    loadProfileLockRef.current = true;
+
     try {
       setAuthToken(accessToken);
       const response = await apiGet<{ user: unknown }>('/users/me');
@@ -136,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Sign-up flow: try to load profile with retry (user may have just been created)
       try {
         // Small delay to allow database to fully commit the user record
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Try loading profile again
         const retryResponse = await apiGet<{ user: unknown }>('/users/me');
@@ -153,6 +161,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
         }
       }
+    } finally {
+      loadProfileLockRef.current = false;
     }
   }, []);
 
@@ -507,10 +517,11 @@ function normalizeUser(raw: unknown): User {
     }
 
     acc.push({
-      id: childId,
+      id: typeof rawId === 'number' ? rawId : parseInt(childId, 10),
       firstName: typeof childRecord.firstName === 'string' ? childRecord.firstName : '',
       lastName: typeof childRecord.lastName === 'string' ? childRecord.lastName : undefined,
       birthDate: toIsoString(childRecord.birthDate),
+      photoUrl: typeof childRecord.photoUrl === 'string' ? childRecord.photoUrl : undefined,
     });
     return acc;
   }, []);

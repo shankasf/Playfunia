@@ -9,6 +9,20 @@ const ET_TIMEZONE = 'America/New_York';
  */
 export function formatDate(value?: string | Date | null): string {
   if (!value) return '--';
+
+  // Date-only strings (YYYY-MM-DD) must NOT go through timezone conversion,
+  // because new Date('2026-04-01') creates midnight UTC, and converting to ET
+  // shifts it to the previous day (e.g. March 31 at 8 PM).
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(year, month - 1, day, 12, 0, 0); // noon local to avoid edge cases
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) {
     return typeof value === 'string' ? value : '--';
@@ -26,6 +40,18 @@ export function formatDate(value?: string | Date | null): string {
  */
 export function formatDateWithWeekday(value?: string | Date | null): string {
   if (!value) return '--';
+
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    const date = new Date(year, month - 1, day, 12, 0, 0);
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+
   const date = typeof value === 'string' ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) {
     return typeof value === 'string' ? value : '--';

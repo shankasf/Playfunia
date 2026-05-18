@@ -69,11 +69,17 @@ function getTargetDates(): Map<string, { reminderType: string; daysUntil: number
 
 /**
  * Format a YYYY-MM-DD date for display in emails.
+ * Anchored to noon UTC and formatted in America/New_York so the displayed
+ * calendar day always matches the ET-based scheduling logic, independent
+ * of the server's local timezone.
  */
 function formatEventDate(dateStr: string): string {
-  const parts = dateStr.split('-');
-  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-  return d.toLocaleDateString('en-US', {
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return dateStr;
+  const [, y, m, d] = match;
+  const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d), 12, 0, 0));
+  return date.toLocaleDateString('en-US', {
+    timeZone: 'America/New_York',
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -187,7 +193,7 @@ export async function processBookingReminders(): Promise<{
         let smsSent = false;
         if (phone) {
           try {
-            smsSent = await sendBookingReminderSms({
+            smsSent = (await sendBookingReminderSms({
               phone,
               guestName,
               reference: booking.reference || '',
@@ -195,7 +201,7 @@ export async function processBookingReminders(): Promise<{
               startTime: formatTime(booking.start_time),
               location: booking.location_name || 'Playfunia',
               daysUntil,
-            });
+            })).success;
           } catch (smsErr) {
             logger.error({ err: smsErr, bookingId: booking.booking_id }, 'SMS reminder failed');
           }

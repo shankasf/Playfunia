@@ -4,7 +4,7 @@ import { DateTime } from 'luxon';
 
 import { getSquareClient, getSquareLocationId } from '../config/square';
 import { appConfig } from '../config/env';
-import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository, PartyBookingRepository, PartyPackageRepository, PartyAddOnRepository, EventRepository } from '../repositories';
+import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository, PartyBookingRepository, PartyPackageRepository, PartyAddOnRepository, EventRepository, ProductPromotionRepository, ChildRepository } from '../repositories';
 import {
   getTaxRate as getPricingTaxRate,
   getTaxRateSync as getPricingTaxRateSync,
@@ -17,13 +17,14 @@ import {
 } from './pricing-config.service';
 import { AppError } from '../utils/app-error';
 import { PAYMENT_STATUS } from '../utils/payment-statuses';
-import { getUserFriendlyErrorMessage } from './payment-logger.service';
+import { getUserFriendlyErrorMessage, logPaymentInitiated, logPaymentCompleted, logPaymentFailed, type SquareError } from './payment-logger.service';
 import { reserveTickets } from './ticket.service';
 import { purchaseMembership } from './membership.service';
 import { sendOrderConfirmation, sendBookingConfirmation, sendAdminBookingNotification, sendAdminTicketNotification, sendAdminMembershipNotification, type BookingEmailData } from './email.service';
 import { sendOrderConfirmationSms, sendTicketConfirmationSms, sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
 import { generateReceiptPDF, generateBookingReceiptPDF, createReceiptRecord } from './receipt.service';
 import { reserveSlot, confirmReservation, getReservation } from './slot-reservation.service';
+import { completeCheckoutSession } from './checkout-session.service';
 import { logger } from '../utils/logger';
 import {
   toSquareMoney,
@@ -33,6 +34,7 @@ import {
   calculateTaxCents,
 } from '../utils/currency';
 import { withRetry } from '../utils/retry';
+import { tryEvaluateCoupon, type CouponEvaluation } from './coupon.service';
 
 // Valid payment statuses (Fix #4 - accept PENDING for ACH, Afterpay, etc.)
 const VALID_PAYMENT_STATUSES = ['COMPLETED', 'PENDING'];
@@ -50,6 +52,9 @@ const REVERSE_TIER_MAP: Record<string, string[]> = {
   'explorer': ['Silver'],
   'adventurer': ['Gold'],
   'champion': ['Platinum', 'VIP Platinum'],
+  'promo_1kid': ['Promo - 1 Kid + 1 Adult'],
+  'promo_2kids': ['Promo - 2 Kids + 2 Adults'],
+  'promo_3kids': ['Promo - 3 Kids + 3 Adults'],
 };
 
 // Price tolerance in cents (allow 1 cent rounding difference)
@@ -61,6 +66,30 @@ const PRICE_TOLERANCE_CENTS = 1;
  */
 function hashSourceId(sourceId: string): string {
   return createHash('sha256').update(sourceId).digest('hex').slice(0, 16);
+}
+
+/**
+ * Build a descriptive payment note for Square from actual item labels.
+ * e.g. "Mini Plan Membership, General Admission x2 | Playfunia"
+ * Square note field max is 500 chars.
+ */
+function buildSquarePaymentNote(items: SquareCheckoutItemInput[]): string {
+  const parts: string[] = [];
+  for (const item of items) {
+    if (item.type === 'membership') {
+      parts.push(`${item.label} Membership`);
+    } else if (item.type === 'booking') {
+      parts.push(`${item.label} Party Booking`);
+    } else {
+      // ticket
+      const qty = item.quantity > 1 ? ` x${item.quantity}` : '';
+      parts.push(`${item.label}${qty}`);
+    }
+  }
+  const description = parts.join(', ');
+  const note = `${description} | Playfunia`;
+  // Square note max 500 chars
+  return note.length > 500 ? note.slice(0, 497) + '...' : note;
 }
 
 /**
@@ -105,14 +134,25 @@ async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<voi
     if (item.type === 'membership') {
       // Validate membership price against database
       const planId = parseInt(item.membershipId, 10);
-      const plan = await MembershipPlanRepository.findById(planId);
+      const [plan, promo] = await Promise.all([
+        MembershipPlanRepository.findById(planId),
+        ProductPromotionRepository.findActive('membership', planId),
+      ]);
 
       if (!plan) {
         throw new AppError('Membership plan not found', 404);
       }
 
-      // Calculate expected total (monthly_price * durationMonths)
-      const expectedTotal = plan.monthly_price * item.durationMonths;
+      // Calculate effective monthly price (accounting for active promo)
+      let effectiveMonthlyPrice = plan.monthly_price;
+      if (promo) {
+        effectiveMonthlyPrice = promo.discount_type === 'percent'
+          ? Math.round(plan.monthly_price * (1 - promo.discount_value / 100) * 100) / 100
+          : promo.discount_value;
+      }
+
+      // Calculate expected total (effectiveMonthlyPrice * durationMonths)
+      const expectedTotal = effectiveMonthlyPrice * item.durationMonths;
       const priceDiffCents = Math.abs(dollarsToCents(item.unitPrice) - dollarsToCents(expectedTotal));
 
       if (priceDiffCents > PRICE_TOLERANCE_CENTS) {
@@ -122,6 +162,7 @@ async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<voi
           expectedPrice: expectedTotal,
           planId,
           durationMonths: item.durationMonths,
+          hasPromo: !!promo,
         }, 'Price manipulation detected: membership price mismatch');
         throw new AppError(
           'Membership price has changed. Please refresh the page and try again.',
@@ -200,20 +241,16 @@ async function getSiblingDiscountRate(): Promise<number> {
   return cachedSiblingDiscountRate / 100; // Convert from percentage to decimal
 }
 
-async function getPromoDiscount(promoCode: string): Promise<number> {
-  const promo = await PromotionRepository.findByCode(promoCode);
-  if (!promo) return 0;
-
-  // Check if promo is still valid
-  const now = new Date();
-  if (promo.valid_from && new Date(promo.valid_from) > now) return 0;
-  if (promo.valid_until && new Date(promo.valid_until) < now) return 0;
-  if (promo.max_redemptions && promo.redemptions >= promo.max_redemptions) return 0;
-
-  // Return percentage as decimal (e.g., 10 -> 0.10)
-  if (promo.percent_off) return promo.percent_off / 100;
-
-  return 0;
+/**
+ * Convert checkout items to the lightweight cart shape the coupon service expects.
+ * Tickets carry quantity; memberships and bookings are unit-priced singletons.
+ */
+function toCouponItems(items: SquareCheckoutItemInput[]) {
+  return items.map(item => ({
+    type: item.type,
+    unitPrice: item.unitPrice,
+    quantity: item.type === 'ticket' ? item.quantity : 1,
+  }));
 }
 
 interface CheckoutLine {
@@ -231,6 +268,7 @@ export interface SquareCheckoutSummary {
   currency: string;
   subtotal: number;
   discounts: Array<{ label: string; amount: number }>;
+  taxRate: number;
   taxAmount: number;
   total: number;
   lines: CheckoutLine[];
@@ -347,12 +385,6 @@ async function calculateLine(item: SquareCheckoutItemInput, _membershipDiscountP
   };
 }
 
-async function applyPromo(totalBeforePromo: number, promoCode?: string): Promise<number> {
-  if (!promoCode) return 0;
-  const rate = await getPromoDiscount(promoCode);
-  return roundCurrency(totalBeforePromo * rate);
-}
-
 async function buildSummary(
   userId: string,
   items: SquareCheckoutItemInput[],
@@ -360,52 +392,77 @@ async function buildSummary(
 ): Promise<{
   summary: SquareCheckoutSummary;
   user: Awaited<ReturnType<typeof getUserWithMembership>>['user'];
+  coupon: CouponEvaluation | null;
 }> {
   // Reset cache for fresh pricing data
   cachedSiblingDiscountRate = null;
 
   const { user, membershipDiscount } = await getUserWithMembership(userId);
 
-  // Calculate lines - no discounts applied
+  // Calculate lines - no per-line discounts applied
   const lines = await Promise.all(items.map(item => calculateLine(item, membershipDiscount)));
   const subtotal = roundCurrency(lines.reduce((sum, line) => sum + line.subtotal, 0));
 
-  // Calculate tax (8%) - no discounts
-  const taxAmount = roundCurrency(subtotal * getTaxRateSync());
-  const total = roundCurrency(subtotal + taxAmount);
+  // Apply coupon (if any) against the eligible portion of the cart
+  const coupon = await tryEvaluateCoupon(promoCode, toCouponItems(items));
+  const couponDiscount = coupon ? coupon.discountAmount : 0;
+  const discounts: Array<{ label: string; amount: number }> = coupon
+    ? [{ label: coupon.label, amount: coupon.discountAmount }]
+    : [];
+  const discountedSubtotal = roundCurrency(Math.max(0, subtotal - couponDiscount));
+
+  // Tax is computed on the discounted subtotal
+  const taxRate = getTaxRateSync();
+  const taxAmount = roundCurrency(discountedSubtotal * taxRate);
+  const total = roundCurrency(discountedSubtotal + taxAmount);
 
   return {
     summary: {
       currency: 'usd',
       subtotal,
-      discounts: [], // No discounts
+      discounts,
+      taxRate: Math.round(taxRate * 100),
       taxAmount,
       total,
       lines,
     },
     user,
+    coupon,
   };
 }
 
-async function buildGuestSummary(items: SquareCheckoutItemInput[], _promoCode?: string): Promise<SquareCheckoutSummary> {
+async function buildGuestSummary(
+  items: SquareCheckoutItemInput[],
+  promoCode?: string,
+): Promise<{ summary: SquareCheckoutSummary; coupon: CouponEvaluation | null }> {
   // Bug fix #11: Reset sibling discount cache for guest checkout (same as buildSummary)
   cachedSiblingDiscountRate = null;
 
-  // Calculate lines - no discounts applied
   const lines = await Promise.all(items.map(item => calculateLine(item, 0)));
   const subtotal = roundCurrency(lines.reduce((sum, line) => sum + line.subtotal, 0));
 
-  // Calculate tax (8%) - no discounts
-  const taxAmount = roundCurrency(subtotal * getTaxRateSync());
-  const total = roundCurrency(subtotal + taxAmount);
+  const coupon = await tryEvaluateCoupon(promoCode, toCouponItems(items));
+  const couponDiscount = coupon ? coupon.discountAmount : 0;
+  const discounts: Array<{ label: string; amount: number }> = coupon
+    ? [{ label: coupon.label, amount: coupon.discountAmount }]
+    : [];
+  const discountedSubtotal = roundCurrency(Math.max(0, subtotal - couponDiscount));
+
+  const taxRate = getTaxRateSync();
+  const taxAmount = roundCurrency(discountedSubtotal * taxRate);
+  const total = roundCurrency(discountedSubtotal + taxAmount);
 
   return {
-    currency: 'usd',
-    subtotal,
-    discounts: [], // No discounts
-    taxAmount,
-    total,
-    lines,
+    summary: {
+      currency: 'usd',
+      subtotal,
+      discounts,
+      taxRate: Math.round(taxRate * 100),
+      taxAmount,
+      total,
+      lines,
+    },
+    coupon,
   };
 }
 
@@ -457,7 +514,7 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
   // This prevents price manipulation attacks
   await validateItemPrices(input.items);
 
-  const { summary, user } = await buildSummary(userId, input.items, input.promoCode);
+  const { summary, user, coupon } = await buildSummary(userId, input.items, input.promoCode);
 
   if (summary.total <= 0) {
     throw new AppError('No payment is required for this cart', 400);
@@ -600,8 +657,21 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
     discount_usd: summary.discounts.reduce((sum, d) => sum + d.amount, 0),
     tax_usd: summary.taxAmount,
     total_usd: summary.total,
-    notes: `Square checkout: ${input.items.length} item(s)${input.promoCode ? `, promo: ${input.promoCode}` : ''}`,
+    notes: buildSquarePaymentNote(input.items),
+    promotion_id: coupon?.promotionId ?? null,
+    coupon_code: coupon?.code ?? null,
   });
+
+  logger.info({
+    orderId: order.order_id,
+    userId,
+    customerId: user.customer_id,
+    subtotal: summary.subtotal,
+    tax: summary.taxAmount,
+    total: summary.total,
+    itemCount: input.items.length,
+    items: input.items.map(i => ({ type: i.type, label: i.label, unitPrice: i.unitPrice })),
+  }, 'Order created (Pending) — starting payment');
 
   // Use order_id as part of idempotency key to prevent duplicate payments
   // SECURITY: Use hash of full sourceId to prevent collision attacks
@@ -613,6 +683,22 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
   // ============================================================
   // PHASE 3: PROCESS PAYMENT
   // ============================================================
+  const paymentStartTime = Date.now();
+  const logResult = await logPaymentInitiated({
+    idempotencyKey,
+    customerId: user.customer_id ?? null,
+    userId: user.user_id ?? null,
+    paymentType: 'checkout',
+    amount: summary.total,
+    referenceId: `order_${order.order_id}`,
+    metadata: { orderId: order.order_id, itemCount: input.items.length, checkoutSessionId: input.checkoutSessionId ?? null },
+  }, {
+    sourceId: input.sourceId,
+    idempotencyKey,
+    amountMoney: toSquareMoney(summary.total),
+    locationId: getSquareLocationId(),
+  } as CreatePaymentRequest);
+
   try {
     {
       const square = getSquareClient();
@@ -624,7 +710,7 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
         amountMoney: toSquareMoney(summary.total),
         locationId,
         referenceId: `order_${order.order_id}`,
-        note: `Playfunia checkout - Order #${order.order_id}`,
+        note: buildSquarePaymentNote(input.items),
         // Enable autocomplete to capture payment immediately
         autocomplete: true,
       };
@@ -642,17 +728,24 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
       // Fix #4: Accept both COMPLETED and PENDING statuses
       // PENDING is valid for ACH transfers, Afterpay/Clearpay, gift cards, etc.
       if (!response.payment || !VALID_PAYMENT_STATUSES.includes(response.payment.status ?? '')) {
+        logger.warn({ orderId: order.order_id, paymentStatus: response.payment?.status, elapsed: Date.now() - paymentStartTime }, 'Order Failed — invalid payment status');
         await OrderRepository.update(order.order_id, { status: 'Failed' });
+        await logPaymentFailed(logResult, [{ category: 'PAYMENT_METHOD_ERROR', code: response.payment?.status ?? 'UNKNOWN', detail: 'Invalid payment status' }], Date.now() - paymentStartTime);
         throw new AppError('Payment failed. Please try again.', 400);
       }
 
       const payment = response.payment;
       if (!payment.id) {
+        logger.warn({ orderId: order.order_id, elapsed: Date.now() - paymentStartTime }, 'Order Failed — missing payment ID');
         await OrderRepository.update(order.order_id, { status: 'Failed' });
+        await logPaymentFailed(logResult, [{ category: 'API_ERROR', code: 'MISSING_PAYMENT_ID', detail: 'Payment response missing ID' }], Date.now() - paymentStartTime);
         throw new AppError('Payment processing error. Please try again.', 500);
       }
       paymentId = payment.id;
       receiptUrl = payment.receiptUrl;
+
+      await logPaymentCompleted(logResult, payment, Date.now() - paymentStartTime);
+      logger.info({ orderId: order.order_id, paymentId, paymentStatus: payment.status, total: summary.total, elapsed: Date.now() - paymentStartTime }, 'Payment successful — fulfilling order');
 
       // Record payment with receipt URL (Fix #16)
       await PaymentRepository.create({
@@ -673,7 +766,9 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
       const obj = paymentError as Record<string, unknown>;
       if ('statusCode' in obj && 'errors' in obj && Array.isArray(obj.errors)) {
         const statusCode = obj.statusCode as number;
-        const errors = obj.errors as Array<{ code?: string }>;
+        const errors = obj.errors as Array<{ code?: string; category?: string; detail?: string; field?: string }>;
+        await logPaymentFailed(logResult, errors as SquareError[], Date.now() - paymentStartTime, obj);
+        logger.error({ orderId: order.order_id, errorCode: errors[0]?.code, errorCategory: errors[0]?.category, errorDetail: errors[0]?.detail, total: summary.total, elapsed: Date.now() - paymentStartTime }, 'Order Failed — payment declined');
         if (statusCode >= 400 && statusCode < 500 && errors[0]?.code) {
           throw new AppError(getUserFriendlyErrorMessage(errors[0].code), 400);
         }
@@ -721,12 +816,97 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
       }
 
       if (item.type === 'membership') {
+        const membershipItem = item as typeof item & {
+          childInfo: { childId?: number; firstName?: string; lastName?: string; birthDate?: string };
+          parentZipCode: string;
+          parentPhone: string;
+        };
+
+        // Validate that the parent account has the required identity fields.
+        // The Zod schema guarantees childInfo / parentZipCode / parentPhone exist on the
+        // wire payload, but we still need to confirm the account holder's name + email.
+        const memberUser = await UserRepository.findById(parseInt(userId, 10));
+        if (!memberUser) {
+          throw new AppError('User account not found for membership purchase', 400);
+        }
+        if (!memberUser.first_name || !memberUser.last_name || !memberUser.email) {
+          throw new AppError(
+            'Your account is missing required information (first name, last name, email). Please update your profile before purchasing a membership.',
+            400,
+          );
+        }
+
+        // Sync parent phone + zip onto the user/customer record.
+        const phoneDigits = (membershipItem.parentPhone ?? '').replace(/\D/g, '');
+        const zipCode = (membershipItem.parentZipCode ?? '').trim();
+        const userPatch: { phone?: string; address_postal_code?: string } = {};
+        if (phoneDigits && memberUser.phone !== phoneDigits) userPatch.phone = phoneDigits;
+        if (zipCode && memberUser.address_postal_code !== zipCode) userPatch.address_postal_code = zipCode;
+        if (Object.keys(userPatch).length > 0) {
+          await UserRepository.update(memberUser.user_id, userPatch);
+        }
+
+        // Ensure customer record exists and has the same contact info.
+        let customerId = memberUser.customer_id;
+        if (!customerId) {
+          const created = await CustomerRepository.create({
+            full_name: `${memberUser.first_name} ${memberUser.last_name}`.trim(),
+            email: memberUser.email,
+            phone: phoneDigits || memberUser.phone || undefined,
+            address: zipCode || undefined,
+          });
+          customerId = created.customer_id;
+          await UserRepository.update(memberUser.user_id, { customer_id: customerId });
+        } else {
+          await CustomerRepository.update(customerId, {
+            phone: phoneDigits || memberUser.phone || undefined,
+            address: zipCode || undefined,
+          });
+        }
+
+        // Resolve / create the child record this membership covers, then enforce
+        // the photo-on-file requirement.
+        let childId: number | undefined;
+        if (membershipItem.childInfo.childId) {
+          childId = membershipItem.childInfo.childId;
+        } else if (
+          membershipItem.childInfo.firstName &&
+          membershipItem.childInfo.lastName &&
+          membershipItem.childInfo.birthDate
+        ) {
+          const child = await ChildRepository.create({
+            customer_id: customerId,
+            first_name: membershipItem.childInfo.firstName,
+            last_name: membershipItem.childInfo.lastName,
+            birth_date: membershipItem.childInfo.birthDate,
+          });
+          childId = child.child_id;
+        }
+
+        if (!childId) {
+          throw new AppError('Child information is required for membership purchase.', 400);
+        }
+
+        const childRecord = await ChildRepository.findById(childId);
+        if (!childRecord || childRecord.customer_id !== customerId) {
+          throw new AppError('Selected child does not belong to this account.', 403);
+        }
+        if (!childRecord.photo_url || !childRecord.photo_storage_path) {
+          throw new AppError(
+            'A photo of the child is required for membership check-in verification. Please upload it before completing payment.',
+            400,
+          );
+        }
+
         const membership = await purchaseMembership(userId, {
           membershipId: item.membershipId,
           durationMonths: item.durationMonths,
           autoRenew: item.autoRenew,
-        });
-        membershipResults.push({ cartIndex: index, membership });
+          refundPolicyAccepted: item.refundPolicyAccepted,
+          refundPolicyAcceptedAt: item.refundPolicyAcceptedAt,
+          referralName: (item as unknown as { referralName?: string }).referralName,
+        }, { skipNotifications: true, paymentId, childId });
+        membershipResults.push({ cartIndex: index, membership: { ...membership, childId } });
       }
 
       if (item.type === 'booking') {
@@ -890,16 +1070,36 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
     notes: orderNotes,
   });
 
+  // Bump coupon redemption counter (best effort — don't fail the order on counter errors)
+  if (coupon) {
+    try {
+      await PromotionRepository.incrementRedemptions(coupon.promotionId);
+    } catch (err) {
+      logger.warn({ err, promotionId: coupon.promotionId, orderId: order.order_id }, 'Failed to increment coupon redemptions');
+    }
+  }
+
+  // Mark any associated checkout session as completed
+  if (input.checkoutSessionId) {
+    completeCheckoutSession(input.checkoutSessionId, order.order_id).catch(err =>
+      logger.error({ error: err, checkoutSessionId: input.checkoutSessionId, orderId: order.order_id }, 'Failed to complete checkout session')
+    );
+  }
+
   // ============================================================
   // PHASE 6: SEND NOTIFICATIONS (Async - Non-blocking)
   // ============================================================
   // Fire-and-forget pattern: don't block response waiting for emails
   // This is industry standard - customers see confirmation immediately
   const orderNumber = `PF-${order.order_id}`;
-  const orderDate = new Date().toLocaleDateString('en-US', {
+  const orderDate = new Date().toLocaleString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/New_York',
   });
 
   // Execute notifications in background (don't await)
@@ -971,6 +1171,8 @@ async function sendNotifications(params: {
           subtotal?: number;
           cleaning_fee?: number;
           customer_id?: number;
+          child_ids?: number[];
+          notes?: string;
         };
         const item = bookingResult.item as { type: 'booking'; packageId: string; unitPrice: number; guestCount: number; eventDate: string; startTime: string; label: string; location: string };
 
@@ -982,7 +1184,7 @@ async function sendNotifications(params: {
         const reference = booking.reference ?? `PF-${booking.booking_id}`;
         const guestName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Customer';
         const eventDate = booking.event_date
-          ? new Date(booking.event_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+          ? (() => { const p = booking.event_date.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); })()
           : item.eventDate;
         const startTime = booking.start_time ?? item.startTime;
         const location = booking.location_name ?? 'Albany';
@@ -1035,6 +1237,23 @@ async function sendNotifications(params: {
           quantity: a.quantity ?? 1,
         }));
 
+        // Resolve children from DB for email/PDF
+        const bookingChildIds = (booking.child_ids ?? []) as number[];
+        let resolvedChildren: Array<{ name: string; birthDate?: string }> = [];
+        if (bookingChildIds.length > 0) {
+          try {
+            const childRecords = await ChildRepository.findByIds(bookingChildIds);
+            resolvedChildren = childRecords.map((c: any) => ({
+              name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+              birthDate: c.birth_date || undefined,
+            }));
+          } catch (childErr) {
+            console.error('Failed to resolve children for receipt:', childErr);
+          }
+        }
+        const bookingNotes = booking.notes?.toString() || undefined;
+        const customerPhone = user.phone ?? undefined;
+
         // Generate receipt
         let receiptNumber: string | undefined;
         let receiptPdf: Buffer | undefined;
@@ -1067,6 +1286,9 @@ async function sendNotifications(params: {
               addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
               totalAmount,
               balanceRemaining,
+              children: resolvedChildren.length > 0 ? resolvedChildren : undefined,
+              notes: bookingNotes,
+              customerPhone,
               packageDetails: partyPackage ? {
                 priceUsd: partyPackage.price_usd ?? 0,
                 baseChildren: partyPackage.base_children ?? 10,
@@ -1090,6 +1312,7 @@ async function sendNotifications(params: {
             date: orderDate,
             customerName: guestName,
             customerEmail: user.email ?? '',
+            customerPhone,
             bookingReference: reference,
             packageName,
             packageBasePrice,
@@ -1099,16 +1322,18 @@ async function sendNotifications(params: {
             guestCount,
             subtotal,
             taxAmount,
-            taxRate: Math.round(getTaxRateSync() * 100), // Convert decimal to percentage
+            taxRate: Math.round(getTaxRateSync() * 100),
             cleaningFee,
             extraChildren,
             extraAdults,
             addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
-            depositAmount: totalAmount, // Full payment - deposit equals total with tax
+            depositAmount: totalAmount,
             balanceRemaining,
             total: totalAmount,
             paymentMethod: 'Credit Card (Square)',
             paymentId,
+            children: resolvedChildren.length > 0 ? resolvedChildren : undefined,
+            notes: bookingNotes,
             packageDetails: partyPackage ? {
               priceUsd: partyPackage.price_usd ?? 0,
               baseChildren: partyPackage.base_children ?? 10,
@@ -1139,11 +1364,11 @@ async function sendNotifications(params: {
           packageName,
           packageBasePrice,
           guestCount,
-          depositAmount: item.unitPrice, // Full payment - no deposit
+          depositAmount: item.unitPrice,
           subtotal,
           cleaningFee,
           taxAmount,
-          taxRate: Math.round(getTaxRateSync() * 100), // Tax rate as percentage
+          taxRate: Math.round(getTaxRateSync() * 100),
           totalAmount,
           balanceRemaining,
           extraChildren,
@@ -1151,6 +1376,22 @@ async function sendNotifications(params: {
           addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
           receiptPdf,
           receiptNumber,
+          phone: customerPhone,
+          children: resolvedChildren.length > 0 ? resolvedChildren : undefined,
+          notes: bookingNotes,
+          packageDetails: partyPackage ? {
+            priceUsd: partyPackage.price_usd ?? 0,
+            baseChildren: partyPackage.base_children ?? 10,
+            baseRoomHours: partyPackage.base_room_hours ?? 2,
+            includesFood: partyPackage.includes_food ?? false,
+            includesDrinks: partyPackage.includes_drinks ?? false,
+            includesDecor: partyPackage.includes_decor ?? false,
+            notes: partyPackage.notes ?? undefined,
+            features: (partyPackage as any).features ?? [],
+            additionalTerms: (partyPackage as any).additional_terms ?? [],
+            extraChildPrice: (partyPackage as any).extra_child_price ?? 40,
+            extraAdultPrice: (partyPackage as any).extra_adult_price ?? 10,
+          } : undefined,
         };
 
         await sendBookingConfirmation(emailData);
@@ -1342,8 +1583,8 @@ async function sendNotifications(params: {
                 customerPhone: user.phone ?? undefined,
                 customerId: user.customer_id?.toString(),
                 tierName: membership.tierName ?? line?.label ?? 'Membership',
-                startDate: membership.startedAt ? new Date(membership.startedAt).toLocaleDateString() : orderDate,
-                expiryDate: membership.expiresAt ? new Date(membership.expiresAt).toLocaleDateString() : 'N/A',
+                startDate: membership.startedAt ? ((s: string) => { const d = s.slice(0, 10).split('-'); return new Date(Number(d[0]), Number(d[1]) - 1, Number(d[2])).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); })(membership.startedAt) : orderDate,
+                expiryDate: membership.expiresAt ? ((s: string) => { const d = s.slice(0, 10).split('-'); return new Date(Number(d[0]), Number(d[1]) - 1, Number(d[2])).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); })(membership.expiresAt) : 'N/A',
                 visitsPerMonth: membership.visitsPerMonth ?? null,
                 monthlyPrice: membership.monthlyPrice ?? line?.unitPrice ?? 0,
                 totalPaid: roundCurrency((line?.total ?? 0) * (1 + getTaxRateSync())),
@@ -1403,7 +1644,12 @@ async function sendNotifications(params: {
  * Create guest checkout intent
  */
 export async function createSquareGuestCheckoutPaymentIntent(input: SquareGuestCheckoutIntentInput) {
-  const summary = await buildGuestSummary(input.items, input.promoCode);
+  // Membership purchases require an authenticated account
+  if (input.items.some(item => item.type === 'membership')) {
+    throw new AppError('Membership purchases require an account. Please sign in or create an account first.', 400);
+  }
+
+  const { summary } = await buildGuestSummary(input.items, input.promoCode);
 
   if (summary.total <= 0) {
     throw new AppError('No payment is required for this cart', 400);
@@ -1432,11 +1678,16 @@ export async function createSquareGuestCheckoutPaymentIntent(input: SquareGuestC
 export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFinalizeInput) {
   assertSquareConfigured();
 
+  // Membership purchases require an authenticated account
+  if (input.items.some(item => item.type === 'membership')) {
+    throw new AppError('Membership purchases require an account. Please sign in or create an account first.', 400);
+  }
+
   // PHASE 0: PRICE VALIDATION (Critical Security Check)
   // Validate all prices against database before processing payment
   await validateItemPrices(input.items);
 
-  const summary = await buildGuestSummary(input.items, input.promoCode);
+  const { summary, coupon } = await buildGuestSummary(input.items, input.promoCode);
 
   if (summary.total <= 0) {
     throw new AppError('No payment is required for this cart', 400);
@@ -1575,8 +1826,21 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
     discount_usd: summary.discounts.reduce((sum, d) => sum + d.amount, 0),
     tax_usd: summary.taxAmount,
     total_usd: summary.total,
-    notes: `Guest checkout: ${input.guestFirstName} ${input.guestLastName}`,
+    notes: buildSquarePaymentNote(input.items),
+    promotion_id: coupon?.promotionId ?? null,
+    coupon_code: coupon?.code ?? null,
   });
+
+  logger.info({
+    orderId: order.order_id,
+    guestEmail: input.guestEmail,
+    customerId: guestCustomer.customer_id,
+    subtotal: summary.subtotal,
+    tax: summary.taxAmount,
+    total: summary.total,
+    itemCount: input.items.length,
+    items: input.items.map(i => ({ type: i.type, label: i.label, unitPrice: i.unitPrice })),
+  }, 'Guest order created (Pending) — starting payment');
 
   // SECURITY: Use hash of full sourceId to prevent collision attacks
   const idempotencyKey = `guest_checkout_${order.order_id}_${hashSourceId(input.sourceId)}`;
@@ -1587,6 +1851,21 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
   // ============================================================
   // PHASE 4: PROCESS PAYMENT
   // ============================================================
+  const guestPaymentStartTime = Date.now();
+  const guestLogResult = await logPaymentInitiated({
+    idempotencyKey,
+    customerId: guestCustomer.customer_id,
+    paymentType: 'checkout',
+    amount: summary.total,
+    referenceId: `guest_order_${order.order_id}`,
+    metadata: { orderId: order.order_id, itemCount: input.items.length, guestEmail: input.guestEmail, checkoutSessionId: input.checkoutSessionId ?? null },
+  }, {
+    sourceId: input.sourceId,
+    idempotencyKey,
+    amountMoney: toSquareMoney(summary.total),
+    locationId: getSquareLocationId(),
+  } as CreatePaymentRequest);
+
   try {
     {
       const square = getSquareClient();
@@ -1598,7 +1877,7 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
         amountMoney: toSquareMoney(summary.total),
         locationId,
         referenceId: `guest_order_${order.order_id}`,
-        note: `Guest checkout - Order #${order.order_id}`,
+        note: buildSquarePaymentNote(input.items),
         buyerEmailAddress: input.guestEmail,
         autocomplete: true,
       };
@@ -1615,17 +1894,24 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
 
       // Fix #4: Accept both COMPLETED and PENDING statuses
       if (!response.payment || !VALID_PAYMENT_STATUSES.includes(response.payment.status ?? '')) {
+        logger.warn({ orderId: order.order_id, paymentStatus: response.payment?.status, elapsed: Date.now() - guestPaymentStartTime }, 'Guest order Failed — invalid payment status');
         await OrderRepository.update(order.order_id, { status: 'Failed' });
+        await logPaymentFailed(guestLogResult, [{ category: 'PAYMENT_METHOD_ERROR', code: response.payment?.status ?? 'UNKNOWN', detail: 'Invalid payment status' }], Date.now() - guestPaymentStartTime);
         throw new AppError('Payment failed. Please try again.', 400);
       }
 
       const payment = response.payment;
       if (!payment.id) {
+        logger.warn({ orderId: order.order_id, elapsed: Date.now() - guestPaymentStartTime }, 'Guest order Failed — missing payment ID');
         await OrderRepository.update(order.order_id, { status: 'Failed' });
+        await logPaymentFailed(guestLogResult, [{ category: 'API_ERROR', code: 'MISSING_PAYMENT_ID', detail: 'Payment response missing ID' }], Date.now() - guestPaymentStartTime);
         throw new AppError('Payment processing error. Please try again.', 500);
       }
       paymentId = payment.id;
       receiptUrl = payment.receiptUrl;
+
+      await logPaymentCompleted(guestLogResult, payment, Date.now() - guestPaymentStartTime);
+      logger.info({ orderId: order.order_id, paymentId, paymentStatus: payment.status, total: summary.total, elapsed: Date.now() - guestPaymentStartTime }, 'Guest payment successful — fulfilling order');
 
       // Record payment with receipt URL (Fix #16)
       await PaymentRepository.create({
@@ -1645,7 +1931,9 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
       const obj = paymentError as Record<string, unknown>;
       if ('statusCode' in obj && 'errors' in obj && Array.isArray(obj.errors)) {
         const statusCode = obj.statusCode as number;
-        const errors = obj.errors as Array<{ code?: string }>;
+        const errors = obj.errors as Array<{ code?: string; category?: string; detail?: string; field?: string }>;
+        await logPaymentFailed(guestLogResult, errors as SquareError[], Date.now() - guestPaymentStartTime, obj);
+        logger.error({ orderId: order.order_id, errorCode: errors[0]?.code, errorCategory: errors[0]?.category, errorDetail: errors[0]?.detail, total: summary.total, elapsed: Date.now() - guestPaymentStartTime }, 'Guest order Failed — payment declined');
         if (statusCode >= 400 && statusCode < 500 && errors[0]?.code) {
           throw new AppError(getUserFriendlyErrorMessage(errors[0].code), 400);
         }
@@ -1730,6 +2018,34 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
         const taxAmount = centsToDollars(taxAmountCents);
         const totalWithTax = centsToDollars(unitPriceCents + taxAmountCents);
 
+        // Build child info from guestInfo for storage
+        const guestChildIds: number[] = [];
+        if (item.guestInfo) {
+          try {
+            // Create child record for birthday child
+            const birthdayChild = await ChildRepository.create({
+              customer_id: guestCustomer.customer_id,
+              first_name: item.guestInfo.childName,
+              birth_date: item.guestInfo.childBirthDate || undefined,
+            });
+            guestChildIds.push(birthdayChild.child_id);
+
+            // Create records for additional children
+            if (item.guestInfo.additionalChildren?.length) {
+              for (const ac of item.guestInfo.additionalChildren) {
+                const child = await ChildRepository.create({
+                  customer_id: guestCustomer.customer_id,
+                  first_name: ac.name,
+                  birth_date: ac.birthDate || undefined,
+                });
+                guestChildIds.push(child.child_id);
+              }
+            }
+          } catch (childErr) {
+            logger.warn({ err: childErr }, 'Failed to create child records for guest booking');
+          }
+        }
+
         // Create booking
         // Note: Tax is calculated using (subtotal + cleaningFee) * taxRate at receipt time
         // The total already includes tax for proper payment amount
@@ -1753,6 +2069,7 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
           balance_remaining: 0,
           payment_status: PAYMENT_STATUS.PAID,
           status: 'Confirmed',
+          child_ids: guestChildIds,
           guest_name: `${input.guestFirstName} ${input.guestLastName}`,
           guest_email: input.guestEmail,
           guest_phone: input.guestPhone,
@@ -1845,14 +2162,34 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
     notes: guestOrderNotes,
   });
 
+  // Bump coupon redemption counter (best effort)
+  if (coupon) {
+    try {
+      await PromotionRepository.incrementRedemptions(coupon.promotionId);
+    } catch (err) {
+      logger.warn({ err, promotionId: coupon.promotionId, orderId: order.order_id }, 'Failed to increment coupon redemptions (guest)');
+    }
+  }
+
+  // Mark any associated checkout session as completed
+  if (input.checkoutSessionId) {
+    completeCheckoutSession(input.checkoutSessionId, order.order_id).catch(err =>
+      logger.error({ error: err, checkoutSessionId: input.checkoutSessionId, orderId: order.order_id }, 'Failed to complete guest checkout session')
+    );
+  }
+
   // ============================================================
   // PHASE 7: SEND NOTIFICATIONS (Async - Non-blocking)
   // ============================================================
   const orderNumber = `PF-${order.order_id}`;
-  const orderDate = new Date().toLocaleDateString('en-US', {
+  const orderDate = new Date().toLocaleString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/New_York',
   });
 
   // Fire-and-forget notifications
@@ -1921,6 +2258,8 @@ async function sendGuestNotifications(params: {
         subtotal?: number;
         cleaning_fee?: number;
         customer_id?: number;
+        child_ids?: number[];
+        notes?: string;
       };
       const item = bookingResult.item as { type: 'booking'; packageId: string; unitPrice: number; guestCount: number; eventDate: string; startTime: string; label: string; location: string };
 
@@ -1932,7 +2271,7 @@ async function sendGuestNotifications(params: {
       const reference = booking.reference ?? `PF-${booking.booking_id}`;
       const guestName = `${input.guestFirstName} ${input.guestLastName}`;
       const eventDate = booking.event_date
-        ? new Date(booking.event_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+        ? (() => { const p = booking.event_date.split('-'); return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2])).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); })()
         : item.eventDate;
       const startTime = booking.start_time ?? item.startTime;
       const location = booking.location_name ?? 'Albany';
@@ -1985,6 +2324,23 @@ async function sendGuestNotifications(params: {
         quantity: a.quantity ?? 1,
       }));
 
+      // Resolve children from DB for email/PDF
+      const guestBookingChildIds = (booking.child_ids ?? []) as number[];
+      let guestResolvedChildren: Array<{ name: string; birthDate?: string }> = [];
+      if (guestBookingChildIds.length > 0) {
+        try {
+          const childRecords = await ChildRepository.findByIds(guestBookingChildIds);
+          guestResolvedChildren = childRecords.map((c: any) => ({
+            name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+            birthDate: c.birth_date || undefined,
+          }));
+        } catch (childErr) {
+          console.error('Failed to resolve children for guest receipt:', childErr);
+        }
+      }
+      const guestBookingNotes = booking.notes?.toString() || undefined;
+      const guestPhone = input.guestPhone ?? undefined;
+
       // Generate receipt
       let receiptNumber: string | undefined;
       let receiptPdf: Buffer | undefined;
@@ -2017,6 +2373,9 @@ async function sendGuestNotifications(params: {
             addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
             totalAmount,
             balanceRemaining,
+            children: guestResolvedChildren.length > 0 ? guestResolvedChildren : undefined,
+            notes: guestBookingNotes,
+            customerPhone: guestPhone,
             packageDetails: partyPackage ? {
               priceUsd: partyPackage.price_usd ?? 0,
               baseChildren: partyPackage.base_children ?? 10,
@@ -2040,6 +2399,7 @@ async function sendGuestNotifications(params: {
           date: orderDate,
           customerName: guestName,
           customerEmail: input.guestEmail,
+          customerPhone: guestPhone,
           bookingReference: reference,
           packageName,
           packageBasePrice,
@@ -2049,16 +2409,18 @@ async function sendGuestNotifications(params: {
           guestCount,
           subtotal,
           taxAmount,
-          taxRate: Math.round(getTaxRateSync() * 100), // Convert decimal to percentage
+          taxRate: Math.round(getTaxRateSync() * 100),
           cleaningFee,
           extraChildren,
           extraAdults,
           addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
-          depositAmount: totalAmount, // Full payment - deposit equals total with tax
+          depositAmount: totalAmount,
           balanceRemaining,
           total: totalAmount,
           paymentMethod: 'Credit Card (Square)',
           paymentId,
+          children: guestResolvedChildren.length > 0 ? guestResolvedChildren : undefined,
+          notes: guestBookingNotes,
           packageDetails: partyPackage ? {
             priceUsd: partyPackage.price_usd ?? 0,
             baseChildren: partyPackage.base_children ?? 10,
@@ -2093,7 +2455,7 @@ async function sendGuestNotifications(params: {
         subtotal,
         cleaningFee,
         taxAmount,
-        taxRate: Math.round(getTaxRateSync() * 100), // Tax rate as percentage
+        taxRate: Math.round(getTaxRateSync() * 100),
         totalAmount,
         balanceRemaining,
         extraChildren,
@@ -2101,6 +2463,22 @@ async function sendGuestNotifications(params: {
         addOns: formattedAddOns.length > 0 ? formattedAddOns : undefined,
         receiptPdf,
         receiptNumber,
+        phone: guestPhone,
+        children: guestResolvedChildren.length > 0 ? guestResolvedChildren : undefined,
+        notes: guestBookingNotes,
+        packageDetails: partyPackage ? {
+          priceUsd: partyPackage.price_usd ?? 0,
+          baseChildren: partyPackage.base_children ?? 10,
+          baseRoomHours: partyPackage.base_room_hours ?? 2,
+          includesFood: partyPackage.includes_food ?? false,
+          includesDrinks: partyPackage.includes_drinks ?? false,
+          includesDecor: partyPackage.includes_decor ?? false,
+          notes: partyPackage.notes ?? undefined,
+          features: (partyPackage as any).features ?? [],
+          additionalTerms: (partyPackage as any).additional_terms ?? [],
+          extraChildPrice: (partyPackage as any).extra_child_price ?? 40,
+          extraAdultPrice: (partyPackage as any).extra_adult_price ?? 10,
+        } : undefined,
       };
 
       await sendBookingConfirmation(emailData);

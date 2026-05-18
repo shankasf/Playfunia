@@ -13,6 +13,8 @@ export type CheckoutLine = {
 export type CheckoutSummary = {
   currency: string;
   subtotal: number;
+  taxRate?: number;
+  taxAmount?: number;
   discounts: CheckoutDiscount[];
   total: number;
   lines: CheckoutLine[];

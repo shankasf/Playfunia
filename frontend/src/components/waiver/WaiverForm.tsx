@@ -558,7 +558,9 @@ export function WaiverForm({
             checked={marketingOptIn}
             onChange={(event) => setMarketingOptIn(event.target.checked)}
           />
-          I would like to receive updates about promotions and events.
+          <span className={styles.smsConsentText}>
+            By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., waiver confirmations, booking reminders, ticket codes, and membership alerts). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
+          </span>
         </label>
       </div>
 

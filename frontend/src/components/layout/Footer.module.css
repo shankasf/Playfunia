@@ -73,20 +73,9 @@
 }
 
 .logo img {
-  width: 36px;
   height: 36px;
+  width: auto;
   object-fit: contain;
-  border-radius: 10px;
-}
-
-.logo span {
-  font-family: 'Fredoka', 'Poppins', sans-serif;
-  font-size: 1.4rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, #ff6b9d, #7c3aed, #06b6d4);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .tagline {
@@ -489,8 +478,8 @@
     grid-column: span 1;
   }
 
-  .logo span {
-    font-size: 1.25rem;
+  .logo img {
+    height: 30px;
   }
 
   .socialLinks {
@@ -543,12 +532,7 @@
   }
 
   .logo img {
-    width: 32px;
-    height: 32px;
-  }
-
-  .logo span {
-    font-size: 1.2rem;
+    height: 28px;
   }
 
   .tagline {

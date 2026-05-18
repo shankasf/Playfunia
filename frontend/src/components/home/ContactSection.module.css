@@ -9,7 +9,7 @@
   border-radius: var(--radius-lg);
   padding: 3rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
   gap: 2.5rem;
   border: 1px solid rgba(148, 163, 184, 0.26);
   box-shadow: var(--shadow-card);
@@ -146,10 +146,9 @@ button:disabled {
 }
 
 @media (max-width: 480px) {
-  .mapSection {
+  .section {
     margin: 3rem auto;
     padding: 0 1rem;
-    gap: 1.5rem;
   }
 
   .tag {
@@ -157,41 +156,18 @@ button:disabled {
     padding: 0.35rem 0.75rem;
   }
 
-  .mapGrid {
-    grid-template-columns: 1fr;
-    gap: 1.25rem;
-  }
-
-  .mapCard {
-    padding: 1.5rem 1.25rem;
-    border-radius: 18px;
-  }
-
-  .mapCard h2 {
-    font-size: 1.2rem;
-  }
-
-  .mapCard p {
-    font-size: 0.95rem;
-  }
-
-  .mapFrame {
-    aspect-ratio: 4 / 3;
-    border-radius: 14px;
-  }
-
-  .mapButton {
-    padding: 0.6rem 1rem;
-    font-size: 0.95rem;
-    border-radius: 12px;
-  }
-
-  .hours {
-    font-size: 0.95rem;
-  }
-
   .card {
     padding: 1.5rem;
+    border-radius: 18px;
+    grid-template-columns: 1fr;
+  }
+
+  .content h2 {
+    font-size: 1.5rem;
+  }
+
+  .content p {
+    font-size: 0.95rem;
   }
 
   .form {

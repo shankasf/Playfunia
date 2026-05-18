@@ -11,7 +11,7 @@ import {
 } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { publishAdminEvent } from './admin-events.service';
-import { queueWaiverConfirmation } from './notification-queue.service';
+import { queueWaiverConfirmation, queueBirthdayOfferSms } from './notification-queue.service';
 import { generateWaiverPdf, type WaiverPdfData } from './waiver-pdf.service';
 import { sendWaiverConfirmation } from './email.service';
 import { uploadSignatureImage } from './signature-upload.service';
@@ -139,6 +139,13 @@ function queueWaiverNotifications(params: {
         signedAt,
       };
       await queueWaiverConfirmation(undefined, smsData, waiverId);
+
+      // Queue Playfunia Birthday Offer marketing SMS — sent on every waiver
+      // sign for both new and returning customers, per business rules.
+      await queueBirthdayOfferSms(
+        { phone: guardianPhone, guardianName },
+        { type: 'waiver', id: waiverId },
+      );
     }
   })().catch((err) => {
     logger.error({ err, waiverId }, 'Failed to send waiver confirmation notifications');
@@ -485,7 +492,43 @@ export async function listWaiversForGuardian(guardianId: string) {
 }
 
 export async function listAllWaivers() {
-  return WaiverRepository.findAll({ limit: 100 });
+  const waivers = await WaiverRepository.findAll({ limit: 100 });
+
+  // Resolve children from the `children` table for main account users.
+  // Waiver-only users already have children from the waiver_user_children join,
+  // but main account users store child references in the child_ids array.
+  const allChildIds: number[] = [];
+  for (const waiver of waivers) {
+    if (Array.isArray(waiver.child_ids) && waiver.child_ids.length > 0
+        && (!Array.isArray(waiver.children) || waiver.children.length === 0)) {
+      allChildIds.push(...(waiver.child_ids as number[]));
+    }
+  }
+
+  if (allChildIds.length > 0) {
+    const uniqueChildIds = [...new Set(allChildIds)];
+    const childRecords = await ChildRepository.findByIds(uniqueChildIds);
+    const childMap = new Map(childRecords.map(c => [c.child_id, c]));
+
+    for (const waiver of waivers) {
+      if (Array.isArray(waiver.child_ids) && waiver.child_ids.length > 0
+          && (!Array.isArray(waiver.children) || waiver.children.length === 0)) {
+        waiver.children = (waiver.child_ids as number[])
+          .map((id: number) => childMap.get(id))
+          .filter(Boolean)
+          .map((c: { first_name: string; last_name?: string | null; birth_date?: string | null; gender?: string | null }) => ({
+            name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+            first_name: c.first_name || '',
+            last_name: c.last_name || '',
+            birthDate: c.birth_date || '',
+            birth_date: c.birth_date || '',
+            gender: c.gender || '',
+          }));
+      }
+    }
+  }
+
+  return waivers;
 }
 
 /**

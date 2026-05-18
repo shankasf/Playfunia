@@ -6,11 +6,16 @@ import { appConfig } from './config/env';
 import { ensureDefaultAdminUser } from './services/auth.service';
 import { startReconciliationScheduler, stopReconciliationScheduler } from './services/event-reconciliation.service';
 import { startBookingReminderScheduler, stopBookingReminderScheduler } from './services/booking-reminder.service';
+import { startMembershipRenewalScheduler, stopMembershipRenewalScheduler } from './services/membership-renewal.service';
 import { initializePricingCache } from './services/pricing-config.service';
 import { processNotificationQueue, cleanupOldNotifications } from './services/notification-queue.service';
+import { cleanupExpiredReservations } from './services/slot-reservation.service';
+import { expireStaleOrders } from './services/order-cleanup.service';
+import { expireCheckoutSessions } from './services/checkout-session.service';
 
 let notificationQueueInterval: ReturnType<typeof setInterval> | null = null;
 let notificationCleanupInterval: ReturnType<typeof setInterval> | null = null;
+let reservationCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 function startNotificationQueueProcessor(): void {
   // Process queue every 30 seconds
@@ -35,6 +40,36 @@ function startNotificationQueueProcessor(): void {
       console.error('Notification cleanup error:', err);
     }
   }, 24 * 60 * 60 * 1000);
+
+  // Clean up expired slot reservations and stale orders every 60 seconds
+  reservationCleanupInterval = setInterval(async () => {
+    try {
+      await cleanupExpiredReservations();
+    } catch (err) {
+      console.error('Reservation cleanup error:', err);
+    }
+    try {
+      await expireStaleOrders();
+    } catch (err) {
+      console.error('Order cleanup error:', err);
+    }
+    try {
+      await expireCheckoutSessions();
+    } catch (err) {
+      console.error('Checkout session cleanup error:', err);
+    }
+  }, 60_000);
+
+  // Run immediately to clean up any stale data
+  cleanupExpiredReservations().catch(err =>
+    console.error('Initial reservation cleanup error:', err)
+  );
+  expireStaleOrders().catch(err =>
+    console.error('Initial order cleanup error:', err)
+  );
+  expireCheckoutSessions().catch(err =>
+    console.error('Initial checkout session cleanup error:', err)
+  );
 }
 
 function stopNotificationQueueProcessor(): void {
@@ -45,6 +80,10 @@ function stopNotificationQueueProcessor(): void {
   if (notificationCleanupInterval) {
     clearInterval(notificationCleanupInterval);
     notificationCleanupInterval = null;
+  }
+  if (reservationCleanupInterval) {
+    clearInterval(reservationCleanupInterval);
+    reservationCleanupInterval = null;
   }
 }
 
@@ -78,7 +117,7 @@ async function bootstrap() {
 
     // Start notification queue processor (runs every 30 seconds)
     startNotificationQueueProcessor();
-    console.info('Notification queue processor started (every 30s)');
+    console.info('Notification queue processor started (every 30s, includes reservation cleanup every 60s)');
 
     // Start event reconciliation scheduler in production
     // This runs daily to recover any missed webhook events
@@ -88,6 +127,9 @@ async function bootstrap() {
 
       startBookingReminderScheduler(); // Run once daily
       console.info('Booking reminder scheduler started (daily)');
+
+      startMembershipRenewalScheduler(); // Run once daily
+      console.info('Membership renewal scheduler started (daily)');
     }
   });
 
@@ -97,6 +139,7 @@ async function bootstrap() {
     stopNotificationQueueProcessor();
     stopReconciliationScheduler();
     stopBookingReminderScheduler();
+    stopMembershipRenewalScheduler();
     server.close(() => {
       console.info('Server closed');
       process.exit(0);

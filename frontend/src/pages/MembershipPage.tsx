@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { PrimaryButton } from "../components/common/PrimaryButton";
 import { useAuth } from "../context/AuthContext";
 import { useCheckout } from "../context/CheckoutContext";
 import { fetchMembershipPlans, MembershipPlanDto } from "../api/memberships";
 import { formatDate } from "../lib/dateUtils";
+import { MEMBERSHIP_REFUND_POLICY_ITEMS } from "../data/membershipRefundPolicy";
 import styles from "./MembershipPage.module.css";
 
 const DURATION_OPTIONS = [
@@ -17,6 +19,7 @@ const DURATION_OPTIONS = [
 export function MembershipPage() {
   const { user } = useAuth();
   const { addMembershipPurchase } = useCheckout();
+  const navigate = useNavigate();
   const [plans, setPlans] = useState<MembershipPlanDto[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(true);
   const [plansError, setPlansError] = useState<string | null>(null);
@@ -32,28 +35,6 @@ export function MembershipPage() {
     [plans, selectedPlanId],
   );
 
-  const compareRows = useMemo(
-    () => [
-      {
-        label: 'Visits per month',
-        render: (plan: MembershipPlanDto) =>
-          typeof plan.visitsPerMonth === 'number' ? `${plan.visitsPerMonth}` : 'Unlimited',
-      },
-      {
-        label: 'Guest passes',
-        render: (plan: MembershipPlanDto) =>
-          typeof plan.guestPassesPerMonth === 'number'
-            ? `${plan.guestPassesPerMonth} / month`
-            : '—',
-      },
-      {
-        label: 'Children included',
-        render: (plan: MembershipPlanDto) => `${plan.maxChildren} children`,
-      },
-    ],
-    [],
-  );
-
   useEffect(() => {
     let active = true;
     async function loadPlans() {
@@ -63,7 +44,7 @@ export function MembershipPage() {
         const result = await fetchMembershipPlans();
         if (!active) return;
         setPlans(result);
-        if (result.length > 0) {
+        if (result[0]) {
           setSelectedPlanId(result[0].id);
         }
       } catch (error) {
@@ -82,25 +63,16 @@ export function MembershipPage() {
     };
   }, []);
 
-  if (!user) {
-    return (
-      <section className={styles.page}>
-        <div className={styles.container}>
-          <div className={styles.intro}>
-            <span className={styles.tag}>Memberships</span>
-            <h1>Sign in to join the Playfunia Club</h1>
-            <p>Lock in unlimited play and special invites. Sign in or create an account to continue.</p>
-            <PrimaryButton to="/account">Sign in or create account</PrimaryButton>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedPlanId) {
       setStatus({ type: "error", message: "Select a membership tier to continue." });
+      return;
+    }
+
+    // Require login before adding membership to cart
+    if (!user) {
+      navigate("/account?redirect=/memberships");
       return;
     }
 
@@ -124,11 +96,6 @@ export function MembershipPage() {
         total: Math.round(Math.round(plan.monthlyPrice * 100) * duration) / 100,
         status: "pending",
       });
-
-      setStatus({
-        type: "success",
-        message: `${plan.name} added to cart! Click the cart icon to complete payment and activate your membership.`,
-      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Membership purchase failed. Try again shortly.";
       setStatus({ type: "error", message });
@@ -140,45 +107,7 @@ export function MembershipPage() {
   return (
     <section className={styles.page}>
       <div className={styles.container}>
-        <div className={styles.intro}>
-          <span className={styles.tag}>Memberships</span>
-          <h1>Pick the perfect Playfunia membership</h1>
-          <p>
-            Unlock unlimited visits, party perks, and exclusive member events. Choose the tier that fits your family,
-            then decide how long you would like to prepay. Auto-renew keeps the good times rolling without interruption.
-          </p>
-        </div>
-
-        {plans.length > 0 ? (
-          <div className={styles.compare}>
-            <div className={styles.compareHeader}>
-              <h2>Compare memberships</h2>
-              <p>See visits and guest passes at a glance across Silver, Gold, Platinum, and VIP Platinum.</p>
-            </div>
-            <div className={styles.compareTable}>
-              <div className={styles.compareRow}>
-                <div className={styles.compareLabel}>Tier</div>
-                {plans.map(plan => (
-                  <div key={plan.id} className={styles.compareCell}>
-                    <div className={styles.compareTier}>{plan.name}</div>
-                    <div className={styles.comparePrice}>${plan.monthlyPrice}/mo</div>
-                  </div>
-                ))}
-              </div>
-
-              {compareRows.map(row => (
-                <div key={row.label} className={styles.compareRow}>
-                  <div className={styles.compareLabel}>{row.label}</div>
-                  {plans.map(plan => (
-                    <div key={`${plan.id}-${row.label}`} className={styles.compareCell}>
-                      {row.render(plan)}
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        <h1 className={styles.pageTitle}>Memberships — Save on unlimited playground visits with a membership for your family.</h1>
 
         <div className={styles.layout}>
           <div className={styles.plans}>
@@ -189,36 +118,58 @@ export function MembershipPage() {
             ) : (
               plans.map(plan => {
                 const selected = plan.id === selectedPlanId;
+                const planColor = plan.name === 'Mini Plan' ? '#22c55e'
+                  : plan.name === 'Super Plan' ? '#3b82f6'
+                  : plan.name === 'Mega Plan' ? '#a855f7'
+                  : '#ff7a00';
                 return (
                   <button
                     key={plan.id}
                     type="button"
                     className={`${styles.planCard} ${selected ? styles.planSelected : ""}`}
                     onClick={() => setSelectedPlanId(plan.id)}
+                    style={selected ? { borderColor: planColor } : undefined}
                   >
+                    {plan.promoLabel ? (
+                      <div className={styles.promoBadge}>{plan.promoLabel}</div>
+                    ) : null}
+                    <div className={styles.planColorBar} style={{ background: planColor }} />
                     <div className={styles.planHeader}>
                       <h3>{plan.name}</h3>
-                      <span className={styles.planPrice}>${plan.monthlyPrice}/mo</span>
+                    </div>
+                    <div className={styles.planMembers}>
+                      {plan.maxChildren} Kid{plan.maxChildren > 1 ? "s" : ""} + {plan.maxAdults ?? plan.maxChildren} Adult{(plan.maxAdults ?? plan.maxChildren) > 1 ? "s" : ""}
+                    </div>
+                    <div className={styles.planPricing}>
+                      {plan.originalPrice ? (
+                        <>
+                          <span className={styles.planOriginalPrice}>${plan.originalPrice}</span>
+                          <span className={styles.planPromoPrice} style={{ color: planColor }}>${plan.monthlyPrice}</span>
+                          <span className={styles.planSavings}>
+                            Save {Math.round((1 - plan.monthlyPrice / plan.originalPrice) * 100)}%
+                          </span>
+                        </>
+                      ) : (
+                        <span className={styles.planPrice}>${plan.monthlyPrice}</span>
+                      )}
                     </div>
                     {plan.description ? <p className={styles.planDescription}>{plan.description}</p> : null}
-                    <div className={styles.planMeta}>
-                      <span>Up to {plan.maxChildren} children</span>
-                      <span>
-                        {typeof plan.visitsPerMonth === "number"
-                          ? `${plan.visitsPerMonth} visits/month included`
-                          : "Unlimited visits during open play"}
-                      </span>
-                      <span>
-                        {typeof plan.guestPassesPerMonth === "number"
-                          ? `${plan.guestPassesPerMonth} guest pass${plan.guestPassesPerMonth === 1 ? "" : "es"}/month`
-                          : "Guest passes available"}
-                      </span>
-                    </div>
                     <ul className={styles.benefitList}>
                       {plan.benefits.map(benefit => (
                         <li key={benefit}>{benefit}</li>
                       ))}
                     </ul>
+                    {plan.promoNote || plan.promoSpotsLeft != null || plan.promoEndsAt ? (
+                      <div className={styles.promoInfo}>
+                        {plan.promoNote ? <span>{plan.promoNote}</span> : null}
+                        {plan.promoSpotsLeft != null ? (
+                          <span className={styles.promoSpots}>{plan.promoSpotsLeft} spots left</span>
+                        ) : null}
+                        {plan.promoEndsAt ? (
+                          <span className={styles.promoEnds}>Ends {new Date(plan.promoEndsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </button>
                 );
               })
@@ -260,29 +211,29 @@ export function MembershipPage() {
               <>
                 <div className={styles.summaryRow}>
                   <span>{selectedPlan.name}</span>
-                  <span>${selectedPlan.monthlyPrice}/mo</span>
+                  {selectedPlan.originalPrice ? (
+                    <span>
+                      <span className={styles.strikePrice}>${selectedPlan.originalPrice}</span>{" "}
+                      ${selectedPlan.monthlyPrice}
+                    </span>
+                  ) : (
+                    <span>${selectedPlan.monthlyPrice}</span>
+                  )}
                 </div>
                 <div className={styles.summaryRow}>
-                  <span>Prepay months</span>
-                  <span>{duration}</span>
+                  <span>Members included</span>
+                  <span>{selectedPlan.maxChildren} Kid{selectedPlan.maxChildren > 1 ? "s" : ""} + {selectedPlan.maxAdults ?? selectedPlan.maxChildren} Adult{(selectedPlan.maxAdults ?? selectedPlan.maxChildren) > 1 ? "s" : ""}</span>
                 </div>
-                {typeof selectedPlan.visitsPerMonth === "number" ? (
-                  <div className={styles.summaryRow}>
-                    <span>Visits per month</span>
-                    <span>{selectedPlan.visitsPerMonth}</span>
-                  </div>
-                ) : (
-                  <div className={styles.summaryRow}>
-                    <span>Visits per month</span>
-                    <span>Unlimited</span>
-                  </div>
-                )}
                 <div className={styles.summaryRow}>
-                  <span>Guest passes</span>
+                  <span>Prepay duration</span>
+                  <span>{duration} month{duration > 1 ? "s" : ""}</span>
+                </div>
+                <div className={styles.summaryRow}>
+                  <span>Visits</span>
                   <span>
-                    {typeof selectedPlan.guestPassesPerMonth === "number"
-                      ? `${selectedPlan.guestPassesPerMonth} / month`
-                      : "—"}
+                    {typeof selectedPlan.visitsPerMonth === "number"
+                      ? `${selectedPlan.visitsPerMonth} / month`
+                      : "Unlimited"}
                   </span>
                 </div>
                 <div className={styles.summaryRow}>
@@ -291,14 +242,14 @@ export function MembershipPage() {
                 </div>
                 <div className={`${styles.summaryRow} ${styles.summaryTotal}`}>
                   <span>Amount today</span>
-                  <span>${(selectedPlan.monthlyPrice * duration).toFixed(2)}</span>
+                  <span>${(Math.round(Math.round(selectedPlan.monthlyPrice * 100) * duration) / 100).toFixed(2)}</span>
                 </div>
               </>
             ) : (
               <p className={styles.helper}>Select a membership tier to see totals.</p>
             )}
 
-            {user.membership ? (
+            {user?.membership ? (
               <p className={styles.helper}>
                 Current tier: <strong>{user.membership.tierName ?? "Active member"}</strong>. Auto-renew{" "}
                 {user.membership.autoRenew ? "enabled" : "disabled"} · Next renewal{" "}
@@ -310,21 +261,36 @@ export function MembershipPage() {
                 )}
               </p>
             ) : (
-              <p className={styles.helper}>You do not have an active membership yet. New memberships begin immediately.</p>
+              <p className={styles.helper}>New memberships begin immediately after purchase.</p>
+            )}
+
+            {!user && (
+              <p className={styles.helper} style={{ color: "#b45309", fontWeight: 500 }}>
+                You must sign in or create an account to purchase a membership.
+              </p>
             )}
 
             {status.type === "error" ? (
               <p className={`${styles.status} ${styles.statusError}`}>{status.message}</p>
             ) : null}
-            {status.type === "success" ? (
-              <p className={`${styles.status} ${styles.statusSuccess}`}>{status.message}</p>
-            ) : null}
-
-            <PrimaryButton type="submit" disabled={submitting || !selectedPlanId || status.type === "success"}>
-              {submitting ? "Adding..." : "Add to Cart"}
+            <PrimaryButton type="submit" disabled={submitting || !selectedPlanId}>
+              {submitting ? "Adding..." : user ? "Add to Cart" : "Sign In to Continue"}
             </PrimaryButton>
           </form>
         </div>
+
+        <div className={styles.refundPolicy} id="refund-policy">
+          <h2 className={styles.refundPolicyTitle}>Membership Refund Policy</h2>
+          <p className={styles.refundPolicyIntro}>
+            All membership purchases are final. By purchasing a membership, you agree to the following terms:
+          </p>
+          <ul className={styles.refundPolicyList}>
+            {MEMBERSHIP_REFUND_POLICY_ITEMS.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </div>
+
       </div>
     </section>
   );

@@ -21,6 +21,7 @@ import {
   type CustomerTicket,
   type BookingSlot,
 } from '../api/bookings';
+import { fetchMyMembership, toggleAutoRenew, type MyMembershipDto } from '../api/memberships';
 import styles from './AccountPage.module.css';
 import { useAuth } from '../context/AuthContext';
 
@@ -51,6 +52,7 @@ export function AccountPage() {
     password: '',
     phone: '',
   });
+  const [smsConsent, setSmsConsent] = useState(false);
   const [resetOtp, setResetOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -93,6 +95,9 @@ export function AccountPage() {
     error: null,
   });
   const [cancellingBookingId, setCancellingBookingId] = useState<string | null>(null);
+  const [myMembership, setMyMembership] = useState<MyMembershipDto | null>(null);
+  const [membershipLoading, setMembershipLoading] = useState(false);
+  const [autoRenewToggling, setAutoRenewToggling] = useState(false);
 
   // Store redirect target - persist in sessionStorage to survive auth flow
   const redirectTarget = searchParams.get('redirect');
@@ -268,13 +273,37 @@ export function AccountPage() {
     }
   }, [user, safeRedirect, isTeamMember, navigate]);
 
+  const loadMyMembership = useCallback(async () => {
+    if (!user) { setMyMembership(null); return; }
+    setMembershipLoading(true);
+    try {
+      const data = await fetchMyMembership();
+      setMyMembership(data);
+    } catch { setMyMembership(null); }
+    finally { setMembershipLoading(false); }
+  }, [user]);
+
+  const handleToggleAutoRenew = async () => {
+    if (!myMembership || autoRenewToggling) return;
+    setAutoRenewToggling(true);
+    try {
+      const newValue = !myMembership.autoRenew;
+      await toggleAutoRenew(newValue);
+      setMyMembership(prev => prev ? { ...prev, autoRenew: newValue } : null);
+    } catch (err) {
+      console.error('Failed to toggle auto-renew:', err);
+      alert('Failed to update auto-renew setting. Please try again.');
+    } finally { setAutoRenewToggling(false); }
+  };
+
   useEffect(() => {
     if (user) {
       loadLatestWaiver();
       loadBookings();
       loadTickets();
+      loadMyMembership();
     }
-  }, [user, loadLatestWaiver, loadBookings, loadTickets]);
+  }, [user, loadLatestWaiver, loadBookings, loadTickets, loadMyMembership]);
 
   // Reset registration state when user logs out
   useEffect(() => {
@@ -589,7 +618,7 @@ export function AccountPage() {
                 <span className={styles.statLabel}>Member Since</span>
                 <span className={styles.statValue}>
                   {joinedDate
-                    ? joinedDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+                    ? joinedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
                     : 'N/A'}
                 </span>
               </div>
@@ -623,26 +652,93 @@ export function AccountPage() {
             <div className={styles.card}>
               <div className={styles.cardHeader}>
                 <h2>Membership</h2>
-                {user.membership?.tierName && (
+                {(myMembership?.status === 'active' || user.membership?.tierName) && (
                   <span className={styles.statusBadge} data-status="active">Active</span>
                 )}
               </div>
               <div className={styles.cardBody}>
-                {user.membership?.tierName ? (
+                {membershipLoading ? <p>Loading...</p> : (myMembership || user.membership?.tierName) ? (
                   <>
-                    <div className={styles.membershipTier}>{user.membership.tierName}</div>
+                    <div className={styles.membershipTier}>{myMembership?.tierName ?? user.membership?.tierName}</div>
+                    {myMembership?.displayId && (
+                      <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Membership ID</span>
+                        <span className={styles.profileValue} style={{ fontFamily: 'monospace', fontWeight: 600 }}>{myMembership.displayId}</span>
+                      </div>
+                    )}
+                    {myMembership?.remainingDays != null && (
+                      <div className={styles.profileRow}>
+                        <span className={styles.profileLabel}>Days Remaining</span>
+                        <span className={styles.profileValue} style={{ color: myMembership.remainingDays <= 3 ? '#dc2626' : myMembership.remainingDays <= 7 ? '#f59e0b' : '#059669', fontWeight: 600 }}>
+                          {myMembership.remainingDays} day{myMembership.remainingDays !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    )}
+                    <div className={styles.profileRow}>
+                      <span className={styles.profileLabel}>Plan Capacity</span>
+                      <span className={styles.profileValue}>
+                        {myMembership?.maxChildren ?? 1} Kid{(myMembership?.maxChildren ?? 1) > 1 ? 's' : ''} + {myMembership?.maxAdults ?? 1} Adult{(myMembership?.maxAdults ?? 1) > 1 ? 's' : ''}
+                      </span>
+                    </div>
                     <div className={styles.profileRow}>
                       <span className={styles.profileLabel}>Auto-Renewal</span>
                       <span className={styles.profileValue}>
-                        {user.membership.autoRenew ? 'Enabled' : 'Disabled'}
+                        <button
+                          type="button"
+                          onClick={handleToggleAutoRenew}
+                          disabled={autoRenewToggling || !myMembership}
+                          style={{
+                            background: (myMembership?.autoRenew ?? user.membership?.autoRenew) ? '#059669' : '#dc2626',
+                            color: '#fff',
+                            border: 'none',
+                            cursor: autoRenewToggling ? 'wait' : 'pointer',
+                            fontWeight: 600,
+                            padding: '4px 12px',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            opacity: autoRenewToggling ? 0.6 : 1,
+                          }}
+                        >
+                          {autoRenewToggling
+                            ? 'Updating...'
+                            : (myMembership?.autoRenew ?? user.membership?.autoRenew)
+                              ? 'Click to Disable'
+                              : 'Click to Activate'}
+                        </button>
                       </span>
                     </div>
-                    {typeof user.membership.visitsPerMonth === 'number' &&
-                    user.membership.visitsPerMonth > 0 ? (
+                    {/* Child info from membership details */}
+                    {/* Child info from membership details */}
+                    {(() => {
+                      const memberChildren = myMembership?.children;
+                      if (!memberChildren || memberChildren.length === 0) return null;
+                      return (
+                        <div style={{ margin: '0.75rem 0', padding: '0.75rem', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                          <span className={styles.profileLabel} style={{ display: 'block', marginBottom: '0.5rem' }}>Registered Children</span>
+                          {memberChildren.map((child) => (
+                            <div key={child.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                              {child.photoUrl ? (
+                                <img src={child.photoUrl} alt={child.firstName} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid #7c3aed' }} />
+                              ) : (
+                                <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 700, color: '#6b7280' }}>
+                                  {child.firstName?.[0]?.toUpperCase()}
+                                </div>
+                              )}
+                              <div>
+                                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#1a1a2e' }}>{child.firstName} {child.lastName}</div>
+                                {child.birthDate && <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>DOB: {new Date(child.birthDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    {typeof (myMembership?.visitsPerMonth ?? user.membership?.visitsPerMonth) === 'number' &&
+                    (myMembership?.visitsPerMonth ?? user.membership?.visitsPerMonth ?? 0) > 0 ? (
                       <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Visits</span>
+                        <span className={styles.profileLabel}>Visits This Period</span>
                         <span className={styles.profileValue}>
-                          {user.membership.visitsUsed ?? 0} / {user.membership.visitsPerMonth}
+                          {myMembership?.visitsUsed ?? user.membership?.visitsUsed ?? 0} / {myMembership?.visitsPerMonth ?? user.membership?.visitsPerMonth}
                         </span>
                       </div>
                     ) : (
@@ -651,17 +747,23 @@ export function AccountPage() {
                         <span className={styles.profileValue}>Unlimited</span>
                       </div>
                     )}
-                    {membershipExpiry && (
+                    {myMembership?.totalVisits != null && myMembership.totalVisits > 0 && (
                       <div className={styles.profileRow}>
-                        <span className={styles.profileLabel}>Renews</span>
-                        <span className={styles.profileValue}>
-                          {membershipExpiry.toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </span>
+                        <span className={styles.profileLabel}>Total Check-ins</span>
+                        <span className={styles.profileValue}>{myMembership.totalVisits}</span>
                       </div>
+                    )}
+                    {(myMembership?.startDate || myMembership?.endDate) && (
+                      <>
+                        <div className={styles.profileRow}>
+                          <span className={styles.profileLabel}>Start Date</span>
+                          <span className={styles.profileValue}>{myMembership?.startDate ?? 'N/A'}</span>
+                        </div>
+                        <div className={styles.profileRow}>
+                          <span className={styles.profileLabel}>Expiration</span>
+                          <span className={styles.profileValue}>{myMembership?.endDate ?? 'N/A'}</span>
+                        </div>
+                      </>
                     )}
                   </>
                 ) : (
@@ -701,6 +803,7 @@ export function AccountPage() {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',
+                            timeZone: 'America/New_York',
                           })
                         : 'Unknown'}
                     </span>
@@ -713,6 +816,7 @@ export function AccountPage() {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',
+                            timeZone: 'America/New_York',
                           })
                         : 'N/A'}
                     </span>
@@ -808,12 +912,7 @@ export function AccountPage() {
                                 <path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                               </svg>
                               <span>
-                                {eventDate.toLocaleDateString('en-US', {
-                                  weekday: 'short',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                })}
+                                {formatDate(booking.eventDate)}
                               </span>
                             </div>
                             <div className={styles.bookingInfoItem}>
@@ -951,11 +1050,7 @@ export function AccountPage() {
                 </div>
                 <div className={styles.modalBody}>
                   <p className={styles.modalSubtitle}>
-                    Current: {new Date(rescheduleModal.booking.eventDate).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })} at {formatTime(rescheduleModal.booking.startTime)}
+                    Current: {formatDate(rescheduleModal.booking.eventDate)} at {formatTime(rescheduleModal.booking.startTime)}
                   </p>
 
                   <label className={styles.modalLabel}>
@@ -1288,10 +1383,24 @@ export function AccountPage() {
           )}
 
           {mode === 'register' && registerStep === 'form' && (
-            <label>
-              Phone (optional)
-              <input type="tel" inputMode="numeric" value={form.phone} onChange={handleChange('phone')} maxLength={10} pattern="\d{10}" title="10-digit phone number" autoComplete="tel" />
-            </label>
+            <>
+              <label>
+                Phone (optional)
+                <input type="tel" inputMode="numeric" value={form.phone} onChange={handleChange('phone')} maxLength={10} pattern="\d{10}" title="10-digit phone number" autoComplete="tel" />
+              </label>
+              {form.phone.length > 0 && (
+                <label className={styles.smsConsent}>
+                  <input
+                    type="checkbox"
+                    checked={smsConsent}
+                    onChange={(e) => setSmsConsent(e.target.checked)}
+                  />
+                  <span className={styles.smsConsentText}>
+                    By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., booking confirmations, ticket codes, membership alerts, waiver confirmations, and reminders). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to unsubscribe at any time. <Link to="/privacy" target="_blank">Privacy Policy</Link> &amp; <Link to="/waiver-policy" target="_blank">Terms</Link>.
+                  </span>
+                </label>
+              )}
+            </>
           )}
 
           <PrimaryButton type="submit" disabled={submitting}>
@@ -1322,6 +1431,47 @@ export function AccountPage() {
         </form>
 
         {/* Footer links */}
+        {mode === 'register' && registerStep === 'otp' && (
+          <div className={styles.footerLinks}>
+            <button
+              type="button"
+              className={styles.linkButton}
+              onClick={() => { setRegisterStep('form'); setRegisterOtp(''); setStatus({ type: null, message: null }); }}
+            >
+              Change email
+            </button>
+            <span className={styles.linkDivider}>|</span>
+            <button
+              type="button"
+              className={styles.linkButton}
+              onClick={async () => {
+                setSubmitting(true);
+                try {
+                  const result = await signUpWithEmail({
+                    firstName: form.firstName.trim(),
+                    lastName: form.lastName.trim(),
+                    email: form.email.trim(),
+                    password: form.password,
+                    phone: form.phone || undefined,
+                  });
+                  if (result.requiresVerification || result.success) {
+                    setRegisterOtp('');
+                    setStatus({ type: 'success', message: 'New code sent!' });
+                  } else {
+                    setStatus({ type: 'error', message: result.message });
+                  }
+                } catch (err) {
+                  setStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to resend code.' });
+                }
+                setSubmitting(false);
+              }}
+              disabled={submitting}
+            >
+              Resend code
+            </button>
+          </div>
+        )}
+
         {mode === 'login' && (
           <div className={styles.footerLinks}>
             <button

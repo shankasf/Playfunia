@@ -10,6 +10,7 @@ import {
   PartyAddOnRepository,
   PricingConfigRepository,
   StoreHoursRepository,
+  ProductPromotionRepository,
 } from '../repositories';
 import { getCheckoutPricingConfig, type CheckoutPricingConfig } from './pricing-config.service';
 import { roundCurrency } from '../utils/currency';
@@ -58,6 +59,11 @@ export interface MembershipPlanPricing {
   name: string;
   description: string | null;
   monthlyPrice: number;
+  originalPrice?: number;
+  promoLabel?: string;
+  promoNote?: string;
+  promoEndsAt?: string;
+  promoSpotsLeft?: number;
   benefits: string[];
   maxChildren: number;
   visitsPerMonth: number | null;
@@ -156,22 +162,49 @@ export async function getPartyAddOns(): Promise<PartyAddOnPricing[]> {
 }
 
 /**
- * Get all membership plans with pricing
+ * Get all membership plans with pricing (includes active promo if any)
  */
 export async function getMembershipPlans(): Promise<MembershipPlanPricing[]> {
-  const plans = await MembershipPlanRepository.findAll(true);
+  const [plans, activePromos] = await Promise.all([
+    MembershipPlanRepository.findAll(true),
+    ProductPromotionRepository.findAllActive('membership'),
+  ]);
 
-  return plans.map(p => ({
-    id: String(p.plan_id),
-    name: p.name,
-    description: p.description,
-    monthlyPrice: p.monthly_price,
-    benefits: p.benefits ?? [],
-    maxChildren: p.max_children ?? 1,
-    visitsPerMonth: p.visits_per_month,
-    discountPercent: p.discount_percent ?? 0,
-    guestPassesPerMonth: p.guest_passes_per_month ?? 0,
-  }));
+  // Exclude promo-specific plans from regular listing (they appear via promo offers)
+  const regularPlans = plans.filter(p => !p.name.startsWith('Promo - '));
+
+  return regularPlans.map(p => {
+    const promo =
+      activePromos.find(pr => pr.product_id === p.plan_id) ??
+      activePromos.find(pr => pr.product_id === null) ??
+      null;
+
+    let effectivePrice = p.monthly_price;
+    if (promo) {
+      effectivePrice = promo.discount_type === 'percent'
+        ? Math.round(p.monthly_price * (1 - promo.discount_value / 100) * 100) / 100
+        : promo.discount_value;
+    }
+
+    return {
+      id: String(p.plan_id),
+      name: p.name,
+      description: p.description,
+      monthlyPrice: effectivePrice,
+      originalPrice: promo ? p.monthly_price : undefined,
+      promoLabel: promo?.promo_label ?? undefined,
+      promoNote: promo?.promo_note ?? undefined,
+      promoEndsAt: promo?.ends_at ?? undefined,
+      promoSpotsLeft: promo?.max_redemptions != null
+        ? Math.max(0, promo.max_redemptions - promo.redemptions)
+        : undefined,
+      benefits: p.benefits ?? [],
+      maxChildren: p.max_children ?? 1,
+      visitsPerMonth: p.visits_per_month,
+      discountPercent: p.discount_percent ?? 0,
+      guestPassesPerMonth: p.guest_passes_per_month ?? 0,
+    };
+  });
 }
 
 // Fallback store hours (used only if database is unavailable)

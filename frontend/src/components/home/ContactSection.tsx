@@ -81,7 +81,7 @@ export function ContactSection() {
             </div>
             <div>
               <strong>Email</strong>
-              <a href="mailto:playfunia@playfunia.com">playfunia@playfunia.com</a>
+              <a href="mailto:info@playfunia.com">info@playfunia.com</a>
             </div>
             <div>
               <strong>Albany, NY</strong>

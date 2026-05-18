@@ -1,0 +1,15 @@
+export const MEMBERSHIP_REFUND_POLICY_ITEMS = [
+  'All membership purchases are final',
+  'A full refund is available within 24 hours of purchase, only if the membership has not been used (no check-ins)',
+  'Once the membership has been used (even a single visit), no refunds will be issued',
+  'No partial refunds will be provided for unused days, missed visits, or early cancellations',
+  'Memberships are strictly non-transferable and may only be used by registered household members',
+  'A valid government-issued photo ID must be presented at every visit. Entry may be denied if identity cannot be verified',
+  'We do not store ID information',
+  'Memberships may automatically renew unless canceled before the next billing cycle',
+  "It is the customer's responsibility to cancel before renewal to avoid future charges",
+  'If a payment fails, membership access may be temporarily suspended',
+  'If you believe you were charged in error, please contact us within 48 hours',
+  'PlayFunia reserves the right to deny entry, suspend, or terminate memberships in case of misuse or policy violations',
+  'All refund requests are subject to review, and final decisions are made by PlayFunia',
+] as const;
