@@ -539,6 +539,7 @@ export function CartPage() {
             quantity: item.quantity,
             unitPrice: Number(item.unitPrice.toFixed(2)),
             eventId: item.eventId,
+            bundleId: item.bundleId,
           };
         }
         if (item.type === 'membership') {

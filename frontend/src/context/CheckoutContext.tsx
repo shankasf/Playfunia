@@ -52,6 +52,7 @@ export type TicketCartItem = {
   type: "ticket";
   ticketId?: string;
   eventId?: string;
+  bundleId?: string;
   label: string;
   quantity: number;
   unitPrice: number;

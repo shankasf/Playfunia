@@ -317,6 +317,7 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             quantity: item.quantity,
             unitPrice: item.unitPrice,
             eventId: item.eventId,
+            bundleId: item.bundleId,
           };
         }
         if (item.type === 'membership') {

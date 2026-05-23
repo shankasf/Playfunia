@@ -17,6 +17,8 @@ export interface SquareCheckoutIntentPayload {
         label: string;
         quantity: number;
         unitPrice: number;
+        eventId?: string;
+        bundleId?: string;
         metadata?: Record<string, unknown>;
       }
     | {

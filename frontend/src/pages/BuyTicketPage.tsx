@@ -10,6 +10,7 @@ const DEFAULT_EXTRA_ADULT_PRICE = 5;
 const DEFAULT_SINGLE_ADMISSION_PRICE = 20;
 
 type BundleInfo = {
+  id: string;
   childCount: number;
   price: number;
   savings: number;
@@ -73,6 +74,7 @@ export function BuyTicketPage() {
       const bundle = pricingData.ticketBundles.find(b => b.childCount === i);
       if (bundle) {
         bundles.push({
+          id: bundle.id,
           childCount: i,
           price: bundle.price,
           savings: (i * singlePrice) - bundle.price,
@@ -118,6 +120,7 @@ export function BuyTicketPage() {
     addTicketPurchase({
       id: cartId,
       type: "ticket",
+      bundleId: bundle.id,
       label,
       quantity: 1,
       unitPrice: bundle.price,

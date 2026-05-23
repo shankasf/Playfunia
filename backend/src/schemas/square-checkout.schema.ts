@@ -25,6 +25,9 @@ export const squareCheckoutItemSchema = z.discriminatedUnion('type', [
     quantity: z.number().int().min(1).max(MAX_ITEM_QUANTITY),
     unitPrice: z.number().min(MIN_UNIT_PRICE, 'Minimum price is $0.50').max(MAX_UNIT_PRICE),
     eventId: z.string().optional(),
+    // Sibling bundle ticket type id (ticket_types.ticket_type_id). When present, the
+    // unit price is validated against the bundle's DB price instead of single admission.
+    bundleId: z.string().optional(),
     metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
   }),
   z.object({

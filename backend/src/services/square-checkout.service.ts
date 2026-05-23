@@ -4,7 +4,7 @@ import { DateTime } from 'luxon';
 
 import { getSquareClient, getSquareLocationId } from '../config/square';
 import { appConfig } from '../config/env';
-import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository, PartyBookingRepository, PartyPackageRepository, PartyAddOnRepository, EventRepository, ProductPromotionRepository, ChildRepository } from '../repositories';
+import { UserRepository, PaymentRepository, MembershipRepository, MembershipPlanRepository, OrderRepository, PromotionRepository, PricingConfigRepository, CustomerRepository, PartyBookingRepository, PartyPackageRepository, PartyAddOnRepository, EventRepository, ProductPromotionRepository, ChildRepository, TicketTypeRepository } from '../repositories';
 import {
   getTaxRate as getPricingTaxRate,
   getTaxRateSync as getPricingTaxRateSync,
@@ -109,9 +109,35 @@ async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<voi
         }
 
         expectedPrice = item.unitPrice; // Events no longer have a price column
+      } else if (item.bundleId) {
+        // Sibling bundle ticket - validate against the ticket_types base price.
+        // Bundles (2-6 children) are sold at a discounted flat price, so they must
+        // NOT be compared against single admission. The whole bundle is one line item
+        // (quantity 1, unitPrice = bundle price).
+        const ticketType = await TicketTypeRepository.findById(parseInt(item.bundleId, 10));
+        if (!ticketType) {
+          throw new AppError('Ticket bundle not found', 404);
+        }
+        expectedPrice = ticketType.base_price_usd ?? 0;
       } else {
-        // General admission ticket - validate against single admission price
+        // General admission ticket - validate against single admission price.
         expectedPrice = await getSingleAdmissionPrice();
+
+        // Fallback for carts created before the bundleId field existed (stale
+        // localStorage): if the label identifies a sibling bundle (e.g.
+        // "6 Children Bundle"), validate against THAT specific bundle's price.
+        // Tying the expected price to the bundle the label claims keeps the
+        // anti-underpayment guard intact — paying a smaller bundle's price for a
+        // larger bundle's label is still rejected.
+        const bundleMatch = item.label.match(/^(\d+)\s+Child(?:ren)?\s+Bundle/i);
+        if (bundleMatch && bundleMatch[1]) {
+          const childCount = parseInt(bundleMatch[1], 10);
+          const ticketTypes = await TicketTypeRepository.findAll(true);
+          const bundle = ticketTypes.find(t => (t.child_count ?? 0) === childCount);
+          if (bundle) {
+            expectedPrice = Number(bundle.base_price_usd ?? 0);
+          }
+        }
       }
 
       const priceDiffCents = Math.abs(dollarsToCents(item.unitPrice) - dollarsToCents(expectedPrice));

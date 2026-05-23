@@ -135,6 +135,8 @@ export function CheckoutPage() {
             label: item.label,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+            eventId: item.eventId,
+            bundleId: item.bundleId,
             metadata: { cartId: item.id },
           })),
       };
@@ -173,6 +175,8 @@ export function CheckoutPage() {
             label: item.label,
             quantity: item.quantity,
             unitPrice: item.unitPrice,
+            eventId: item.eventId,
+            bundleId: item.bundleId,
             metadata: { cartId: item.id },
           })),
       };
