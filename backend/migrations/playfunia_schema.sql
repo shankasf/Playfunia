@@ -1670,9 +1670,6 @@ VALUES
     ('Single Play Pass', 'One child plus one supporting adult', 20.00, 1, true, true),
     ('Sibling Duo Bundle', 'Perfect for two siblings or cousins', 35.00, 2, true, true),
     ('Bestie Trio Bundle', 'Three kids, one price-friendly bundle', 50.00, 3, true, true),
-    ('Sibling Bundle (4 Kids)', 'Bundle for 4 kids', 65.00, 4, true, true),
-    ('Sibling Bundle (5 Kids)', 'Bundle for 5 kids', 80.00, 5, true, true),
-    ('Sibling Bundle (6 Kids)', 'Bundle for 6 kids', 95.00, 6, true, true),
     ('Additional Child', 'Extra child beyond bundle', 15.00, 1, true, true),
     ('Grip Socks', 'Required grip socks for play', 3.00, 0, false, false)
 ON CONFLICT DO NOTHING;
