@@ -409,11 +409,16 @@ export function AdminDashboardPage() {
     void refreshAll();
   }, [isAuthorized, refreshAll]);
 
-  const loadTeam = useCallback(async () => {
+  // With a search term, look up any user (to promote one to staff/admin);
+  // otherwise show only existing team members — never the full customer base.
+  const loadTeam = useCallback(async (search: string) => {
     if (!isAdmin) return;
     setTeamState((prev) => ({ ...prev, status: 'loading', error: undefined }));
     try {
-      const users = await fetchAdminUsers();
+      const q = search.trim();
+      const users = q
+        ? await fetchAdminUsers({ search: q })
+        : await fetchAdminUsers({ teamOnly: true });
       setTeamState({ status: 'idle', data: users });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to load team members.';
@@ -422,8 +427,12 @@ export function AdminDashboardPage() {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (isAuthorized && isAdmin) void loadTeam();
-  }, [isAuthorized, isAdmin, loadTeam]);
+    if (!isAuthorized || !isAdmin) return;
+    // Immediate on first load (empty search); debounce while typing a search.
+    const delay = teamSearch.trim() ? 400 : 0;
+    const timer = window.setTimeout(() => { void loadTeam(teamSearch); }, delay);
+    return () => window.clearTimeout(timer);
+  }, [isAuthorized, isAdmin, teamSearch, loadTeam]);
 
   // Toggle a user's team role. Preserves any baseline (customer/user) role and
   // swaps the elevated role (admin / employee) so the account stays valid.
@@ -440,14 +449,14 @@ export function AdminDashboardPage() {
       try {
         await updateAdminUserRoles(target.user_id, nextRoles);
         setTeamMessage(`${target.email} is now ${label}.`);
-        await loadTeam();
+        await loadTeam(teamSearch);
       } catch (error) {
         setTeamMessage(error instanceof Error ? error.message : 'Unable to update role.');
       } finally {
         setRoleUpdateBusy(null);
       }
     },
-    [loadTeam]
+    [loadTeam, teamSearch]
   );
 
   useEffect(() => {
@@ -2243,19 +2252,20 @@ export function AdminDashboardPage() {
         <section id="section-team" className={styles.panel} style={{ marginTop: '1.5rem' }}>
           <header className={styles.panelHeader}>
             <h2>Team &amp; Access</h2>
-            <span>{teamState.data.length} users</span>
+            <span>{teamState.data.length} {teamSearch.trim() ? 'matching' : 'team members'}</span>
           </header>
           <p className={styles.mutedText} style={{ margin: '0 0 0.75rem' }}>
-            Admins have full access. Staff can view bookings, tickets, customers and waivers, redeem &amp; verify
-            tickets, check members in, and create walk-in bookings/tickets/memberships — but cannot delete records,
-            change pricing or packages, view financial reports, manage content, or manage the team.
+            This list shows admins and staff only. To add someone, search their name or email below and set them to
+            Staff or Admin. Staff can view bookings, tickets, customers and waivers, redeem &amp; verify tickets, check
+            members in, and create walk-in bookings/tickets/memberships — but cannot delete records, change pricing or
+            packages, view financial reports, manage content, or manage the team.
           </p>
           <div className={styles.filterBar}>
             <label className={styles.filterItem}>
-              <span>Search</span>
+              <span>Add a member</span>
               <input
                 type="text"
-                placeholder="Search name or email..."
+                placeholder="Search any user by name or email..."
                 value={teamSearch}
                 onChange={(e) => setTeamSearch(e.target.value)}
               />
@@ -2276,13 +2286,14 @@ export function AdminDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {teamState.data.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className={styles.mutedText}>
+                        {teamSearch.trim() ? 'No users match your search.' : 'No team members yet.'}
+                      </td>
+                    </tr>
+                  )}
                   {teamState.data
-                    .filter((u) => {
-                      const q = teamSearch.trim().toLowerCase();
-                      if (!q) return true;
-                      const name = `${u.first_name ?? ''} ${u.last_name ?? ''}`.toLowerCase();
-                      return name.includes(q) || u.email.toLowerCase().includes(q);
-                    })
                     .map((u) => {
                       const currentRole = u.roles?.includes('admin')
                         ? 'admin'

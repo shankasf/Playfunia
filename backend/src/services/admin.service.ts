@@ -306,9 +306,14 @@ export async function getAdminDashboardSummary() {
 }
 
 // ============= Users Management =============
-export async function listUsers(options?: { limit?: number | undefined; offset?: number | undefined; search?: string | undefined }) {
+export async function listUsers(options?: { limit?: number | undefined; offset?: number | undefined; search?: string | undefined; teamOnly?: boolean | undefined }) {
   let query = supabaseAny.from('users').select('*, customers(*)');
-  
+
+  // Team & Access view: only admins/staff, never the full customer base.
+  if (options?.teamOnly) {
+    query = query.overlaps('roles', ['admin', 'employee', 'staff']);
+  }
+
   if (options?.search) {
     const sanitized = sanitizeSearchInput(options.search);
     query = query.or(`email.ilike.%${sanitized}%,first_name.ilike.%${sanitized}%,last_name.ilike.%${sanitized}%`);

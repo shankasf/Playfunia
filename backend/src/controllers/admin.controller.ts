@@ -87,8 +87,9 @@ export const listUsersHandler = asyncHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
   const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
   const search = req.query.search as string | undefined;
-  
-  const result = await AdminService.listUsers({ limit, offset, search });
+  const teamOnly = req.query.teamOnly === 'true';
+
+  const result = await AdminService.listUsers({ limit, offset, search, teamOnly });
   return res.status(200).json(result);
 });
 

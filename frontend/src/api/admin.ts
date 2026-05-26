@@ -285,9 +285,10 @@ export type AdminUser = {
   created_at: string | null;
 };
 
-export async function fetchAdminUsers(params?: { search?: string; limit?: number }) {
+export async function fetchAdminUsers(params?: { search?: string; limit?: number; teamOnly?: boolean }) {
   const qs = new URLSearchParams();
   if (params?.search) qs.set('search', params.search);
+  if (params?.teamOnly) qs.set('teamOnly', 'true');
   qs.set('limit', String(params?.limit ?? 200));
   const response = await apiGet<{ users: AdminUser[]; count?: number }>(`/admin/users?${qs.toString()}`);
   return response.users ?? [];
