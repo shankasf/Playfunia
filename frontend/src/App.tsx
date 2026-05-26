@@ -26,6 +26,7 @@ const AdminApplicantsPage = lazy(() => import("./pages/AdminApplicantsPage").the
 const AdminApplicantDetailPage = lazy(() => import("./pages/AdminApplicantDetailPage").then(m => ({ default: m.AdminApplicantDetailPage })));
 const AdminEventsPage = lazy(() => import("./pages/AdminEventsPanel").then(m => ({ default: m.AdminEventsPanel })));
 const AdminTeamPage = lazy(() => import("./pages/AdminTeamPage").then(m => ({ default: m.AdminTeamPage })));
+const AdminMarketingPage = lazy(() => import("./pages/AdminMarketingPage").then(m => ({ default: m.AdminMarketingPage })));
 const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage").then(m => ({ default: m.AuthCallbackPage })));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
 const CartPage = lazy(() => import("./pages/CartPage").then(m => ({ default: m.CartPage })));
@@ -202,6 +203,16 @@ function App() {
             <AdminOnlyRoute>
               <Suspense fallback={<PageLoader />}>
                 <AdminTeamPage />
+              </Suspense>
+            </AdminOnlyRoute>
+          }
+        />
+        <Route
+          path="admin/marketing"
+          element={
+            <AdminOnlyRoute>
+              <Suspense fallback={<PageLoader />}>
+                <AdminMarketingPage />
               </Suspense>
             </AdminOnlyRoute>
           }

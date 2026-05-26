@@ -1115,6 +1115,16 @@ export function AdminDashboardPage() {
             )}
           </Link>
         )}
+        {isAdmin && (
+          <Link to="/admin/marketing" style={{ textDecoration: 'none', display: 'contents' }}>
+            {renderSummaryCard(
+              'Marketing',
+              'Campaigns',
+              'Promos & email/SMS',
+              'Birthday segments & AI copy'
+            )}
+          </Link>
+        )}
       </section>
 
       <div className={styles.layout}>

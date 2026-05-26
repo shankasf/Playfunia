@@ -172,6 +172,12 @@ async function sendSms(options: {
   }
 }
 
+// Send a marketing/campaign SMS. Always appends the "Reply STOP" footer
+// (A2P 10DLC compliance) since these are promotional, not transactional.
+export async function sendMarketingSms(to: string, body: string): Promise<SendSmsResult> {
+  return sendSms({ to, body, appendStopFooter: true });
+}
+
 // Send verification OTP via SMS. OTP messages are exempt from the STOP footer
 // because they are user-initiated authentication codes, not marketing.
 export async function sendVerificationOtpSms(phone: string, otp: string, firstName?: string): Promise<SendSmsResult> {

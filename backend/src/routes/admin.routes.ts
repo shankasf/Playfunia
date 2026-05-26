@@ -197,6 +197,15 @@ import {
   updateCouponHandler,
   deleteCouponHandler,
 } from '../controllers/coupon.controller';
+import {
+  getMarketingStatsHandler,
+  listLivePromosHandler,
+  previewAudienceHandler,
+  draftMessageHandler,
+  sendCampaignHandler,
+  listCampaignsHandler as listMarketingCampaignsHandler,
+  getCampaignHandler as getMarketingCampaignHandler,
+} from '../controllers/marketing.controller';
 import { AppError } from '../utils/app-error';
 
 const upload = multer({
@@ -498,6 +507,16 @@ adminRouter.get('/coupons/:id', getCouponHandler);
 adminRouter.post('/coupons', createCouponHandler);
 adminRouter.patch('/coupons/:id', updateCouponHandler);
 adminRouter.delete('/coupons/:id', deleteCouponHandler);
+
+// Marketing (admin only via the staff allow-list) — birthday segments, AI copy,
+// and campaign send/history over SES email + Twilio SMS to opted-in contacts.
+adminRouter.get('/marketing/stats', getMarketingStatsHandler);
+adminRouter.get('/marketing/live-promos', listLivePromosHandler);
+adminRouter.post('/marketing/audience-preview', previewAudienceHandler);
+adminRouter.post('/marketing/draft', draftMessageHandler);
+adminRouter.post('/marketing/send', sendCampaignHandler);
+adminRouter.get('/marketing/campaigns', listMarketingCampaignsHandler);
+adminRouter.get('/marketing/campaigns/:id', getMarketingCampaignHandler);
 
 // Event Reconciliation (admin only)
 // POST /api/admin/reconciliation/run?hours=24

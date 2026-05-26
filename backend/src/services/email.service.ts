@@ -387,6 +387,33 @@ export async function sendTeamRoleAssignment(
   });
 }
 
+// Send a marketing/campaign email. Wraps the (plain-text) body in a branded
+// template and appends a CAN-SPAM opt-out notice. Recipients are opt-in only.
+export async function sendMarketingEmail(to: string, subject: string, body: string): Promise<boolean> {
+  const paragraphs = body
+    .split(/\n{2,}/)
+    .map((p) => `<p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 14px;">${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`)
+    .join('');
+  return sendEmail({
+    to,
+    subject,
+    html: `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+        <div style="text-align:center;margin-bottom:24px;">
+          <h1 style="color:#7c3aed;margin:0;">Playfunia</h1>
+        </div>
+        ${paragraphs}
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0;">
+        <p style="color:#9ca3af;font-size:12px;text-align:center;">
+          You're receiving this because you opted in to Playfunia marketing.
+          To stop receiving these emails, reply to this message or contact us.
+        </p>
+      </div>
+    `,
+    text: `${body}\n\n—\nYou're receiving this because you opted in to Playfunia marketing. Reply to opt out.`,
+  });
+}
+
 // Booking confirmation data interface
 export interface BookingEmailData {
   reference: string;
