@@ -98,6 +98,7 @@ export async function getAdminDashboardSummary() {
     totalApplicants,
     pendingApplicants,
     ticketPurchases,
+    teamCount,
   ] = await Promise.all([
     // Upcoming bookings
     supabase
@@ -185,6 +186,11 @@ export async function getAdminDashboardSummary() {
     supabase
       .from('ticket_purchases')
       .select('purchase_id, total, codes, created_at'),
+    // Team members (admins + staff)
+    supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true })
+      .overlaps('roles', ['admin', 'employee', 'staff']),
   ]);
 
   // Transform upcoming bookings for frontend (dates in ET)
@@ -288,6 +294,9 @@ export async function getAdminDashboardSummary() {
     users: {
       total: totalUsers.count ?? 0,
     },
+    team: {
+      total: teamCount.count ?? 0,
+    },
     customers: {
       total: totalCustomers.count ?? 0,
     },
@@ -347,9 +356,73 @@ export async function updateUser(userId: number, updates: Partial<User> & { role
   return UserRepository.update(userId, finalUpdates);
 }
 
+// Create a new team member (admin or staff) with a login they can use immediately.
+export async function createTeamUser(input: {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName?: string | undefined;
+  phone?: string | undefined;
+  role: 'admin' | 'employee';
+}) {
+  const email = input.email.trim().toLowerCase();
+
+  const existing = await UserRepository.findByEmail(email);
+  if (existing) {
+    throw new AppError('A user with this email already exists.', 409);
+  }
+
+  // Create the Supabase Auth login (email pre-confirmed so they can sign in now).
+  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    email,
+    password: input.password,
+    email_confirm: true,
+    user_metadata: { first_name: input.firstName, last_name: input.lastName ?? '' },
+  });
+  if (authError || !authData?.user) {
+    throw new AppError(`Failed to create login: ${authError?.message ?? 'unknown error'}`, 400);
+  }
+
+  const roles = input.role === 'admin' ? ['admin'] : ['employee'];
+
+  const { data, error } = await supabaseAny
+    .from('users')
+    .insert({
+      email,
+      first_name: input.firstName,
+      last_name: input.lastName ?? null,
+      phone: input.phone ?? null,
+      roles,
+      auth_user_id: authData.user.id,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    // Roll back the auth login if the profile row could not be created.
+    await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
+    throw error;
+  }
+  return data;
+}
+
+// Reset a team member's password (admin-initiated).
+export async function resetUserPassword(userId: number, newPassword: string) {
+  const user = await UserRepository.findById(userId);
+  if (!user) throw new AppError('User not found', 404);
+  if (!user.auth_user_id) throw new AppError('This account has no login to reset.', 400);
+  const { error } = await supabase.auth.admin.updateUserById(user.auth_user_id, { password: newPassword });
+  if (error) throw new AppError(`Failed to reset password: ${error.message}`, 400);
+}
+
 export async function deleteUser(userId: number) {
+  const user = await UserRepository.findById(userId);
   const { error } = await supabaseAny.from('users').delete().eq('user_id', userId);
   if (error) throw error;
+  // Also revoke the auth login so the account can no longer sign in.
+  if (user?.auth_user_id) {
+    await supabase.auth.admin.deleteUser(user.auth_user_id).catch(() => {});
+  }
 }
 
 // ============= Customers Management =============

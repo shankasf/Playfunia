@@ -15,6 +15,8 @@ import {
 } from '../services/admin-events.service';
 import {
   adminUserUpdateSchema,
+  adminTeamUserCreateSchema,
+  adminPasswordResetSchema,
   adminCustomerUpdateSchema,
   adminChildCreateSchema,
   adminChildUpdateSchema,
@@ -98,6 +100,35 @@ export const getUserHandler = asyncHandler(async (req, res) => {
   const user = await AdminService.getUserById(userId);
   if (!user) throw new AppError('User not found', 404);
   return res.status(200).json({ user });
+});
+
+export const createUserHandler = asyncHandler(async (req, res) => {
+  const validated = adminTeamUserCreateSchema.parse(req.body);
+  const user = await AdminService.createTeamUser({
+    email: validated.email,
+    password: validated.password,
+    firstName: validated.first_name,
+    lastName: validated.last_name,
+    phone: validated.phone,
+    role: validated.role,
+  });
+  publishAdminEvent('user.created', { userId: (user as { user_id?: number } | null)?.user_id });
+
+  // Best-effort: email the new team member a summary of their access.
+  try {
+    await sendTeamRoleAssignment(validated.email, validated.role, validated.first_name);
+  } catch (error) {
+    logger.error({ err: error, email: validated.email }, 'Failed to send team welcome email');
+  }
+
+  return res.status(201).json({ user });
+});
+
+export const resetUserPasswordHandler = asyncHandler(async (req, res) => {
+  const userId = parseIntParam(req.params.id);
+  const { password } = adminPasswordResetSchema.parse(req.body);
+  await AdminService.resetUserPassword(userId, password);
+  return res.status(200).json({ success: true });
 });
 
 export const updateUserHandler = asyncHandler(async (req, res) => {

@@ -44,6 +44,9 @@ export type AdminSummary = {
     total: number;
     today: number;
   };
+  team?: {
+    total: number;
+  };
 };
 
 export type AdminBooking = {
@@ -300,6 +303,49 @@ export async function updateAdminUserRoles(userId: number, roles: string[]) {
     { roles },
   );
   return response.user;
+}
+
+export type AdminTeamUserCreatePayload = {
+  first_name: string;
+  last_name?: string;
+  email: string;
+  password: string;
+  phone?: string;
+  role: 'admin' | 'employee';
+};
+
+export async function createAdminTeamUser(payload: AdminTeamUserCreatePayload) {
+  const response = await apiPost<{ user: AdminUser }, AdminTeamUserCreatePayload>(
+    '/admin/users',
+    payload,
+  );
+  return response.user;
+}
+
+export type AdminUserUpdatePayload = {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  roles?: string[];
+};
+
+export async function updateAdminUser(userId: number, payload: AdminUserUpdatePayload) {
+  const response = await apiPatch<{ user: AdminUser }, AdminUserUpdatePayload>(
+    `/admin/users/${userId}`,
+    payload,
+  );
+  return response.user;
+}
+
+export async function resetAdminUserPassword(userId: number, password: string) {
+  return apiPost<{ success: boolean }, { password: string }>(
+    `/admin/users/${userId}/reset-password`,
+    { password },
+  );
+}
+
+export async function deleteAdminUser(userId: number) {
+  return apiDelete<{ success: boolean }>(`/admin/users/${userId}`);
 }
 
 export type AdminCreateMembershipPayload = {

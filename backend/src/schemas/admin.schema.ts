@@ -65,6 +65,27 @@ export const adminUserUpdateSchema = z
 
 export type AdminUserUpdateInput = z.infer<typeof adminUserUpdateSchema>;
 
+// Create a new team member (admin or staff) with a login.
+export const adminTeamUserCreateSchema = z
+  .object({
+    email: z.string().trim().email().toLowerCase(),
+    password: z.string().min(8, 'Password must be at least 8 characters').max(72),
+    first_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes'),
+    last_name: z.string().trim().min(1).max(100).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
+    phone: phoneSchema.optional(),
+    role: z.enum(['admin', 'employee']),
+  })
+  .strip();
+
+export type AdminTeamUserCreateInput = z.infer<typeof adminTeamUserCreateSchema>;
+
+// Admin-initiated password reset for a team member.
+export const adminPasswordResetSchema = z
+  .object({
+    password: z.string().min(8, 'Password must be at least 8 characters').max(72),
+  })
+  .strip();
+
 // ============= Customer Schemas =============
 export const adminCustomerUpdateSchema = z
   .object({

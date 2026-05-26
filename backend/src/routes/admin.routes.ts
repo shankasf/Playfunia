@@ -17,8 +17,10 @@ import {
 
   // Users
   listUsersHandler,
+  createUserHandler,
   getUserHandler,
   updateUserHandler,
+  resetUserPasswordHandler,
   deleteUserHandler,
   
   // Customers
@@ -309,10 +311,12 @@ adminRouter.get('/summary', getAdminSummaryHandler);
 // Roles (for user management dropdown)
 adminRouter.get('/roles', listRolesHandler);
 
-// Users CRUD
+// Users CRUD (admin-only via the staff allow-list)
 adminRouter.get('/users', listUsersHandler);
+adminRouter.post('/users', createUserHandler);
 adminRouter.get('/users/:id', getUserHandler);
 adminRouter.patch('/users/:id', updateUserHandler);
+adminRouter.post('/users/:id/reset-password', resetUserPasswordHandler);
 adminRouter.delete('/users/:id', deleteUserHandler);
 
 // Customers CRUD

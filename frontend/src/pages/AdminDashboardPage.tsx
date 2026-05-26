@@ -51,9 +51,6 @@ import {
   updateAdminBooking,
   validateMembershipEntry,
   validateTicketCode,
-  fetchAdminUsers,
-  updateAdminUserRoles,
-  type AdminUser,
   type TicketValidationResult,
 } from '../api/admin';
 import { API_BASE_URL } from '../api/client';
@@ -327,15 +324,6 @@ export function AdminDashboardPage() {
 
   const isAuthorized = isTeamMember;
 
-  // Team / Users management (admin only)
-  const [teamState, setTeamState] = useState<{ status: LoadState; data: AdminUser[]; error?: string }>({
-    status: 'idle',
-    data: [],
-  });
-  const [teamSearch, setTeamSearch] = useState('');
-  const [roleUpdateBusy, setRoleUpdateBusy] = useState<number | null>(null);
-  const [teamMessage, setTeamMessage] = useState<string | null>(null);
-
   const refreshAll = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!isAuthorized) return;
@@ -408,56 +396,6 @@ export function AdminDashboardPage() {
     if (!isAuthorized) return;
     void refreshAll();
   }, [isAuthorized, refreshAll]);
-
-  // With a search term, look up any user (to promote one to staff/admin);
-  // otherwise show only existing team members — never the full customer base.
-  const loadTeam = useCallback(async (search: string) => {
-    if (!isAdmin) return;
-    setTeamState((prev) => ({ ...prev, status: 'loading', error: undefined }));
-    try {
-      const q = search.trim();
-      const users = q
-        ? await fetchAdminUsers({ search: q })
-        : await fetchAdminUsers({ teamOnly: true });
-      setTeamState({ status: 'idle', data: users });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to load team members.';
-      setTeamState({ status: 'error', data: [], error: message });
-    }
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (!isAuthorized || !isAdmin) return;
-    // Immediate on first load (empty search); debounce while typing a search.
-    const delay = teamSearch.trim() ? 400 : 0;
-    const timer = window.setTimeout(() => { void loadTeam(teamSearch); }, delay);
-    return () => window.clearTimeout(timer);
-  }, [isAuthorized, isAdmin, teamSearch, loadTeam]);
-
-  // Toggle a user's team role. Preserves any baseline (customer/user) role and
-  // swaps the elevated role (admin / employee) so the account stays valid.
-  const handleSetUserRole = useCallback(
-    async (target: AdminUser, role: 'admin' | 'employee' | 'customer') => {
-      const TEAM_ROLES = ['admin', 'employee', 'staff'];
-      const label = role === 'admin' ? 'Admin' : role === 'employee' ? 'Staff' : 'Customer (no admin access)';
-      if (!window.confirm(`Set ${target.email} to ${label}?`)) return;
-      const base = (target.roles ?? []).filter((r) => !TEAM_ROLES.includes(r));
-      const baseline = base.length > 0 ? base : ['customer'];
-      const nextRoles = role === 'customer' ? baseline : [...baseline, role];
-      setRoleUpdateBusy(target.user_id);
-      setTeamMessage(null);
-      try {
-        await updateAdminUserRoles(target.user_id, nextRoles);
-        setTeamMessage(`${target.email} is now ${label}.`);
-        await loadTeam(teamSearch);
-      } catch (error) {
-        setTeamMessage(error instanceof Error ? error.message : 'Unable to update role.');
-      } finally {
-        setRoleUpdateBusy(null);
-      }
-    },
-    [loadTeam, teamSearch]
-  );
 
   useEffect(() => {
     selectedBookingRef.current = selectedBookingId;
@@ -1164,6 +1102,16 @@ export function AdminDashboardPage() {
               summary?.events?.total ?? 0,
               'Total',
               `${summary?.events?.today ?? 0} today`
+            )}
+          </Link>
+        )}
+        {isAdmin && (
+          <Link to="/admin/team" style={{ textDecoration: 'none', display: 'contents' }}>
+            {renderSummaryCard(
+              'Team & Access',
+              summary?.team?.total ?? 0,
+              'Members',
+              'Manage staff & admins'
             )}
           </Link>
         )}
@@ -2245,106 +2193,6 @@ export function AdminDashboardPage() {
           </table>
         )}
       </section>
-      )}
-
-      {/* Team & Access (admin only) */}
-      {isAdmin && (
-        <section id="section-team" className={styles.panel} style={{ marginTop: '1.5rem' }}>
-          <header className={styles.panelHeader}>
-            <h2>Team &amp; Access</h2>
-            <span>{teamState.data.length} {teamSearch.trim() ? 'matching' : 'team members'}</span>
-          </header>
-          <p className={styles.mutedText} style={{ margin: '0 0 0.75rem' }}>
-            This list shows admins and staff only. To add someone, search their name or email below and set them to
-            Staff or Admin. Staff can view bookings, tickets, customers and waivers, redeem &amp; verify tickets, check
-            members in, and create walk-in bookings/tickets/memberships — but cannot delete records, change pricing or
-            packages, view financial reports, manage content, or manage the team.
-          </p>
-          <div className={styles.filterBar}>
-            <label className={styles.filterItem}>
-              <span>Add a member</span>
-              <input
-                type="text"
-                placeholder="Search any user by name or email..."
-                value={teamSearch}
-                onChange={(e) => setTeamSearch(e.target.value)}
-              />
-            </label>
-          </div>
-          {teamMessage && <p className={styles.feedback}>{teamMessage}</p>}
-          {teamState.status === 'loading' && <p>Loading team...</p>}
-          {teamState.status === 'error' && <p className={styles.error}>{teamState.error}</p>}
-          {teamState.status !== 'loading' && (
-            <div className={styles.tableWrapper}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Current role</th>
-                    <th>Set role</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamState.data.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className={styles.mutedText}>
-                        {teamSearch.trim() ? 'No users match your search.' : 'No team members yet.'}
-                      </td>
-                    </tr>
-                  )}
-                  {teamState.data
-                    .map((u) => {
-                      const currentRole = u.roles?.includes('admin')
-                        ? 'admin'
-                        : u.roles?.includes('employee') || u.roles?.includes('staff')
-                          ? 'employee'
-                          : 'customer';
-                      const roleLabel =
-                        currentRole === 'admin' ? 'Admin' : currentRole === 'employee' ? 'Staff' : 'Customer';
-                      const isSelf = !!user?.email && u.email.toLowerCase() === user.email.toLowerCase();
-                      const busy = roleUpdateBusy === u.user_id;
-                      return (
-                        <tr key={u.user_id}>
-                          <td>{`${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || '—'}</td>
-                          <td>{u.email}</td>
-                          <td><strong>{roleLabel}</strong>{isSelf ? ' (you)' : ''}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                              <button
-                                type="button"
-                                className={styles.editBtn}
-                                disabled={busy || currentRole === 'admin' || isSelf}
-                                onClick={() => handleSetUserRole(u, 'admin')}
-                              >
-                                Admin
-                              </button>
-                              <button
-                                type="button"
-                                className={styles.editBtn}
-                                disabled={busy || currentRole === 'employee' || isSelf}
-                                onClick={() => handleSetUserRole(u, 'employee')}
-                              >
-                                Staff
-                              </button>
-                              <button
-                                type="button"
-                                className={styles.cancelBtn}
-                                disabled={busy || currentRole === 'customer' || isSelf}
-                                onClick={() => handleSetUserRole(u, 'customer')}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
       )}
 
       {/* Coupon Create/Edit Modal */}
