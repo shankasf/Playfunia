@@ -216,9 +216,92 @@ adminRouter.get('/stream', adminStreamGuard, adminEventStreamHandler);
 adminRouter.get('/waivers/export', adminQueryTokenGuard, exportWaiversHandler);
 adminRouter.get('/contacts/export', adminQueryTokenGuard, exportContactsHandler);
 
+// ============= Role policy (deny-by-default for staff) =============
+// Admins have full access. Employees ("staff") are limited to an explicit
+// allow-list: viewing operational data plus front-desk actions (redeem/verify
+// tickets, validate memberships, record check-in visits, create walk-in
+// bookings/tickets/memberships and edit/cancel them). Everything else —
+// deletes, pricing, packages, payments/financial, content settings, user/team
+// management, referrals, reconciliation, exports — is admin-only.
+// Paths are matched relative to the router mount (e.g. '/bookings/123').
+const STAFF_ALLOWED: ReadonlyArray<{ method: string; pattern: RegExp }> = [
+  // Dashboard
+  { method: 'GET', pattern: /^\/summary$/ },
+
+  // Party bookings — view + front-desk create/edit/cancel (no delete, no recalc)
+  { method: 'GET', pattern: /^\/bookings$/ },
+  { method: 'GET', pattern: /^\/bookings\/[^/]+$/ },
+  { method: 'POST', pattern: /^\/bookings$/ },
+  { method: 'PATCH', pattern: /^\/bookings\/[^/]+$/ },
+  { method: 'POST', pattern: /^\/bookings\/[^/]+\/cancel$/ },
+
+  // Online ticket purchases — view + issue + edit + redeem + verify
+  { method: 'GET', pattern: /^\/ticket-purchases$/ },
+  { method: 'GET', pattern: /^\/ticket-purchases\/[^/]+$/ },
+  { method: 'PATCH', pattern: /^\/ticket-purchases\/[^/]+$/ },
+  { method: 'GET', pattern: /^\/tickets\/log$/ },
+  { method: 'POST', pattern: /^\/tickets\/issue$/ },
+  { method: 'POST', pattern: /^\/tickets\/redeem$/ },
+  { method: 'POST', pattern: /^\/tickets\/redeem-code$/ },
+  { method: 'POST', pattern: /^\/tickets\/validate$/ },
+  { method: 'GET', pattern: /^\/tickets\/lookup\/[^/]+$/ },
+
+  // Customer / check-in info — view only
+  { method: 'GET', pattern: /^\/customers$/ },
+  { method: 'GET', pattern: /^\/customers\/[^/]+$/ },
+
+  // Memberships — view + verify + check-in + walk-in create/edit (no delete)
+  { method: 'GET', pattern: /^\/memberships$/ },
+  { method: 'GET', pattern: /^\/memberships\/stats$/ },
+  { method: 'GET', pattern: /^\/memberships\/[^/]+$/ },
+  { method: 'POST', pattern: /^\/memberships$/ },
+  { method: 'PATCH', pattern: /^\/memberships\/[^/]+$/ },
+  { method: 'POST', pattern: /^\/memberships\/validate$/ },
+  { method: 'POST', pattern: /^\/memberships\/[^/]+\/visit$/ },
+
+  // Waivers / check-in info — view only
+  { method: 'GET', pattern: /^\/waiver-submissions$/ },
+  { method: 'GET', pattern: /^\/waiver-submissions\/[^/]+$/ },
+  { method: 'GET', pattern: /^\/waivers$/ },
+
+  // Read-only catalogs needed by the walk-in create forms
+  { method: 'GET', pattern: /^\/party-packages$/ },
+  { method: 'GET', pattern: /^\/party-packages\/[^/]+$/ },
+  { method: 'GET', pattern: /^\/membership-plans$/ },
+  { method: 'GET', pattern: /^\/membership-plans\/[^/]+$/ },
+  { method: 'GET', pattern: /^\/ticket-types$/ },
+  { method: 'GET', pattern: /^\/ticket-types\/[^/]+$/ },
+  { method: 'GET', pattern: /^\/locations$/ },
+  { method: 'GET', pattern: /^\/locations\/[^/]+$/ },
+  { method: 'GET', pattern: /^\/events$/ },
+  { method: 'GET', pattern: /^\/events\/[^/]+$/ },
+  { method: 'GET', pattern: /^\/events\/[^/]+\/photos$/ },
+];
+
+function requireAdminUnlessStaffAllowed(req: Request, _res: Response, next: NextFunction) {
+  const roles = (req as SupabaseAuthenticatedRequest).user?.roles ?? [];
+  // Admins: full access
+  if (roles.includes(ROLES.ADMIN)) {
+    return next();
+  }
+  // Staff (employee): only the explicit allow-list above
+  const method = req.method.toUpperCase();
+  const baseUrl = req.baseUrl ?? '';
+  const fullPath = req.path;
+  const path = baseUrl && fullPath.startsWith(baseUrl)
+    ? fullPath.slice(baseUrl.length) || '/'
+    : fullPath;
+  const allowed = STAFF_ALLOWED.some((rule) => rule.method === method && rule.pattern.test(path));
+  if (allowed) {
+    return next();
+  }
+  return next(new AppError('Admin access required for this action', 403));
+}
+
 // ============= Protected admin routes =============
-// Both admin and employee roles can access the admin dashboard
-adminRouter.use(supabaseAuthGuard, requireRoles(ROLES.ADMIN, ROLES.EMPLOYEE));
+// Both admin and employee roles can reach the dashboard; the policy guard
+// then restricts employees to the staff allow-list (deny-by-default).
+adminRouter.use(supabaseAuthGuard, requireRoles(ROLES.ADMIN, ROLES.EMPLOYEE), requireAdminUnlessStaffAllowed);
 
 // Dashboard
 adminRouter.get('/summary', getAdminSummaryHandler);
@@ -495,7 +578,7 @@ async function adminQueryTokenGuard(req: Request, _res: Response, next: NextFunc
     }
 
     const roles = user.roles ?? [];
-    if (!roles.some((role: string) => role === ROLES.ADMIN || role === ROLES.EMPLOYEE)) {
+    if (!roles.includes(ROLES.ADMIN)) { // CSV exports contain sensitive customer data — admin only
       return next(new AppError('Forbidden', 403));
     }
 

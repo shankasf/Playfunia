@@ -43,6 +43,16 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Admin-only areas (content/management). Staff (employee) get redirected to the
+// operations dashboard, which is the only admin surface they may use.
+function AdminOnlyRoute({ children }: { children: React.ReactNode }) {
+  const { isAdmin, isTeamMember, isLoading } = useAuth();
+  if (isLoading) return <PageLoader />;
+  if (!isTeamMember) return <Navigate to="/account" replace />;
+  if (!isAdmin) return <Navigate to="/admin" replace />;
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <ErrorBoundary>
@@ -158,31 +168,31 @@ function App() {
         <Route
           path="admin/applicants"
           element={
-            <AdminRoute>
+            <AdminOnlyRoute>
               <Suspense fallback={<PageLoader />}>
                 <AdminApplicantsPage />
               </Suspense>
-            </AdminRoute>
+            </AdminOnlyRoute>
           }
         />
         <Route
           path="admin/applicants/:id"
           element={
-            <AdminRoute>
+            <AdminOnlyRoute>
               <Suspense fallback={<PageLoader />}>
                 <AdminApplicantDetailPage />
               </Suspense>
-            </AdminRoute>
+            </AdminOnlyRoute>
           }
         />
         <Route
           path="admin/events"
           element={
-            <AdminRoute>
+            <AdminOnlyRoute>
               <Suspense fallback={<PageLoader />}>
                 <AdminEventsPage />
               </Suspense>
-            </AdminRoute>
+            </AdminOnlyRoute>
           }
         />
         <Route

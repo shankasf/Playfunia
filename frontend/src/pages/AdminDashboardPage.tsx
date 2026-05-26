@@ -51,6 +51,9 @@ import {
   updateAdminBooking,
   validateMembershipEntry,
   validateTicketCode,
+  fetchAdminUsers,
+  updateAdminUserRoles,
+  type AdminUser,
   type TicketValidationResult,
 } from '../api/admin';
 import { API_BASE_URL } from '../api/client';
@@ -110,7 +113,7 @@ type WaiverFormState = {
 };
 
 export function AdminDashboardPage() {
-  const { user, token, isTeamMember, isLoading: authLoading, logout } = useAuth();
+  const { user, token, isTeamMember, isAdmin, isLoading: authLoading, logout } = useAuth();
   const [summaryState, setSummaryState] = useState<{
     status: LoadState;
     data: AdminSummary | null;
@@ -324,6 +327,15 @@ export function AdminDashboardPage() {
 
   const isAuthorized = isTeamMember;
 
+  // Team / Users management (admin only)
+  const [teamState, setTeamState] = useState<{ status: LoadState; data: AdminUser[]; error?: string }>({
+    status: 'idle',
+    data: [],
+  });
+  const [teamSearch, setTeamSearch] = useState('');
+  const [roleUpdateBusy, setRoleUpdateBusy] = useState<number | null>(null);
+  const [teamMessage, setTeamMessage] = useState<string | null>(null);
+
   const refreshAll = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!isAuthorized) return;
@@ -341,8 +353,8 @@ export function AdminDashboardPage() {
           fetchAdminWaivers(),
           fetchAdminTicketLog(),
           fetchAdminMemberships(),
-          fetchAdminPromotions().catch(() => [] as AdminProductPromotion[]),
-          fetchAdminPromoOffers().catch(() => [] as AdminPromoOffer[]),
+          isAdmin ? fetchAdminPromotions().catch(() => [] as AdminProductPromotion[]) : Promise.resolve([] as AdminProductPromotion[]),
+          isAdmin ? fetchAdminPromoOffers().catch(() => [] as AdminPromoOffer[]) : Promise.resolve([] as AdminPromoOffer[]),
           fetchPartyPackages().catch(() => [] as PartyPackageDto[]),
         ]);
         setSummaryState({ status: 'idle', data: summary });
@@ -352,8 +364,8 @@ export function AdminDashboardPage() {
         setMembershipState({ status: 'idle', data: memberships });
         setPromoState({ status: 'idle', data: promotions });
         setPromoOfferState({ status: 'idle', data: promoOffers });
-        // Coupons are independent — fetch silently so a failure doesn't break the dashboard.
-        void refreshCoupons();
+        // Coupons are independent and admin-only — fetch silently for admins only.
+        if (isAdmin) void refreshCoupons();
         if (packages.length > 0) setPartyPackages(packages);
         const activeSelection = selectedBookingRef.current;
         if (activeSelection) {
@@ -381,7 +393,7 @@ export function AdminDashboardPage() {
         }
       }
     },
-    [isAuthorized]
+    [isAuthorized, isAdmin]
   );
 
   const scheduleSilentRefresh = useCallback(() => {
@@ -396,6 +408,47 @@ export function AdminDashboardPage() {
     if (!isAuthorized) return;
     void refreshAll();
   }, [isAuthorized, refreshAll]);
+
+  const loadTeam = useCallback(async () => {
+    if (!isAdmin) return;
+    setTeamState((prev) => ({ ...prev, status: 'loading', error: undefined }));
+    try {
+      const users = await fetchAdminUsers();
+      setTeamState({ status: 'idle', data: users });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load team members.';
+      setTeamState({ status: 'error', data: [], error: message });
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAuthorized && isAdmin) void loadTeam();
+  }, [isAuthorized, isAdmin, loadTeam]);
+
+  // Toggle a user's team role. Preserves any baseline (customer/user) role and
+  // swaps the elevated role (admin / employee) so the account stays valid.
+  const handleSetUserRole = useCallback(
+    async (target: AdminUser, role: 'admin' | 'employee' | 'customer') => {
+      const TEAM_ROLES = ['admin', 'employee', 'staff'];
+      const label = role === 'admin' ? 'Admin' : role === 'employee' ? 'Staff' : 'Customer (no admin access)';
+      if (!window.confirm(`Set ${target.email} to ${label}?`)) return;
+      const base = (target.roles ?? []).filter((r) => !TEAM_ROLES.includes(r));
+      const baseline = base.length > 0 ? base : ['customer'];
+      const nextRoles = role === 'customer' ? baseline : [...baseline, role];
+      setRoleUpdateBusy(target.user_id);
+      setTeamMessage(null);
+      try {
+        await updateAdminUserRoles(target.user_id, nextRoles);
+        setTeamMessage(`${target.email} is now ${label}.`);
+        await loadTeam();
+      } catch (error) {
+        setTeamMessage(error instanceof Error ? error.message : 'Unable to update role.');
+      } finally {
+        setRoleUpdateBusy(null);
+      }
+    },
+    [loadTeam]
+  );
 
   useEffect(() => {
     selectedBookingRef.current = selectedBookingId;
@@ -1063,13 +1116,21 @@ export function AdminDashboardPage() {
           `${summary?.waivers.today ?? 0} today`,
           'section-waivers'
         )}
-        {renderSummaryCard(
-          'Ticket Revenue',
-          formatCurrency(summary?.tickets.totalRevenue ?? 0),
-          'Total',
-          `${formatCurrency(summary?.tickets.todayRevenue ?? 0)} today`,
-          'section-tickets'
-        )}
+        {isAdmin
+          ? renderSummaryCard(
+              'Ticket Revenue',
+              formatCurrency(summary?.tickets.totalRevenue ?? 0),
+              'Total',
+              `${formatCurrency(summary?.tickets.todayRevenue ?? 0)} today`,
+              'section-tickets'
+            )
+          : renderSummaryCard(
+              'Tickets',
+              summary?.tickets.totalPurchases ?? 0,
+              'Purchases',
+              `${summary?.tickets.salesToday ?? 0} sold today`,
+              'section-tickets'
+            )}
         {renderSummaryCard(
           'Memberships',
           summary?.memberships.total ?? 0,
@@ -1077,22 +1138,26 @@ export function AdminDashboardPage() {
           `${summary?.memberships.activeMembers ?? 0} active`,
           'section-memberships'
         )}
-        <Link to="/admin/applicants" style={{ textDecoration: 'none', display: 'contents' }}>
-          {renderSummaryCard(
-            'Jobs & Applicants',
-            summary?.applicants?.total ?? 0,
-            'Applicants',
-            `${summary?.applicants?.pendingCount ?? 0} pending review`
-          )}
-        </Link>
-        <Link to="/admin/events" style={{ textDecoration: 'none', display: 'contents' }}>
-          {renderSummaryCard(
-            'Events',
-            summary?.events?.total ?? 0,
-            'Total',
-            `${summary?.events?.today ?? 0} today`
-          )}
-        </Link>
+        {isAdmin && (
+          <Link to="/admin/applicants" style={{ textDecoration: 'none', display: 'contents' }}>
+            {renderSummaryCard(
+              'Jobs & Applicants',
+              summary?.applicants?.total ?? 0,
+              'Applicants',
+              `${summary?.applicants?.pendingCount ?? 0} pending review`
+            )}
+          </Link>
+        )}
+        {isAdmin && (
+          <Link to="/admin/events" style={{ textDecoration: 'none', display: 'contents' }}>
+            {renderSummaryCard(
+              'Events',
+              summary?.events?.total ?? 0,
+              'Total',
+              `${summary?.events?.today ?? 0} today`
+            )}
+          </Link>
+        )}
       </section>
 
       <div className={styles.layout}>
@@ -1159,7 +1224,7 @@ export function AdminDashboardPage() {
                 </select>
               </label>
             </div>
-            {renderBookingTable({ ...bookingState, data: filteredBookings }, handleSelectBooking, handleCancelBooking, handleDeleteBooking, selectedBookingId)}
+            {renderBookingTable({ ...bookingState, data: filteredBookings }, handleSelectBooking, handleCancelBooking, handleDeleteBooking, selectedBookingId, isAdmin)}
           </section>
 
 
@@ -1207,7 +1272,7 @@ export function AdminDashboardPage() {
               </button>
             </div>
             {ticketMessage && <p className={styles.feedback}>{ticketMessage}</p>}
-            {renderTicketLog({ ...ticketState, data: filteredTickets }, handleDeleteTicket)}
+            {renderTicketLog({ ...ticketState, data: filteredTickets }, handleDeleteTicket, isAdmin)}
           </section>
         </div>
 
@@ -1250,7 +1315,7 @@ export function AdminDashboardPage() {
               </label>
             </div>
             {membershipMessage && <p className={styles.feedback}>{membershipMessage}</p>}
-            {renderMembershipList({ ...membershipState, data: filteredMemberships }, visitLoading, handleRecordVisit, handleSelectMembership, handleCancelMembership, handleDeleteMembership, selectedMembershipId)}
+            {renderMembershipList({ ...membershipState, data: filteredMemberships }, visitLoading, handleRecordVisit, handleSelectMembership, handleCancelMembership, handleDeleteMembership, selectedMembershipId, isAdmin)}
           </section>
 
 
@@ -1332,20 +1397,24 @@ export function AdminDashboardPage() {
               <h2>Waiver intake</h2>
               <div className={styles.panelActions}>
                 <span className={styles.filterCount}>{filteredWaivers.length} of {waiverState.data.length}</span>
-                <button
-                  type="button"
-                  className={styles.exportLink}
-                  onClick={() => openExportModal('waivers')}
-                >
-                  Export CSV
-                </button>
-                <button
-                  type="button"
-                  className={styles.exportLink}
-                  onClick={() => openExportModal('contacts')}
-                >
-                  Download emails
-                </button>
+                {isAdmin && (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.exportLink}
+                      onClick={() => openExportModal('waivers')}
+                    >
+                      Export CSV
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.exportLink}
+                      onClick={() => openExportModal('contacts')}
+                    >
+                      Download emails
+                    </button>
+                  </>
+                )}
               </div>
             </header>
             <div className={styles.filterBar}>
@@ -1382,7 +1451,8 @@ export function AdminDashboardPage() {
               selectedWaiverId,
               waiverDisplayCount,
               () => setWaiverDisplayCount((prev) => prev + 5),
-              () => setWaiverDisplayCount((prev) => Math.max(5, prev - 5))
+              () => setWaiverDisplayCount((prev) => Math.max(5, prev - 5)),
+              isAdmin
             )}
 
           </section>
@@ -1390,6 +1460,7 @@ export function AdminDashboardPage() {
       </div>
 
       {/* Promotions Panel */}
+      {isAdmin && (
       <section id="section-promotions" className={styles.panel} style={{ marginTop: '1.5rem' }}>
         <header className={styles.panelHeader}>
           <h2>Promotions</h2>
@@ -1502,6 +1573,7 @@ export function AdminDashboardPage() {
           </table>
         )}
       </section>
+      )}
 
       {/* Promotion Create/Edit Modal */}
       {promoFormOpen && (
@@ -1642,6 +1714,7 @@ export function AdminDashboardPage() {
       )}
 
       {/* Promo Offers Panel */}
+      {isAdmin && (
       <section id="section-promo-offers" className={styles.panel} style={{ marginTop: '1.5rem' }}>
         <header className={styles.panelHeader}>
           <h2>Promo Offers</h2>
@@ -1755,6 +1828,7 @@ export function AdminDashboardPage() {
           </table>
         )}
       </section>
+      )}
 
       {/* Promo Offer Create/Edit Modal */}
       {promoOfferFormOpen && (
@@ -2031,6 +2105,7 @@ export function AdminDashboardPage() {
       )}
 
       {/* Coupon Codes Panel — cart-redeemable codes for memberships, tickets, bookings or all */}
+      {isAdmin && (
       <section id="section-coupons" className={styles.panel} style={{ marginTop: '1.5rem' }}>
         <header className={styles.panelHeader}>
           <h2>Coupon Codes</h2>
@@ -2161,6 +2236,105 @@ export function AdminDashboardPage() {
           </table>
         )}
       </section>
+      )}
+
+      {/* Team & Access (admin only) */}
+      {isAdmin && (
+        <section id="section-team" className={styles.panel} style={{ marginTop: '1.5rem' }}>
+          <header className={styles.panelHeader}>
+            <h2>Team &amp; Access</h2>
+            <span>{teamState.data.length} users</span>
+          </header>
+          <p className={styles.mutedText} style={{ margin: '0 0 0.75rem' }}>
+            Admins have full access. Staff can view bookings, tickets, customers and waivers, redeem &amp; verify
+            tickets, check members in, and create walk-in bookings/tickets/memberships — but cannot delete records,
+            change pricing or packages, view financial reports, manage content, or manage the team.
+          </p>
+          <div className={styles.filterBar}>
+            <label className={styles.filterItem}>
+              <span>Search</span>
+              <input
+                type="text"
+                placeholder="Search name or email..."
+                value={teamSearch}
+                onChange={(e) => setTeamSearch(e.target.value)}
+              />
+            </label>
+          </div>
+          {teamMessage && <p className={styles.feedback}>{teamMessage}</p>}
+          {teamState.status === 'loading' && <p>Loading team...</p>}
+          {teamState.status === 'error' && <p className={styles.error}>{teamState.error}</p>}
+          {teamState.status !== 'loading' && (
+            <div className={styles.tableWrapper}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Current role</th>
+                    <th>Set role</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamState.data
+                    .filter((u) => {
+                      const q = teamSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      const name = `${u.first_name ?? ''} ${u.last_name ?? ''}`.toLowerCase();
+                      return name.includes(q) || u.email.toLowerCase().includes(q);
+                    })
+                    .map((u) => {
+                      const currentRole = u.roles?.includes('admin')
+                        ? 'admin'
+                        : u.roles?.includes('employee') || u.roles?.includes('staff')
+                          ? 'employee'
+                          : 'customer';
+                      const roleLabel =
+                        currentRole === 'admin' ? 'Admin' : currentRole === 'employee' ? 'Staff' : 'Customer';
+                      const isSelf = !!user?.email && u.email.toLowerCase() === user.email.toLowerCase();
+                      const busy = roleUpdateBusy === u.user_id;
+                      return (
+                        <tr key={u.user_id}>
+                          <td>{`${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || '—'}</td>
+                          <td>{u.email}</td>
+                          <td><strong>{roleLabel}</strong>{isSelf ? ' (you)' : ''}</td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className={styles.editBtn}
+                                disabled={busy || currentRole === 'admin' || isSelf}
+                                onClick={() => handleSetUserRole(u, 'admin')}
+                              >
+                                Admin
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.editBtn}
+                                disabled={busy || currentRole === 'employee' || isSelf}
+                                onClick={() => handleSetUserRole(u, 'employee')}
+                              >
+                                Staff
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.cancelBtn}
+                                disabled={busy || currentRole === 'customer' || isSelf}
+                                onClick={() => handleSetUserRole(u, 'customer')}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Coupon Create/Edit Modal */}
       {couponFormOpen && (
@@ -2840,13 +3014,15 @@ export function AdminDashboardPage() {
               {waiverActionMessage && <p className={styles.modalFeedback}>{waiverActionMessage}</p>}
             </div>
             <div className={styles.modalFooter}>
-              <button
-                type="button"
-                onClick={handleWaiverUpdate}
-                disabled={waiverActionBusy}
-              >
-                {waiverActionBusy ? 'Saving...' : 'Save changes'}
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleWaiverUpdate}
+                  disabled={waiverActionBusy}
+                >
+                  {waiverActionBusy ? 'Saving...' : 'Save changes'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -3580,7 +3756,8 @@ function renderBookingTable(
   onSelect: (booking: AdminBooking) => void,
   onCancel: (booking: AdminBooking) => void,
   onDelete: (booking: AdminBooking) => void,
-  selectedId: string | null
+  selectedId: string | null,
+  canManage: boolean
 ) {
   if (state.status === 'loading') return <p>Loading bookings...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
@@ -3785,16 +3962,18 @@ function renderBookingTable(
                       Edit
                     </button>
                     {isCancelled ? (
-                      <button
-                        type="button"
-                        className={styles.deleteBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDelete(booking);
-                        }}
-                      >
-                        Delete
-                      </button>
+                      canManage && (
+                        <button
+                          type="button"
+                          className={styles.deleteBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(booking);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )
                     ) : (
                       <button
                         type="button"
@@ -3826,6 +4005,7 @@ function renderWaiverList(
   displayCount: number,
   onLoadMore: () => void,
   onShowLess: () => void,
+  canManage: boolean,
 ) {
   if (state.status === 'loading') return <p>Loading waivers...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
@@ -3856,28 +4036,30 @@ function renderWaiverList(
             </div>
             <div className={styles.waiverMeta}>
               <span>{formatDateTime(waiver.signedAt)}</span>
-              <div className={styles.waiverActions}>
-                <button
-                  type="button"
-                  className={styles.editBtn}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelect(waiver);
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className={styles.deleteBtn}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete(waiver.id, waiver.guardianName);
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
+              {canManage && (
+                <div className={styles.waiverActions}>
+                  <button
+                    type="button"
+                    className={styles.editBtn}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelect(waiver);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.deleteBtn}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDelete(waiver.id, waiver.guardianName);
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           </li>
         ))}
@@ -3914,7 +4096,8 @@ function renderTicketLog(
     data: AdminTicketLogEntry[];
     error?: string;
   },
-  onDelete: (ticketId: string, ticketType: string) => void
+  onDelete: (ticketId: string, ticketType: string) => void,
+  canManage: boolean
 ) {
   if (state.status === 'loading') return <p>Loading ticket log...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
@@ -3973,13 +4156,15 @@ function renderTicketLog(
                   </span>
                 </td>
                 <td>
-                  <button
-                    type="button"
-                    className={styles.deleteBtn}
-                    onClick={() => onDelete(entry.id, entry.type)}
-                  >
-                    Delete
-                  </button>
+                  {canManage && (
+                    <button
+                      type="button"
+                      className={styles.deleteBtn}
+                      onClick={() => onDelete(entry.id, entry.type)}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </td>
               </tr>
             );
@@ -3997,7 +4182,8 @@ function renderMembershipList(
   onEdit: (member: AdminMembership) => void,
   onCancel: (membershipId: string, memberName: string) => void,
   onDelete: (membershipId: string, memberName: string) => void,
-  selectedMembershipId: string | null
+  selectedMembershipId: string | null,
+  canManage: boolean
 ) {
   if (state.status === 'loading') return <p>Loading memberships...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
@@ -4090,14 +4276,16 @@ function renderMembershipList(
                       Edit
                     </button>
                     {isCancelled ? (
-                      <button
-                        type="button"
-                        className={styles.deleteBtn}
-                        onClick={() => member.membership?.membershipId && onDelete(member.membership.membershipId, name)}
-                        disabled={!member.membership?.membershipId}
-                      >
-                        Delete
-                      </button>
+                      canManage && (
+                        <button
+                          type="button"
+                          className={styles.deleteBtn}
+                          onClick={() => member.membership?.membershipId && onDelete(member.membership.membershipId, name)}
+                          disabled={!member.membership?.membershipId}
+                        >
+                          Delete
+                        </button>
+                      )
                     ) : (
                       <button
                         type="button"

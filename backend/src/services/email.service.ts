@@ -316,6 +316,77 @@ export async function sendPasswordResetOTP(email: string, otp: string, firstName
   });
 }
 
+// Notify a user that they've been granted team (admin/staff) access, with a
+// plain-English summary of what they can and cannot do.
+export async function sendTeamRoleAssignment(
+  email: string,
+  role: 'admin' | 'employee',
+  firstName?: string,
+): Promise<boolean> {
+  const name = escapeHtml(firstName || 'there');
+  const isAdmin = role === 'admin';
+  const roleLabel = isAdmin ? 'Administrator' : 'Staff';
+  const dashboardUrl = `${appConfig.frontendUrl.replace(/\/$/, '')}/admin`;
+
+  const adminPoints = [
+    'Full access to the operations dashboard and all management tools',
+    'Manage bookings, tickets, memberships, customers and waivers',
+    'Edit pricing, packages, promotions, coupons and content',
+    'Access financial reports and manage team members & access',
+  ];
+  const staffCan = [
+    'View party bookings, online ticket purchases, customers, memberships and waivers',
+    'Redeem and verify online ticket codes',
+    'Validate memberships and check members in',
+    'Create walk-in bookings, issue tickets and create memberships',
+  ];
+  const staffCannot = [
+    'Delete bookings, customers or other records',
+    'Edit pricing, change packages or manage membership plans',
+    'Access financial reports or revenue figures',
+    'Manage content settings or other team members',
+  ];
+
+  const list = (items: string[], color: string, mark: string) =>
+    items
+      .map(
+        (i) =>
+          `<p style="color:#4b5563;margin:6px 0;font-size:14px;"><span style="color:${color};font-weight:bold;">${mark}</span> ${escapeHtml(i)}</p>`,
+      )
+      .join('');
+
+  const accessHtml = isAdmin
+    ? `<h3 style="color:#1e1b4b;font-size:15px;margin:18px 0 6px;">Your access</h3>${list(adminPoints, '#22c55e', '&#10003;')}`
+    : `<h3 style="color:#1e1b4b;font-size:15px;margin:18px 0 6px;">What you can do</h3>${list(staffCan, '#22c55e', '&#10003;')}` +
+      `<h3 style="color:#1e1b4b;font-size:15px;margin:18px 0 6px;">What you can&#39;t do</h3>${list(staffCannot, '#ef4444', '&#10007;')}`;
+
+  const textSummary = isAdmin
+    ? 'You have full management access to the dashboard.'
+    : "You can view bookings, tickets, customers, memberships and waivers; redeem & verify tickets; check members in; and create walk-in bookings/tickets/memberships. You cannot delete records, edit pricing/packages, view financial reports, manage content, or manage team members.";
+
+  return sendEmail({
+    to: email,
+    subject: `You've been granted ${roleLabel} access to Playfunia`,
+    html: `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+        <div style="text-align:center;margin-bottom:24px;">
+          <h1 style="color:#7c3aed;margin:0;">Playfunia</h1>
+        </div>
+        <h2 style="color:#1e1b4b;">Hi ${name}!</h2>
+        <p style="color:#4b5563;font-size:16px;">You've been granted <strong>${roleLabel}</strong> access to the Playfunia operations dashboard.</p>
+        ${accessHtml}
+        <div style="text-align:center;margin:28px 0;">
+          <a href="${dashboardUrl}" style="background:linear-gradient(135deg,#7c3aed,#ff6b9d);color:#fff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:bold;display:inline-block;">Open the dashboard</a>
+        </div>
+        <p style="color:#6b7280;font-size:14px;">Sign in at <a href="${dashboardUrl}" style="color:#7c3aed;">${dashboardUrl}</a> with this email address. If you don't have a password yet, use "Forgot password" on the sign-in page to set one.</p>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0;">
+        <p style="color:#9ca3af;font-size:12px;text-align:center;">Playfunia - Where fun happens!</p>
+      </div>
+    `,
+    text: `Hi ${name}! You've been granted ${roleLabel} access to the Playfunia dashboard. Sign in at ${dashboardUrl} with this email address (use "Forgot password" if you need to set one). ${textSummary}`,
+  });
+}
+
 // Booking confirmation data interface
 export interface BookingEmailData {
   reference: string;

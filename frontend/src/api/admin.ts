@@ -274,6 +274,33 @@ export async function deleteAdminWaiverSubmission(waiverId: string) {
   return apiDelete<{ success: boolean }>(`/admin/waivers/${waiverId}`);
 }
 
+// ============= Team / Users (admin only) =============
+export type AdminUser = {
+  user_id: number;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  roles: string[];
+  created_at: string | null;
+};
+
+export async function fetchAdminUsers(params?: { search?: string; limit?: number }) {
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set('search', params.search);
+  qs.set('limit', String(params?.limit ?? 200));
+  const response = await apiGet<{ users: AdminUser[]; count?: number }>(`/admin/users?${qs.toString()}`);
+  return response.users ?? [];
+}
+
+export async function updateAdminUserRoles(userId: number, roles: string[]) {
+  const response = await apiPatch<{ user: AdminUser }, { roles: string[] }>(
+    `/admin/users/${userId}`,
+    { roles },
+  );
+  return response.user;
+}
+
 export type AdminCreateMembershipPayload = {
   guestName: string;
   guestEmail?: string;

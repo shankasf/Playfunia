@@ -29,6 +29,15 @@ import {
   adminJobListingUpdateSchema,
 } from '../schemas/admin.schema';
 import { adminCreateBookingSchema } from '../schemas/booking.schema';
+import { sendTeamRoleAssignment } from '../services/email.service';
+import { logger } from '../utils/logger';
+
+function hasAdmin(roles: string[] | null | undefined): boolean {
+  return (roles ?? []).includes('admin');
+}
+function hasStaff(roles: string[] | null | undefined): boolean {
+  return (roles ?? []).some((r) => r === 'employee' || r === 'staff');
+}
 
 // ============= Helper Functions =============
 function parseIntParam(value: string | undefined): number {
@@ -93,8 +102,34 @@ export const getUserHandler = asyncHandler(async (req, res) => {
 export const updateUserHandler = asyncHandler(async (req, res) => {
   const userId = parseIntParam(req.params.id);
   const validated = adminUserUpdateSchema.parse(req.body);
+  const previous = await AdminService.getUserById(userId);
   const user = await AdminService.updateUser(userId, validated);
   publishAdminEvent('user.updated', { userId });
+
+  // Notify the user when they're newly granted a team role (admin > staff).
+  // Best-effort: never let a mail failure break the role update.
+  const prevRoles = (previous as { roles?: string[] } | null)?.roles ?? [];
+  const nextRoles = (user as { roles?: string[] } | null)?.roles ?? [];
+  let grantedRole: 'admin' | 'employee' | null = null;
+  if (hasAdmin(nextRoles) && !hasAdmin(prevRoles)) {
+    grantedRole = 'admin';
+  } else if (hasStaff(nextRoles) && !hasStaff(prevRoles)) {
+    grantedRole = 'employee';
+  }
+  if (grantedRole) {
+    const recipient = (user as { email?: string } | null)?.email;
+    const firstName = (user as { first_name?: string } | null)?.first_name
+      ?? (previous as { first_name?: string } | null)?.first_name
+      ?? undefined;
+    if (recipient) {
+      try {
+        await sendTeamRoleAssignment(recipient, grantedRole, firstName);
+      } catch (error) {
+        logger.error({ err: error, userId, grantedRole }, 'Failed to send team role assignment email');
+      }
+    }
+  }
+
   return res.status(200).json({ user });
 });
 
