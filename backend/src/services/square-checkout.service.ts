@@ -24,6 +24,7 @@ import { sendOrderConfirmation, sendBookingConfirmation, sendAdminBookingNotific
 import { sendOrderConfirmationSms, sendTicketConfirmationSms, sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
 import { generateReceiptPDF, generateBookingReceiptPDF, createReceiptRecord } from './receipt.service';
 import { reserveSlot, confirmReservation, getReservation } from './slot-reservation.service';
+import { getPartyPackagePrice } from './party-discount.service';
 import { completeCheckoutSession } from './checkout-session.service';
 import { logger } from '../utils/logger';
 import {
@@ -211,7 +212,9 @@ async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<voi
       const cleaningFee = (partyPackage as any).cleaning_fee != null ? Number((partyPackage as any).cleaning_fee) : globalCleaningFee;
       const extraAdultFee = await getExtraAdultFee();
 
-      let expectedSubtotal = partyPackage.price_usd ?? 0;
+      // Weekday (Mon-Fri) parties get the package discount, keyed off the party date
+      const packagePrice = await getPartyPackagePrice(partyPackage.price_usd ?? 0, item.eventDate);
+      let expectedSubtotal = packagePrice.price;
 
       // Process add-ons
       if (item.addOns && item.addOns.length > 0) {
@@ -245,6 +248,8 @@ async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<voi
           submittedPrice: item.unitPrice,
           expectedPrice: expectedUnitPrice,
           packageId,
+          eventDate: item.eventDate,
+          weekdayDiscount: packagePrice.discount,
           guestCount: item.guestCount,
           addOns: item.addOns,
         }, 'Price manipulation detected: booking price mismatch');
@@ -1220,7 +1225,8 @@ async function sendNotifications(params: {
         const balanceRemaining = booking.balance_remaining ?? 0;
         const subtotal = booking.subtotal ?? 0;
         const cleaningFee = booking.cleaning_fee ?? 0;
-        const packageBasePrice = partyPackage?.price_usd ?? 0;
+        // Receipt line shows what was charged: the weekday discount is already in subtotal
+        const packageBasePrice = (await getPartyPackagePrice(partyPackage?.price_usd ?? 0, booking.event_date)).price;
         // Calculate tax from stored subtotal and cleaning fee using centralized tax rate
         const taxableAmount = subtotal + cleaningFee;
         const taxAmount = centsToDollars(calculateTaxCents(dollarsToCents(taxableAmount), getTaxRateSync()));
@@ -2307,7 +2313,8 @@ async function sendGuestNotifications(params: {
       const balanceRemaining = booking.balance_remaining ?? 0;
       const subtotal = booking.subtotal ?? 0;
       const cleaningFee = booking.cleaning_fee ?? 0;
-      const packageBasePrice = partyPackage?.price_usd ?? 0;
+      // Receipt line shows what was charged: the weekday discount is already in subtotal
+      const packageBasePrice = (await getPartyPackagePrice(partyPackage?.price_usd ?? 0, booking.event_date)).price;
       // Calculate tax from stored subtotal and cleaning fee using centralized tax rate
       const taxableAmount = subtotal + cleaningFee;
       const taxAmount = centsToDollars(calculateTaxCents(dollarsToCents(taxableAmount), getTaxRateSync()));

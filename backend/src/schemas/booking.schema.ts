@@ -78,6 +78,8 @@ export const bookingEstimateSchema = z.object({
   guests: z.number().int().positive().max(60),
   extraAdults: z.number().int().min(0).optional(),
   addOns: z.array(addOnSchema).optional(),
+  // Party date (YYYY-MM-DD) - drives the weekday package discount
+  eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional(),
 });
 
 export type BookingEstimateInput = z.infer<typeof bookingEstimateSchema>;

@@ -28,6 +28,10 @@ export type GuardianWaiver = {
   guardianDateOfBirth: string | null;
   relationshipToChildren: string | null;
   children: WaiverChild[];
+  /** Ages 13-17, signed for by the guardian */
+  teens?: WaiverChild[];
+  /** Other adults on this waiver; each signed for themselves at that visit */
+  additionalAdults?: Array<{ name: string; signedAt?: string; hasSignature?: boolean }>;
   signature: string | null;
   signedAt: string;
   expiresAt: string | null;
@@ -41,7 +45,9 @@ type GuardianWaiverApi = Omit<GuardianWaiver, 'id'> & {
 };
 
 export async function fetchMyWaivers() {
-  const response = await apiGet<{ waivers: GuardianWaiverApi[] }>('/waivers');
+  const response = await apiGet<{ waivers: GuardianWaiverApi[] }>('/waivers', undefined, {
+    preferWaiverToken: true,
+  });
   return response.waivers.map(({ _id, id, ...rest }) => ({
     id: id ?? _id ?? crypto.randomUUID?.() ?? Math.random().toString(36).slice(2, 10),
     ...rest,

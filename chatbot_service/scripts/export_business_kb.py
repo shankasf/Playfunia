@@ -440,7 +440,10 @@ def build_promotions(kb: KB, cur):
     kb.add_sheet("promotions", ["kind", "ref_id", "label_or_code", "scope", "discount",
                                  "starts_at", "ends_at", "description"])
 
-    prod_rows = fetch_all(cur, "product_promotions", "WHERE is_active IS NOT FALSE",
+    prod_rows = fetch_all(cur, "product_promotions",
+                          "WHERE is_active IS NOT FALSE"
+                          " AND (starts_at IS NULL OR starts_at <= now())"
+                          " AND (ends_at   IS NULL OR ends_at   >= now())",
                           "ORDER BY product_type, product_id")
     plan_lookup = {p["plan_id"]: p["name"]
                    for p in fetch_all(cur, "membership_plans", "", "ORDER BY plan_id")}
@@ -475,7 +478,11 @@ def build_promotions(kb: KB, cur):
         kb.add_fact(doc_id, "promotion", f"Is there a promo on {target}?",
                     f"{label} — {discount}" + (f", through {ends}" if ends else ""))
 
-    code_rows = fetch_all(cur, "promotions", "WHERE is_active IS NOT FALSE", "ORDER BY code")
+    code_rows = fetch_all(cur, "promotions",
+                          "WHERE is_active IS NOT FALSE"
+                          " AND (valid_from IS NULL OR valid_from <= now())"
+                          " AND (valid_to   IS NULL OR valid_to   >= now())",
+                          "ORDER BY code")
     for r in code_rows:
         code = r.get("code")
         po = float(r.get("percent_off") or 0)

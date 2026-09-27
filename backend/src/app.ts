@@ -12,6 +12,12 @@ import { logger } from './utils/logger';
 export function createApp() {
   const app = express();
 
+  // Caddy reaches the backend over the Docker bridge (a private address) and sets
+  // X-Forwarded-For to the real client. Trust only private/loopback hops so req.ip
+  // (and every rate limiter) sees the customer's IP, while a client connecting
+  // directly from a public address can't spoof it with its own header.
+  app.set('trust proxy', 'loopback, linklocal, uniquelocal');
+
   // Security headers — removes X-Powered-By, adds HSTS, CSP, etc.
   app.use(helmet({
     contentSecurityPolicy: false, // Caddy/frontend handles CSP
@@ -41,7 +47,9 @@ export function createApp() {
     if (req.path.startsWith('/api/webhooks')) {
       return next();
     }
-    express.json()(req, res, next);
+    // Waivers carry one signature image per adult, so allow a larger body there
+    const limit = req.path === '/api/waivers' ? '10mb' : '2mb';
+    express.json({ limit })(req, res, next);
   });
 
   app.use('/api', apiRouter);

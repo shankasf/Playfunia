@@ -1508,6 +1508,32 @@ export async function listWaiverSubmissions(options?: { limit?: number | undefin
     }
   }
   
+  // Main-account waivers reference kids in the `children` table via child_ids
+  // (waiver-only users already have theirs from the waiver_user_children join)
+  const missingChildIds = new Set<number>();
+  for (const w of waivers) {
+    if ((!Array.isArray(w.children) || w.children.length === 0) && Array.isArray(w.child_ids)) {
+      for (const id of w.child_ids as number[]) missingChildIds.add(id);
+    }
+  }
+  if (missingChildIds.size > 0) {
+    const childRecords = await ChildRepository.findByIds([...missingChildIds]);
+    const childMap = new Map(childRecords.map((c) => [c.child_id, c]));
+    for (const w of waivers) {
+      if ((!Array.isArray(w.children) || w.children.length === 0) && Array.isArray(w.child_ids)) {
+        w.children = (w.child_ids as number[])
+          .map((id) => childMap.get(id))
+          .filter((c): c is NonNullable<typeof c> => Boolean(c))
+          .map((c) => ({
+            childId: c.child_id,
+            name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+            birthDate: c.birth_date || '',
+            gender: c.gender || '',
+          }));
+      }
+    }
+  }
+
   // Add visit count to each waiver
   return waivers.map((w) => ({
     ...w,
@@ -1987,12 +2013,26 @@ export async function exportWaiversToCsv(dateFrom?: string, dateTo?: string): Pr
 }
 
 // ============= Job Applications Management =============
+// Terminal stages are auto-archived (moved out of the active inbox into the archive folder).
+const TERMINAL_APPLICATION_STATUSES = ['hired', 'rejected', 'withdrawn'];
+
+// Given a new status, returns the archived_at value to persist.
+// - terminal status: keep an existing archive timestamp, or stamp now()
+// - active status: clear archive (restore to the inbox)
+function archivedAtForStatus(status: string, currentArchivedAt: string | null): string | null {
+  if (TERMINAL_APPLICATION_STATUSES.includes(status)) {
+    return currentArchivedAt ?? new Date().toISOString();
+  }
+  return null;
+}
+
 export async function listJobApplications(options?: {
   status?: string;
   listingId?: number;
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  archived?: boolean;
   limit?: number;
   offset?: number;
 }) {
@@ -2003,14 +2043,23 @@ export async function getJobApplicationById(applicationId: number) {
   return JobApplicationRepository.findById(applicationId);
 }
 
-export async function updateJobApplicationStatus(applicationId: number, status: string, adminNotes?: string) {
+export async function updateJobApplicationStatus(
+  applicationId: number,
+  status: string,
+  adminNotes?: string,
+  notesAuthor?: string | null,
+) {
   // Fetch current application to get previous status + applicant info for email
   const current = await JobApplicationRepository.findById(applicationId);
   if (!current) {
     throw new Error('Application not found');
   }
 
-  const result = await JobApplicationRepository.updateStatus(applicationId, status, adminNotes);
+  // Auto-archive on terminal stages (hired/rejected/withdrawn); restore to inbox otherwise.
+  const archivedAt = archivedAtForStatus(status, (current.archived_at as string | null) ?? null);
+  const result = await JobApplicationRepository.updateStatus(
+    applicationId, status, adminNotes, archivedAt, notesAuthor,
+  );
 
   // Send status change notification if status actually changed
   if (current.status !== status) {
@@ -2031,6 +2080,26 @@ export async function updateJobApplicationStatus(applicationId: number, status: 
   }
 
   return result;
+}
+
+/**
+ * Save internal hiring notes for one application.
+ *
+ * Admin-only and deliberately narrow: it writes admin_notes and its
+ * provenance and nothing else, so the hiring team can jot a note from the
+ * applicants list without the risk of a stale full-form payload overwriting
+ * applicant details. Notes are never exposed on the public careers pages —
+ * /job-applications/* is outside the staff allow-list in admin.routes.ts.
+ */
+export async function updateJobApplicationNotes(
+  applicationId: number,
+  notes: string,
+  author?: string | null,
+) {
+  const current = await JobApplicationRepository.findById(applicationId);
+  if (!current) throw new AppError('Application not found', 404);
+
+  return JobApplicationRepository.updateNotes(applicationId, notes, author);
 }
 
 export async function deleteJobApplication(applicationId: number) {
@@ -2105,11 +2174,23 @@ export async function deleteJobListing(listingId: number) {
 }
 
 // ============= Job Applications Full Update =============
-export async function updateJobApplication(applicationId: number, input: Record<string, unknown>) {
+export async function updateJobApplication(
+  applicationId: number,
+  input: Record<string, unknown>,
+  notesAuthor?: string | null,
+) {
   const current = await JobApplicationRepository.findById(applicationId);
   if (!current) throw new AppError('Application not found', 404);
 
-  const updated = await JobApplicationRepository.update(applicationId, input);
+  // Keep archive state in sync when the status changes as part of a full edit.
+  if (typeof input.status === 'string') {
+    input = {
+      ...input,
+      archived_at: archivedAtForStatus(input.status, (current.archived_at as string | null) ?? null),
+    };
+  }
+
+  const updated = await JobApplicationRepository.update(applicationId, input, notesAuthor);
 
   // If status changed as part of the update, fire the notification email (best effort)
   if (typeof input.status === 'string' && input.status !== current.status) {

@@ -178,6 +178,7 @@ export async function submitJobApplication(
     video_original_name: videoOriginalName,
     video_mime_type: videoMimeType,
     video_size_bytes: videoSizeBytes,
+    screening_answers: input.screeningAnswers ?? null,
   });
 
   // 7. Fire-and-forget admin email
@@ -203,6 +204,7 @@ export async function submitJobApplication(
       contentType: resumeFile.mimetype,
     } : undefined,
     videoLink: videoLinkForAdmin ?? undefined,
+    screeningAnswers: input.screeningAnswers,
   }).catch(err => {
     logger.error({ error: err }, 'Failed to send job application notification email');
   });

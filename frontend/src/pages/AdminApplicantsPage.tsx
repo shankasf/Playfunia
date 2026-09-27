@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import {
@@ -17,6 +17,7 @@ import {
   type AdminJobListingUpdateInput,
 } from '../api/admin';
 import { formatDate } from '../lib/dateUtils';
+import { ApplicantNotesControl, type ApplicantNotesSnapshot } from '../components/admin/ApplicantNotesControl';
 import styles from './AdminApplicantsPage.module.css';
 
 type LoadState = 'idle' | 'loading' | 'error';
@@ -33,6 +34,8 @@ const STATUS_LABELS: Record<string, string> = {
   withdrawn: 'Withdrawn',
 };
 const EMPLOYMENT_TYPES = ['full-time', 'part-time', 'seasonal', 'internship'] as const;
+// Terminal stages are auto-archived server-side; mirror that here to move rows between folders instantly.
+const TERMINAL_STATUSES: readonly string[] = ['hired', 'rejected', 'withdrawn'];
 const PAGE_SIZE = 50;
 
 function slugify(value: string): string {
@@ -166,6 +169,7 @@ function ApplicantsTab() {
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState('');
 
+  const [folder, setFolder] = useState<'active' | 'archived'>('active');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [positionFilter, setPositionFilter] = useState('');
@@ -174,6 +178,9 @@ function ApplicantsTab() {
   const [page, setPage] = useState(0);
 
   const [listings, setListings] = useState<AdminJobListing[]>([]);
+  // Which row has its internal-notes editor open. Only one at a time so the
+  // table stays scannable during triage.
+  const [openNotesId, setOpenNotesId] = useState<number | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -192,6 +199,7 @@ function ApplicantsTab() {
     setError('');
     try {
       const filters: AdminJobApplicationFilters = {
+        archived: folder === 'archived',
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       };
@@ -209,7 +217,7 @@ function ApplicantsTab() {
       setError(err instanceof Error ? err.message : 'Failed to load applications');
       setLoadState('error');
     }
-  }, [search, statusFilter, positionFilter, dateFrom, dateTo, page]);
+  }, [folder, search, statusFilter, positionFilter, dateFrom, dateTo, page]);
 
   useEffect(() => {
     loadApplications();
@@ -226,18 +234,53 @@ function ApplicantsTab() {
   const handleInlineStatusChange = async (app: AdminJobApplication, newStatus: string) => {
     try {
       await updateAdminJobApplicationStatus(app.application_id, { status: newStatus });
-      setApplications(prev =>
-        prev.map(a => a.application_id === app.application_id ? { ...a, status: newStatus } : a)
-      );
+      const nowArchived = TERMINAL_STATUSES.includes(newStatus);
+      // If the new status flips the archive state, the row leaves the current folder.
+      const leavesFolder = (folder === 'active' && nowArchived) || (folder === 'archived' && !nowArchived);
+      if (leavesFolder) {
+        setApplications(prev => prev.filter(a => a.application_id !== app.application_id));
+        setTotal(t => Math.max(0, t - 1));
+      } else {
+        setApplications(prev =>
+          prev.map(a => a.application_id === app.application_id ? { ...a, status: newStatus } : a)
+        );
+      }
     } catch {
       loadApplications();
     }
+  };
+
+  // Patch the saved note back into the row so the indicator and "updated"
+  // stamp stay correct without refetching the whole page.
+  const handleNotesSaved = (applicationId: number, snapshot: ApplicantNotesSnapshot) => {
+    setApplications(prev =>
+      prev.map(a => (a.application_id === applicationId ? { ...a, ...snapshot } : a))
+    );
   };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
     <>
+      <div className={styles.tabs} role="tablist" style={{ marginBottom: '0.75rem' }}>
+        <button
+          type="button"
+          role="tab"
+          className={`${styles.tab} ${folder === 'active' ? styles.tabActive : ''}`}
+          onClick={() => { setFolder('active'); setPage(0); }}
+        >
+          Active
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`${styles.tab} ${folder === 'archived' ? styles.tabActive : ''}`}
+          onClick={() => { setFolder('archived'); setPage(0); }}
+        >
+          Archived
+        </button>
+      </div>
+
       <div className={styles.filterBar}>
         <div className={styles.filterItem}>
           <span>Search</span>
@@ -312,37 +355,69 @@ function ApplicantsTab() {
                     <th>Position</th>
                     <th>Status</th>
                     <th>Date Applied</th>
+                    <th>Notes</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {applications.map(app => (
-                    <tr key={app.application_id}>
-                      <td>{app.first_name} {app.last_name}</td>
-                      <td>{app.email}</td>
-                      <td>{app.job_listings?.title ?? '-'}</td>
-                      <td>
-                        <select
-                          className={`${styles.statusSelect} ${styles[`status${app.status.charAt(0).toUpperCase() + app.status.slice(1)}`] ?? ''}`}
-                          value={app.status}
-                          onChange={e => handleInlineStatusChange(app, e.target.value)}
-                        >
-                          {STATUSES.map(s => (
-                            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>{formatDate(app.created_at)}</td>
-                      <td>
-                        <Link
-                          to={`/admin/applicants/${app.application_id}`}
-                          className={styles.viewBtn}
-                        >
-                          View
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
+                  {applications.map(app => {
+                    const hasNote = !!app.admin_notes?.trim();
+                    const notesOpen = openNotesId === app.application_id;
+                    return (
+                      <Fragment key={app.application_id}>
+                        <tr>
+                          <td data-label="Name">{app.first_name} {app.last_name}</td>
+                          <td data-label="Email">{app.email}</td>
+                          <td data-label="Position">{app.job_listings?.title ?? '-'}</td>
+                          <td data-label="Status">
+                            <select
+                              className={`${styles.statusSelect} ${styles[`status${app.status.charAt(0).toUpperCase() + app.status.slice(1)}`] ?? ''}`}
+                              value={app.status}
+                              onChange={e => handleInlineStatusChange(app, e.target.value)}
+                            >
+                              {STATUSES.map(s => (
+                                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td data-label="Date Applied">{formatDate(app.created_at)}</td>
+                          <td data-label="Notes">
+                            <button
+                              type="button"
+                              className={`${styles.notesBtn} ${hasNote ? styles.notesBtnFilled : ''}`}
+                              aria-expanded={notesOpen}
+                              title={hasNote ? app.admin_notes ?? undefined : 'No internal notes yet'}
+                              onClick={() => setOpenNotesId(notesOpen ? null : app.application_id)}
+                            >
+                              {hasNote ? 'Notes' : 'Add note'}
+                              {hasNote && <span className={styles.notesDot} aria-hidden="true" />}
+                            </button>
+                          </td>
+                          <td data-label="Actions">
+                            <Link
+                              to={`/admin/applicants/${app.application_id}`}
+                              className={styles.viewBtn}
+                            >
+                              View
+                            </Link>
+                          </td>
+                        </tr>
+                        {notesOpen && (
+                          <tr className={styles.notesRow}>
+                            <td colSpan={7} className={styles.notesCell}>
+                              <ApplicantNotesControl
+                                key={app.application_id}
+                                applicationId={app.application_id}
+                                initial={app}
+                                autoFocus
+                                onSaved={snapshot => handleNotesSaved(app.application_id, snapshot)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -545,20 +620,20 @@ function JobsTab() {
               <tbody>
                 {listings.map(listing => (
                   <tr key={listing.listing_id}>
-                    <td>
+                    <td data-label="Title">
                       <div style={{ fontWeight: 600 }}>{listing.title}</div>
                       <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{listing.slug}</div>
                     </td>
-                    <td>{listing.department}</td>
-                    <td>{listing.employment_type}</td>
-                    <td>{listing.pay_range ?? '-'}</td>
-                    <td>
+                    <td data-label="Department">{listing.department}</td>
+                    <td data-label="Type">{listing.employment_type}</td>
+                    <td data-label="Pay">{listing.pay_range ?? '-'}</td>
+                    <td data-label="Status">
                       <span className={listing.is_active ? styles.listingActive : styles.listingInactive}>
                         {listing.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td>{listing.display_order}</td>
-                    <td>
+                    <td data-label="Order">{listing.display_order}</td>
+                    <td data-label="Actions">
                       <button type="button" className={styles.editBtn} onClick={() => openEdit(listing)}>
                         Edit
                       </button>

@@ -12,6 +12,19 @@ const HOW_HEARD_OPTIONS = [
   'Other',
 ];
 
+// Screening questionnaire shown on every application, regardless of position.
+// Ids must stay in sync with SCREENING_QUESTIONS in backend/src/schemas/careers.schema.ts
+const SCREENING_QUESTIONS = [
+  { id: 'partyPlanning', label: 'Do you have any experience with party planning or event decorating?' },
+  { id: 'balloonDecor', label: 'Are you comfortable creating balloon arches or working with balloon decorations?' },
+  { id: 'videoSocial', label: 'Do you have any skills with videography or social media?' },
+  { id: 'openAvailability', label: 'Do you have open availability?' },
+  { id: 'over18', label: 'Are you over the age of 18?' },
+  { id: 'enforceRules', label: 'Are you comfortable enforcing rules politely but firmly?' },
+  { id: 'physicalWork', label: 'This job involves cleaning, standing, and moving throughout the shift. Are you comfortable with that?' },
+  { id: 'transportation', label: 'Do you have reliable transportation?' },
+] as const;
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const NAME_REGEX = /^[A-Za-zÀ-ÿ\s'-]+$/;
 const ALLOWED_FILE_TYPES = ['.pdf', '.doc', '.docx', '.txt'];
@@ -24,6 +37,8 @@ export function CareerApplyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [screening, setScreening] = useState<Record<string, string>>({});
+  const [availabilityDetails, setAvailabilityDetails] = useState('');
 
   useEffect(() => {
     getJobListings()
@@ -97,6 +112,19 @@ export function CareerApplyPage() {
       return;
     }
 
+    // Validate screening questions (all required, asked on every position)
+    const unanswered = SCREENING_QUESTIONS.find(q => !screening[q.id]);
+    if (unanswered) {
+      setErrorMsg(`Please answer: "${unanswered.label}"`);
+      setSubmitting(false);
+      return;
+    }
+    if (screening.openAvailability === 'no' && !availabilityDetails.trim()) {
+      setErrorMsg('Please tell us what your availability is.');
+      setSubmitting(false);
+      return;
+    }
+
     // Validate DOB age (must be at least 14 for employment)
     const dobVal = (form.elements.namedItem('dateOfBirth') as HTMLInputElement).value;
     if (dobVal) {
@@ -165,6 +193,13 @@ export function CareerApplyPage() {
     const ecPhone = (form.elements.namedItem('emergencyContactPhone') as HTMLInputElement).value;
     if (ecPhone) fd.append('emergencyContactPhone', ecPhone);
 
+    // Screening answers (JSON blob keyed by question id)
+    const screeningPayload: Record<string, string> = { ...screening };
+    if (screening.openAvailability === 'no') {
+      screeningPayload.availabilityDetails = availabilityDetails.trim();
+    }
+    fd.append('screeningAnswers', JSON.stringify(screeningPayload));
+
     // Resume file
     if (resumeInput.files && resumeInput.files[0]) {
       fd.append('resume', resumeInput.files[0]);
@@ -175,6 +210,8 @@ export function CareerApplyPage() {
       setSuccessMsg(result.message);
       form.reset();
       setSelectedListingId('');
+      setScreening({});
+      setAvailabilityDetails('');
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
       setErrorMsg(message);
@@ -317,6 +354,46 @@ export function CareerApplyPage() {
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Screening Questions - asked for every position */}
+            <div className={styles.formGroupFull}>
+              <h3 className={styles.sectionHeading}>A Few Quick Questions</h3>
+              <p className={styles.sectionHint}>All questions are required.</p>
+
+              {SCREENING_QUESTIONS.map(q => (
+                <div key={q.id} className={styles.screeningItem}>
+                  <label className={styles.screeningLabel}>
+                    {q.label} <span className={styles.required}>*</span>
+                  </label>
+                  <div className={styles.radioGroup}>
+                    {(['yes', 'no'] as const).map(val => (
+                      <div key={val} className={styles.radioOption}>
+                        <input
+                          type="radio"
+                          id={`${q.id}_${val}`}
+                          name={`screening_${q.id}`}
+                          value={val}
+                          checked={screening[q.id] === val}
+                          onChange={() => setScreening(prev => ({ ...prev, [q.id]: val }))}
+                        />
+                        <label htmlFor={`${q.id}_${val}`}>{val === 'yes' ? 'Yes' : 'No'}</label>
+                      </div>
+                    ))}
+                  </div>
+
+                  {q.id === 'openAvailability' && screening.openAvailability === 'no' && (
+                    <textarea
+                      className={styles.screeningDetails}
+                      value={availabilityDetails}
+                      onChange={e => setAvailabilityDetails(e.target.value)}
+                      rows={2}
+                      maxLength={1000}
+                      placeholder="What is your availability? (e.g. weekends, weekday evenings after 4pm)"
+                    />
+                  )}
+                </div>
+              ))}
             </div>
 
             {/* Resume & Cover Letter */}

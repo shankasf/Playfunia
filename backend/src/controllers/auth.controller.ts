@@ -14,6 +14,7 @@ import {
   sendEmailVerificationOTP,
   sendRegistrationOTP,
   verifyEmailOTP,
+  consumeRegistrationOTP,
   sendPasswordResetOTPEmail,
   verifyPasswordResetOTP,
   checkPasswordResetOTPVerified,
@@ -97,6 +98,11 @@ export const verifyOTPHandler = asyncHandler(async (req: Request, res: Response)
   // If this was a new registration, create the user now
   if (result.registrationData) {
     const userResult = await createVerifiedUser(result.registrationData);
+    // The account exists, so the row holding the sealed signup password has
+    // served its purpose - drop it rather than let it sit until it expires.
+    if (result.otpId !== undefined) {
+      await consumeRegistrationOTP(result.otpId);
+    }
     return res.status(201).json({
       success: true,
       message: 'Email verified and account created successfully.',

@@ -1106,6 +1106,7 @@ export interface Database {
           archive_until: string | null;
           ip_address: string | null;
           waiver_code: string | null;
+          additional_adults: Json;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -1130,6 +1131,7 @@ export interface Database {
           archive_until?: string | null;
           ip_address?: string | null;
           waiver_code?: string | null;
+          additional_adults?: Json;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -1154,6 +1156,7 @@ export interface Database {
           archive_until?: string | null;
           ip_address?: string | null;
           waiver_code?: string | null;
+          additional_adults?: Json;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -1775,6 +1778,8 @@ export interface Database {
           emergency_contact_phone: string | null;
           status: string | null;
           admin_notes: string | null;
+          admin_notes_updated_at: string | null;
+          admin_notes_updated_by: string | null;
           ip_address: string | null;
           video_url: string | null;
           video_storage_path: string | null;
@@ -1805,6 +1810,8 @@ export interface Database {
           emergency_contact_phone?: string | null;
           status?: string | null;
           admin_notes?: string | null;
+          admin_notes_updated_at?: string | null;
+          admin_notes_updated_by?: string | null;
           ip_address?: string | null;
           video_url?: string | null;
           video_storage_path?: string | null;
@@ -1835,6 +1842,8 @@ export interface Database {
           emergency_contact_phone?: string | null;
           status?: string | null;
           admin_notes?: string | null;
+          admin_notes_updated_at?: string | null;
+          admin_notes_updated_by?: string | null;
           ip_address?: string | null;
           video_url?: string | null;
           video_storage_path?: string | null;

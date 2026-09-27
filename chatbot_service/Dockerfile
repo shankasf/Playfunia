@@ -5,11 +5,8 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install build dependencies for chroma-hnswlib
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+# No system build deps needed: psycopg2-binary ships wheels and ChromaDB
+# (which needed chroma-hnswlib compiled) has been retired in favour of pgvector.
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip && \

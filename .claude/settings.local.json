@@ -14,7 +14,9 @@
       "mcp__ide__getDiagnostics",
       "Bash(docker stop *)",
       "Bash(rm -rf chatbot_service/chroma/* chatbot_service/chroma/.[!.]*)",
-      "Bash(docker start *)"
+      "Bash(docker start *)",
+      "mcp__claude_ai_Gmail__search_threads",
+      "mcp__claude_ai_Gmail__get_thread"
     ]
   }
 }

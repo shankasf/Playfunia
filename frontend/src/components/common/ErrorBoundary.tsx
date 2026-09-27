@@ -1,5 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
+import { logClientEvent } from '../../api/client-logs';
+
 interface Props {
   children: ReactNode;
 }
@@ -20,6 +22,16 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('Uncaught error:', error, errorInfo);
+    // A console.error is invisible to us — report it so a render crash is
+    // recoverable from the server side instead of only from the customer's
+    // description of what they saw.
+    logClientEvent({
+      source: 'error_boundary',
+      message: error.message,
+      errorName: error.name,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack ?? undefined,
+    });
   }
 
   render() {

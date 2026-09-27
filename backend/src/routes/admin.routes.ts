@@ -159,6 +159,7 @@ import {
   listJobApplicationsHandler,
   getJobApplicationHandler,
   updateJobApplicationStatusHandler,
+  updateJobApplicationNotesHandler,
   updateJobApplicationHandler,
   deleteJobApplicationHandler,
   listJobListingsForFilterHandler,
@@ -270,10 +271,12 @@ const STAFF_ALLOWED: ReadonlyArray<{ method: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/memberships\/validate$/ },
   { method: 'POST', pattern: /^\/memberships\/[^/]+\/visit$/ },
 
-  // Waivers / check-in info — view only
+  // Waivers / check-in info — view + edit the waiver intake form (no delete, no export)
   { method: 'GET', pattern: /^\/waiver-submissions$/ },
   { method: 'GET', pattern: /^\/waiver-submissions\/[^/]+$/ },
+  { method: 'PATCH', pattern: /^\/waiver-submissions\/[^/]+$/ },
   { method: 'GET', pattern: /^\/waivers$/ },
+  { method: 'PATCH', pattern: /^\/waivers\/[^/]+$/ },
 
   // Read-only catalogs needed by the walk-in create forms
   { method: 'GET', pattern: /^\/party-packages$/ },
@@ -476,6 +479,7 @@ adminRouter.delete('/resources/:id', deleteResourceHandler);
 adminRouter.get('/job-applications', listJobApplicationsHandler);
 adminRouter.get('/job-applications/:id', getJobApplicationHandler);
 adminRouter.patch('/job-applications/:id/status', updateJobApplicationStatusHandler);
+adminRouter.patch('/job-applications/:id/notes', updateJobApplicationNotesHandler);
 adminRouter.patch('/job-applications/:id', updateJobApplicationHandler);
 adminRouter.delete('/job-applications/:id', deleteJobApplicationHandler);
 

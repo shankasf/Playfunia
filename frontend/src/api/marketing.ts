@@ -24,11 +24,20 @@ export type LivePromo = {
   applies_to: string[];
 };
 
+export type AudienceRecipient = {
+  key: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  viaEmail: boolean;
+  viaSms: boolean;
+};
+
 export type AudiencePreview = {
   emailCount: number;
   smsCount: number;
   uniqueCount: number;
-  sample: Array<{ name: string; email: string | null; phone: string | null }>;
+  recipients: AudienceRecipient[];
 };
 
 export type MarketingDraft = { subject: string; emailBody: string; smsBody: string };
@@ -90,6 +99,7 @@ export type SendCampaignPayload = {
   isTest: boolean;
   testEmail?: string;
   testPhone?: string;
+  selectedKeys?: string[];
 };
 
 export async function sendMarketingCampaign(payload: SendCampaignPayload) {

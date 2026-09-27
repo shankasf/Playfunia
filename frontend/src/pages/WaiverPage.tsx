@@ -5,8 +5,8 @@ import { useWaiverAuth } from '../context/WaiverAuthContext';
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { WaiverForm, type WaiverResult } from '../components/waiver/WaiverForm';
 import { apiPost } from '../api/client';
-import { fetchMyWaivers, type GuardianWaiver } from '../api/waivers';
-import { formatBirthDate, toDateInputValue } from '../lib/dateUtils';
+import { fetchMyWaivers, type GuardianWaiver, type WaiverChild } from '../api/waivers';
+import { formatBirthDate, isTeenAge, toDateInputValue } from '../lib/dateUtils';
 import { isValidEmail, isValidPhone, formatPhoneInput } from '../utils/validation';
 import styles from './WaiverPage.module.css';
 
@@ -26,8 +26,34 @@ function buildWaiverGuardianName(waiverUser: { guardianName?: string; guardianFi
   return `${first} ${last}`.trim();
 }
 
+const toQuickResignMinor = (child: WaiverChild) => ({
+  childId: child.childId,
+  name: child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim(),
+  birthDate: child.birthDate || child.birth_date,
+  gender: child.gender,
+});
+
+function PersonList({ people, emptyText }: { people: WaiverChild[]; emptyText: string }) {
+  if (people.length === 0) {
+    return <p className={styles.summarySecondary}>{emptyText}</p>;
+  }
+  return (
+    <ul className={styles.childList}>
+      {people.map((person, index) => (
+        <li key={`${person.name ?? 'person'}-${index}`} className={styles.childItem}>
+          <span className={styles.childName}>{person.name?.trim() || 'Name not provided'}</span>
+          <span className={styles.childMeta}>
+            {formatChildBirthDate(person.birthDate)}
+            {person.gender ? ` · ${person.gender}` : ''}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function WaiverPage() {
-  const { user, isAdmin, isLoading: authLoading } = useAuth();
+  const { user, isTeamMember, isLoading: authLoading } = useAuth();
   const {
     waiverUser,
     isWaiverAuthenticated,
@@ -101,6 +127,17 @@ export function WaiverPage() {
       birthDate: toDateInputValue(child.birthDate),
     }));
   }, [existingChildren, latestWaiver]);
+  const initialTeens = useMemo(
+    () =>
+      (latestWaiver?.teens ?? []).map((teen, index) => ({
+        id: teen.childId?.toString() ?? (teen.name ? `${teen.name}-teen-${index}` : undefined),
+        childId: teen.childId,
+        name: teen.name ?? '',
+        birthDate: toDateInputValue(teen.birthDate),
+        gender: teen.gender,
+      })),
+    [latestWaiver]
+  );
   const formatSignedDateTime = (dateStr?: string) => {
     if (!dateStr) return null;
     const date = new Date(dateStr);
@@ -201,8 +238,8 @@ export function WaiverPage() {
       !latestWaiver.relationshipToChildren ||
       !latestWaiver.signature ||
       !latestWaiver.acceptedPolicies?.length ||
-      !latestWaiver.children?.length ||
-      latestWaiver.children.some((child) => !child.name || !child.birthDate);
+      !(latestWaiver.children?.length || latestWaiver.teens?.length) ||
+      [...(latestWaiver.children ?? []), ...(latestWaiver.teens ?? [])].some((child) => !child.name || !child.birthDate);
 
     if (missingRequired) {
       setQuickSignError('Some required details are missing from your previous waiver. Please complete all fields.');
@@ -224,12 +261,10 @@ export function WaiverPage() {
         signature: latestWaiver.signature,
         acceptedPolicies: latestWaiver.acceptedPolicies,
         marketingOptIn: latestWaiver.marketingOptIn,
-        children: latestWaiver.children.map((child) => ({
-          childId: child.childId,
-          name: child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim(),
-          birthDate: child.birthDate || child.birth_date,
-          gender: child.gender,
-        })),
+        children: (latestWaiver.children ?? []).map(toQuickResignMinor),
+        teens: (latestWaiver.teens ?? []).map(toQuickResignMinor),
+        // Additional adults are never carried over: each must sign again in person
+        additionalAdults: [],
         // Flag for quick re-sign - backend will only record visit if data unchanged
         quickResign: true,
       };
@@ -239,7 +274,7 @@ export function WaiverPage() {
         waiverCode?: string;
         signedAt?: string;
         children?: Array<{ name: string }>;
-      }, typeof payload>('/waivers', payload);
+      }, typeof payload>('/waivers', payload, undefined, { preferWaiverToken: true });
       setCompletedWaiverData({
         waiverCode: response.waiverCode ?? latestWaiver.waiverCode ?? '',
         childCount: latestWaiver.children?.length ?? 0,
@@ -255,9 +290,18 @@ export function WaiverPage() {
           birthDate: c.birthDate || c.birth_date || '',
           gender: c.gender,
         })),
+        teens: (latestWaiver.teens ?? []).map((t) => ({
+          name: t.name || '',
+          birthDate: t.birthDate || t.birth_date || '',
+          gender: t.gender,
+        })),
+        additionalAdults: [],
       });
       markWaiverCompleted();
     } catch (error) {
+      // e.g. a teen has turned 18 and must now be added as an adult - let them fix it in the form
+      setShowForm(true);
+      setConfirmResubmit(true);
       setQuickSignError(error instanceof Error ? error.message : 'Failed to sign waiver. Please try again.');
     } finally {
       setQuickSignLoading(false);
@@ -371,7 +415,7 @@ export function WaiverPage() {
         <p className={styles.termsText}>If signing on behalf of a minor, I certify that I have legal authority to do so.</p>
       </div>
 
-      {user && !isAdmin ? (
+      {user && !isTeamMember ? (
         <>
           {hasValidWaiver ? (
             <div className={styles.existingWaiverNotice}>
@@ -431,6 +475,12 @@ export function WaiverPage() {
                     <p className={styles.summarySecondary}>No children on file yet.</p>
                   )}
                 </div>
+                {latestWaiver?.teens?.length ? (
+                  <div className={styles.summaryBlock}>
+                    <h3>Teens covered ({latestWaiver.teens.length})</h3>
+                    <PersonList people={latestWaiver.teens} emptyText="No teens listed." />
+                  </div>
+                ) : null}
               </div>
               <div className={styles.waiverActions}>
                 <PrimaryButton to={returnUrl ?? '/account'} className={styles.primaryAction}>
@@ -472,6 +522,7 @@ export function WaiverPage() {
                 initialMarketingOptIn={latestWaiver?.marketingOptIn ?? undefined}
                 initialSignature={latestWaiver?.signature ?? guardianName}
                 initialChildren={initialChildren}
+                initialTeens={initialTeens}
                 onSubmitted={handleWaiverSubmitted}
                 onGoBack={hasValidWaiver ? () => setShowForm(false) : () => navigate(-1)}
               />
@@ -488,10 +539,16 @@ export function WaiverPage() {
             const phone = completedWaiverData?.guardianPhone || waiverUser.phone || '';
             const dob = completedWaiverData?.guardianDob || waiverUser.guardianDateOfBirth || '';
             const rel = completedWaiverData?.relationship || waiverUser.relationshipToMinor || '';
-            const kids = completedWaiverData?.children?.length
+            // Without a fresh result, fall back to the saved minors split by today's age
+            const savedMinors = (waiverUser.children ?? []).map((c) => ({ name: c.name ?? '', birthDate: c.birthDate ?? '', gender: c.gender }));
+            const kids = completedWaiverData
               ? completedWaiverData.children
-              : (waiverUser.children ?? []).map((c) => ({ name: c.name, birthDate: c.birthDate, gender: c.gender }));
+              : savedMinors.filter((c) => !isTeenAge(c.birthDate));
             const kidCount = kids.length;
+            const teensCovered = completedWaiverData
+              ? completedWaiverData.teens ?? []
+              : savedMinors.filter((c) => isTeenAge(c.birthDate));
+            const adultsCovered = completedWaiverData?.additionalAdults ?? [];
             const code = completedWaiverData?.waiverCode || '';
             const signedAt = completedWaiverData?.signedAt || new Date().toISOString();
             const signedFormatted = new Date(signedAt).toLocaleString('en-US', {
@@ -526,6 +583,16 @@ export function WaiverPage() {
                 <div className={styles.confirmationStat}>
                   <span className={styles.confirmationStatLabel}>Children Covered</span>
                   <span className={styles.confirmationStatValue}>{kidCount}</span>
+                </div>
+                {teensCovered.length > 0 && (
+                  <div className={styles.confirmationStat}>
+                    <span className={styles.confirmationStatLabel}>Teens Covered</span>
+                    <span className={styles.confirmationStatValue}>{teensCovered.length}</span>
+                  </div>
+                )}
+                <div className={styles.confirmationStat}>
+                  <span className={styles.confirmationStatLabel}>Adults Signed</span>
+                  <span className={styles.confirmationStatValue}>{1 + adultsCovered.length}</span>
                 </div>
               </div>
 
@@ -580,6 +647,27 @@ export function WaiverPage() {
                 )}
               </div>
 
+              {teensCovered.length > 0 && (
+                <div className={styles.summaryBlock}>
+                  <h3>Teens Covered ({teensCovered.length})</h3>
+                  <PersonList people={teensCovered} emptyText="No teens listed." />
+                </div>
+              )}
+
+              {adultsCovered.length > 0 && (
+                <div className={styles.summaryBlock}>
+                  <h3>Additional Adults ({adultsCovered.length})</h3>
+                  <ul className={styles.childList}>
+                    {adultsCovered.map((adult, index) => (
+                      <li key={`${adult.name}-${index}`} className={styles.childItem}>
+                        <span className={styles.childName}>{adult.name}</span>
+                        <span className={styles.childMeta}>Signed for themselves</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className={styles.confirmationWarning}>
                 Waivers must be completed on the same day as your visit.
               </div>
@@ -589,7 +677,7 @@ export function WaiverPage() {
                   className={styles.secondaryButton}
                   onClick={resetWaiverFlow}
                 >
-                  {isAdmin ? 'Sign another waiver' : 'Sign in with different email/phone'}
+                  {isTeamMember ? 'Sign another waiver' : 'Sign in with different email/phone'}
                 </button>
               </div>
             </div>
@@ -622,9 +710,9 @@ export function WaiverPage() {
 
                   <div className={styles.summaryBlock}>
                     <h3>Children covered</h3>
-                    {(latestWaiver?.children?.length || waiverUser?.children?.length) ? (
+                    {latestWaiver.children?.length ? (
                       <ul className={styles.childList}>
-                        {(latestWaiver?.children ?? waiverUser?.children ?? []).map((child, index) => (
+                        {latestWaiver.children.map((child, index) => (
                           <li key={`${child.name}-${index}`} className={styles.childItem}>
                             <span className={styles.childName}>{child.name || 'Child name not provided'}</span>
                             <span className={styles.childMeta}>{formatChildBirthDate(child.birthDate)}</span>
@@ -636,7 +724,19 @@ export function WaiverPage() {
                     )}
                   </div>
 
+                  {latestWaiver.teens?.length ? (
+                    <div className={styles.summaryBlock}>
+                      <h3>Teens covered</h3>
+                      <PersonList people={latestWaiver.teens} emptyText="No teens on file." />
+                    </div>
+                  ) : null}
+
                 </div>
+
+                <p className={styles.summarySecondary}>
+                  Bringing teens or other adults today? Tap <strong>Modify My Details</strong> to add them.
+                  Every adult signs for themselves.
+                </p>
 
                 <div className={styles.confirmSection}>
                   <label className={styles.confirmCheckbox}>
@@ -750,8 +850,8 @@ export function WaiverPage() {
       ) : (
         /* Not authenticated (or admin) - show email/phone login form */
         <div className={styles.authPrompt}>
-          <h2>{isAdmin ? 'Sign waiver for a customer' : 'Enter your email or phone to continue'}</h2>
-          <p>{isAdmin ? "Enter the customer's email or phone to look up or create their waiver." : "We'll check if you've already signed a waiver. No password required."}</p>
+          <h2>{isTeamMember ? 'Sign waiver for a customer' : 'Enter your email or phone to continue'}</h2>
+          <p>{isTeamMember ? "Enter the customer's email or phone to look up or create their waiver." : "We'll check if you've already signed a waiver. No password required."}</p>
 
           <div className={styles.loginModeToggle}>
             <button

@@ -19,6 +19,9 @@ export type PartyPackageDto = {
   additionalTerms?: AdditionalTerm[];
   extraChildPrice?: number;
   extraAdultPrice?: number;
+  // Monday-Friday package price (weekday discount)
+  weekdayDiscountPercent?: number;
+  weekdayPrice?: number;
 };
 
 export type BookingSlot = {
@@ -34,7 +37,12 @@ export type BookingSlotsResponse = {
 };
 
 export type BookingEstimate = {
+  // Package price for the chosen date (weekday discount already applied)
   basePrice: number;
+  originalBasePrice?: number;
+  weekdayDiscount?: number;
+  weekdayDiscountPercent?: number;
+  isWeekdayDiscount?: boolean;
   extraAdultCount: number;
   extraAdultFee: number;
   extraAdultTotal: number;
@@ -108,6 +116,7 @@ export async function estimateBooking(payload: {
   guests: number;
   extraAdults?: number;
   addOns?: BookingAddOnSelection[];
+  eventDate?: string;
 }) {
   return apiPost<BookingEstimate, typeof payload>('/bookings/estimate', payload);
 }

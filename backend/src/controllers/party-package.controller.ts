@@ -12,6 +12,8 @@ export const listPartyPackagesHandler = asyncHandler(async (_req: Request, res: 
     description: pkg.description,
     durationMinutes: pkg.durationMinutes,
     basePrice: pkg.basePrice,
+    weekdayDiscountPercent: pkg.weekdayDiscountPercent,
+    weekdayPrice: pkg.weekdayPrice,
     maxGuests: pkg.maxGuests,
     includesFood: pkg.includesFood,
     includesDrinks: pkg.includesDrinks,

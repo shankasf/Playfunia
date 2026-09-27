@@ -822,10 +822,12 @@ export function AccountPage() {
                     </span>
                   </div>
                   <div className={styles.childrenSection}>
-                    <span className={styles.waiverItemLabel}>Children Covered</span>
-                    {latestWaiver.children?.length ? (
+                    <span className={styles.waiverItemLabel}>
+                      {latestWaiver.teens?.length ? 'Children & Teens Covered' : 'Children Covered'}
+                    </span>
+                    {latestWaiver.children?.length || latestWaiver.teens?.length ? (
                       <div className={styles.childrenList}>
-                        {latestWaiver.children.map((child, index) => (
+                        {[...(latestWaiver.children ?? []), ...(latestWaiver.teens ?? [])].map((child, index) => (
                           <div key={`${child.name}-${index}`} className={styles.childCard}>
                             <div className={styles.childAvatar}>
                               {child.name?.charAt(0)?.toUpperCase() || '?'}

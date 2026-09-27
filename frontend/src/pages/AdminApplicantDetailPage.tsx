@@ -10,6 +10,7 @@ import {
   type AdminJobListing,
 } from '../api/admin';
 import { formatDate } from '../lib/dateUtils';
+import { ApplicantNotesControl } from '../components/admin/ApplicantNotesControl';
 import styles from './AdminApplicantDetailPage.module.css';
 
 const STATUSES = ['new', 'reviewed', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn'] as const;
@@ -24,6 +25,19 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const NA = 'N/A';
+
+// Labels for the screening questionnaire; ids match CareerApplyPage / backend schema.
+const SCREENING_LABELS: Array<{ id: string; label: string }> = [
+  { id: 'partyPlanning', label: 'Party planning / event decorating experience' },
+  { id: 'balloonDecor', label: 'Comfortable with balloon arches & decorations' },
+  { id: 'videoSocial', label: 'Videography or social media skills' },
+  { id: 'openAvailability', label: 'Open availability' },
+  { id: 'availabilityDetails', label: 'Availability details' },
+  { id: 'over18', label: 'Over 18' },
+  { id: 'enforceRules', label: 'Comfortable enforcing rules politely but firmly' },
+  { id: 'physicalWork', label: 'Comfortable with cleaning, standing, moving all shift' },
+  { id: 'transportation', label: 'Reliable transportation' },
+];
 
 type FormState = {
   first_name: string;
@@ -42,7 +56,6 @@ type FormState = {
   emergency_contact_phone: string;
   cover_letter: string;
   status: string;
-  admin_notes: string;
 };
 
 function toForm(app: AdminJobApplication): FormState {
@@ -63,7 +76,6 @@ function toForm(app: AdminJobApplication): FormState {
     emergency_contact_phone: app.emergency_contact_phone ?? '',
     cover_letter: app.cover_letter ?? '',
     status: app.status ?? 'new',
-    admin_notes: app.admin_notes ?? '',
   };
 }
 
@@ -77,13 +89,13 @@ function diffPayload(original: FormState, current: FormState): AdminJobApplicati
     'date_of_birth', 'gender', 'pronouns',
     'schedule_preference', 'available_start_date',
     'how_heard', 'emergency_contact_name', 'emergency_contact_phone',
-    'cover_letter', 'status', 'admin_notes',
+    'cover_letter', 'status',
   ];
   const nullableFields: Array<keyof FormState> = [
     'date_of_birth', 'gender', 'pronouns',
     'schedule_preference', 'available_start_date',
     'how_heard', 'emergency_contact_name', 'emergency_contact_phone',
-    'cover_letter', 'admin_notes',
+    'cover_letter',
   ];
 
   for (const field of stringFields) {
@@ -359,6 +371,28 @@ export function AdminApplicantDetailPage() {
           </div>
         </section>
 
+        {/* Screening Questions (read-only) */}
+        <section className={styles.card}>
+          <h2>Screening Questions</h2>
+          {app.screening_answers && Object.keys(app.screening_answers).length > 0 ? (
+            <div className={styles.grid}>
+              {SCREENING_LABELS.filter(q => app.screening_answers?.[q.id]).map(q => {
+                const answer = app.screening_answers?.[q.id] ?? '';
+                return (
+                  <div key={q.id} className={styles.field}>
+                    <span className={styles.label}>{q.label}</span>
+                    <span className={styles.value}>
+                      {answer === 'yes' ? 'Yes' : answer === 'no' ? 'No' : answer}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <span className={styles.noFile}>Not answered (submitted before screening questions were added)</span>
+          )}
+        </section>
+
         {/* Cover Letter */}
         <section className={styles.card}>
           <h2>Cover Letter</h2>
@@ -412,13 +446,14 @@ export function AdminApplicantDetailPage() {
               </select>
             </div>
           </div>
+          {/* Notes save on their own, independently of the applicant fields
+              above — so jotting a note never risks writing a stale form. */}
           <div className={styles.notesField}>
-            <span className={styles.label}>Admin Notes</span>
-            <textarea
-              value={form.admin_notes}
-              onChange={e => update('admin_notes', e.target.value)}
-              placeholder="Add internal notes about this applicant..."
-              rows={4}
+            <ApplicantNotesControl
+              key={app.application_id}
+              applicationId={app.application_id}
+              initial={app}
+              onSaved={snapshot => setApp(prev => (prev ? { ...prev, ...snapshot } : prev))}
             />
           </div>
 

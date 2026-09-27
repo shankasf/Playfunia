@@ -1,4 +1,5 @@
 import { supabaseAny } from '../config/supabase';
+import { signStorageUrl } from './storage-url.service';
 import { ChildRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
 import { logger } from '../utils/logger';
@@ -22,7 +23,10 @@ export async function ensureChildPhotosBucket() {
     const exists = buckets?.some((b: { name: string }) => b.name === BUCKET_NAME);
 
     const bucketOptions = {
-      public: true,
+      // Photos of children are never publicly readable. This runs on every
+      // cold start, so leaving it `true` here silently re-opened the bucket
+      // after any manual fix. Readers go through signStorageUrl().
+      public: false,
       fileSizeLimit: 10 * 1024 * 1024, // 10MB
       allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     };
@@ -94,17 +98,18 @@ export async function uploadChildPhoto(
     throw new AppError('Failed to upload photo', 500);
   }
 
-  const { data: urlData } = supabaseAny.storage
-    .from(BUCKET_NAME)
-    .getPublicUrl(storagePath);
-
-  const photoUrl = urlData.publicUrl;
-
-  // Update child record
+  // The bucket is private. Persist the object path (readers mint their own
+  // short-lived signed URLs) and hand the caller a signed URL for immediate
+  // display.
   await ChildRepository.update(childId, {
-    photo_url: photoUrl,
+    photo_url: storagePath,
     photo_storage_path: storagePath,
   });
 
-  return photoUrl;
+  const signedUrl = await signStorageUrl(BUCKET_NAME, storagePath);
+  if (!signedUrl) {
+    logger.error({ childId, storagePath }, 'Uploaded child photo but could not sign its URL');
+    throw new AppError('Failed to prepare photo for display', 500);
+  }
+  return signedUrl;
 }

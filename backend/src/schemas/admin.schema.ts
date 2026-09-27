@@ -236,14 +236,29 @@ export const adminMembershipLookupSchema = z
 export type AdminMembershipLookupInput = z.infer<typeof adminMembershipLookupSchema>;
 
 // ============= Job Application Schemas =============
+// Internal hiring notes are admin-only and never surfaced on the public
+// careers pages. Cap matches the Toy Republic careers admin so the two
+// hiring inboxes behave the same.
+export const MAX_ADMIN_NOTES_LENGTH = 4000;
+
 export const adminJobApplicationStatusUpdateSchema = z
   .object({
     status: z.enum(['new', 'reviewed', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn']),
-    admin_notes: z.string().max(2000).optional(),
+    admin_notes: z.string().max(MAX_ADMIN_NOTES_LENGTH).optional(),
   })
   .strip();
 
 export type AdminJobApplicationStatusUpdateInput = z.infer<typeof adminJobApplicationStatusUpdateSchema>;
+
+// Dedicated notes save — lets the hiring team update a note straight from the
+// applicants list without round-tripping the whole applicant edit form.
+export const adminJobApplicationNotesUpdateSchema = z
+  .object({
+    admin_notes: z.string().max(MAX_ADMIN_NOTES_LENGTH),
+  })
+  .strip();
+
+export type AdminJobApplicationNotesUpdateInput = z.infer<typeof adminJobApplicationNotesUpdateSchema>;
 
 // Full admin edit of a job application
 export const adminJobApplicationUpdateSchema = z
@@ -263,7 +278,7 @@ export const adminJobApplicationUpdateSchema = z
     emergency_contact_name: z.string().trim().max(200).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').nullable().optional(),
     emergency_contact_phone: phoneSchema.nullable().optional(),
     status: z.enum(['new', 'reviewed', 'interview_scheduled', 'offered', 'hired', 'rejected', 'withdrawn']).optional(),
-    admin_notes: z.string().max(2000).nullable().optional(),
+    admin_notes: z.string().max(MAX_ADMIN_NOTES_LENGTH).nullable().optional(),
     listing_id: z.number().int().positive().optional(),
   })
   .refine(data => Object.keys(data).length > 0, {

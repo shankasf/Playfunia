@@ -1008,11 +1008,11 @@ def list_open_positions(department: str | None = None,
 
 
 # =============================================================================
-#  SEMANTIC SEARCH (wraps existing Chroma collection)
+#  SEMANTIC SEARCH (pgvector kb_search — see semantic.py)
 # =============================================================================
 
 def _semantic_search_impl(query: str, k: int = 5) -> dict:
-    """Lazy import — main.py initialises the chroma collection on startup."""
+    """Lazy import — semantic.py queries the pgvector KB (kb_search())."""
     from semantic import semantic_search  # type: ignore
     return semantic_search(query, k)
 
@@ -1194,7 +1194,7 @@ TOOL_SCHEMAS: list[dict] = [
         }}}},
     {"type": "function", "function": {
         "name": "get_promotion_by_code",
-        "description": "Look up a discount code (e.g. MAY10). Returns the discount, scope, expiration, and whether it is currently active/expired/pending.",
+        "description": "Look up a discount code the user has mentioned. Returns the discount, scope, expiration, and whether it is currently active/expired/pending. Never invent or suggest a code from this description - use list_active_promotions to find live codes.",
         "parameters": {"type": "object", "required": ["code"],
                        "properties": {"code": {"type": "string"}}}}},
     # ---- hours / location / fees / events / jobs ----

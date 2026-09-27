@@ -5,11 +5,13 @@
 }
 
 .container {
+  width: 100%;
   max-width: 900px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  box-sizing: border-box;
 }
 
 .backLink {
@@ -70,6 +72,8 @@
   padding: 1.5rem;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
   border: 1px solid #e2e8f0;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .card h2 {
@@ -234,25 +238,8 @@
   margin-bottom: 1rem;
 }
 
-.notesField textarea {
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 0.75rem;
-  font-size: 0.875rem;
-  font-family: inherit;
-  color: #1e293b;
-  background: #f8fafc;
-  min-height: 80px;
-  resize: vertical;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.notesField textarea:focus {
-  outline: none;
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-  background: #ffffff;
-}
+/* The notes textarea now lives inside ApplicantNotesControl, which brings its
+   own styling — no descendant rules here, or they would outrank it. */
 
 /* Actions */
 .actions {
@@ -337,6 +324,12 @@
 }
 
 /* Responsive */
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .page {
     padding: 1.5rem 1rem 3rem;
@@ -348,5 +341,30 @@
 
   .grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .actions {
+    flex-wrap: wrap;
+  }
+
+  .saveBtn,
+  .deleteBtn {
+    flex: 1 1 auto;
+    padding: 0.7rem 1rem;
+  }
+
+  .deleteBtn {
+    margin-left: 0;
+  }
+
+  .attachments {
+    flex-direction: column;
+  }
+
+  .fileLink {
+    width: 100%;
+    box-sizing: border-box;
   }
 }

@@ -167,6 +167,12 @@ export type AdminWaiver = {
   relationshipToChildren?: string;
   guardian?: { firstName?: string; lastName?: string; email?: string; phone?: string } | null;
   children: Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>;
+  /** Ages 13-17, covered by the guardian's signature */
+  teens?: Array<{ name?: string; birthDate?: string; birth_date?: string; gender?: string }>;
+  /** Other adults on the waiver, each with their own signature */
+  additionalAdults?: Array<{ name: string; signedAt?: string | null; hasSignature: boolean }>;
+  guardianHasSignature?: boolean;
+  waiverCode?: string | null;
   signedAt: string;
   expiresAt?: string;
   marketingOptIn: boolean;
@@ -550,8 +556,12 @@ export type AdminJobApplication = {
   resume_size_bytes: number | null;
   video_mime_type: string | null;
   video_size_bytes: number | null;
+  screening_answers: Record<string, string> | null;
   status: string;
   admin_notes: string | null;
+  admin_notes_updated_at: string | null;
+  admin_notes_updated_by: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
   job_listings?: { listing_id: number; title: string } | null;
@@ -563,6 +573,7 @@ export type AdminJobApplicationFilters = {
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  archived?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -644,6 +655,7 @@ export async function fetchAdminJobApplications(filters?: AdminJobApplicationFil
   if (filters?.search) params.set('search', filters.search);
   if (filters?.dateFrom) params.set('dateFrom', filters.dateFrom);
   if (filters?.dateTo) params.set('dateTo', filters.dateTo);
+  if (filters?.archived != null) params.set('archived', String(filters.archived));
   if (filters?.limit != null) params.set('limit', String(filters.limit));
   if (filters?.offset != null) params.set('offset', String(filters.offset));
 
@@ -666,6 +678,31 @@ export async function updateAdminJobApplicationStatus(
   return apiPatch<{ application: AdminJobApplication }, { status: string; admin_notes?: string }>(
     `/admin/job-applications/${applicationId}/status`,
     payload
+  );
+}
+
+/** Internal hiring notes — admin-only, never shown on the public careers pages. */
+export const MAX_ADMIN_NOTES_LENGTH = 4000;
+
+export type AdminJobApplicationNotes = {
+  application_id: number;
+  admin_notes: string | null;
+  admin_notes_updated_at: string | null;
+  admin_notes_updated_by: string | null;
+};
+
+/**
+ * Saves just the notes for one application. Separate from the full applicant
+ * update so a note written from the applicants list cannot clobber applicant
+ * fields with a stale form payload.
+ */
+export async function updateAdminJobApplicationNotes(
+  applicationId: number,
+  admin_notes: string
+) {
+  return apiPatch<{ notes: AdminJobApplicationNotes }, { admin_notes: string }>(
+    `/admin/job-applications/${applicationId}/notes`,
+    { admin_notes }
   );
 }
 

@@ -175,6 +175,8 @@ def section_memberships(cur, out: list[str]):
     promos = fetch(cur, """
         SELECT * FROM public.product_promotions
         WHERE is_active IS NOT FALSE AND product_type='membership'
+          AND (starts_at IS NULL OR starts_at <= now())
+          AND (ends_at   IS NULL OR ends_at   >= now())
     """)
     promo_by_plan = {p["product_id"]: p for p in promos}
 
@@ -355,11 +357,15 @@ def section_promotions(cur, out: list[str]):
     codes = fetch(cur, """
         SELECT * FROM public.promotions
         WHERE is_active IS NOT FALSE
+          AND (valid_from IS NULL OR valid_from <= now())
+          AND (valid_to   IS NULL OR valid_to   >= now())
         ORDER BY code
     """)
     offers = fetch(cur, """
         SELECT * FROM public.promo_offers
         WHERE is_active IS NOT FALSE
+          AND (starts_at IS NULL OR starts_at <= now())
+          AND (ends_at   IS NULL OR ends_at   >= now())
         ORDER BY offer_id
     """)
     if not codes and not offers:

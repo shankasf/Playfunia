@@ -1,6 +1,5 @@
 import { randomBytes } from 'crypto';
 import { supabaseAny } from '../config/supabase';
-import { appConfig } from '../config/env';
 import { logger } from '../utils/logger';
 
 const BUCKET = 'waiver-signatures';
@@ -8,7 +7,12 @@ const MAX_SIZE = 500 * 1024; // 500KB
 
 /**
  * Upload a base64-encoded PNG signature image to Supabase Storage.
- * Returns the public URL, or null on failure.
+ * Returns the storage object path, or null on failure.
+ *
+ * The bucket is private - readers exchange this path for a short-lived signed
+ * URL via storage-url.service. Rows written before that change hold a full
+ * `.../object/public/waiver-signatures/<path>` URL instead; `toStoragePath`
+ * accepts both shapes.
  */
 export async function uploadSignatureImage(
   base64DataUrl: string,
@@ -44,9 +48,7 @@ export async function uploadSignatureImage(
       return null;
     }
 
-    // Build public URL
-    const publicUrl = `${appConfig.supabaseUrl}/storage/v1/object/public/${BUCKET}/${storagePath}`;
-    return publicUrl;
+    return storagePath;
   } catch (err) {
     logger.error({ err, waiverId }, 'Error uploading signature image');
     return null;

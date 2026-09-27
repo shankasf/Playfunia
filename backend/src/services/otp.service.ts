@@ -1,9 +1,38 @@
 import { supabase } from '../config/supabase';
 import { generateOTP, sendVerificationOTP, sendPasswordResetOTP } from './email.service';
 import { sendVerificationOtpSms, sendPasswordResetOtpSms } from './sms.service';
+import { hashPassword, verifyPassword } from '../utils/password';
+import { seal, open } from '../utils/secret-box';
 import { AppError } from '../utils/app-error';
 
 const OTP_EXPIRY_MINUTES = 10;
+
+/**
+ * email_otps.otp_code holds a bcrypt hash, not the code itself.
+ *
+ * A six-digit code is only a million possibilities, so a plaintext column is
+ * worth an attacker's time the moment they get any read access to the row -
+ * and these codes gate both email verification and password reset.
+ *
+ * Because the codes are hashed, lookups can no longer filter on the code in
+ * SQL. storeOTP deletes any prior row for the same (email, otp_type) before
+ * inserting, so in practice there is a single candidate; the helper still walks
+ * whatever the query returns rather than relying on that invariant.
+ */
+async function findMatchingOtp<T extends { otp_code: string }>(
+  rows: T[],
+  otp: string,
+): Promise<T | null> {
+  for (const row of rows) {
+    try {
+      if (await verifyPassword(otp, row.otp_code)) return row;
+    } catch {
+      // A malformed hash (e.g. a plaintext row predating this change) simply
+      // does not match.
+    }
+  }
+  return null;
+}
 
 // Registration data stored with OTP for pending registrations
 export interface PendingRegistrationData {
@@ -32,15 +61,17 @@ async function storeOTP(
     .eq('email', normalizedEmail)
     .eq('otp_type', type);
 
-  // Insert new OTP
+  // Insert new OTP (hashed - see findMatchingOtp)
   const { error } = await supabase
     .from('email_otps')
     .insert({
       email: normalizedEmail,
-      otp_code: otp,
+      otp_code: await hashPassword(otp),
       otp_type: type,
       expires_at: expiresAt,
-      registration_data: registrationData || null,
+      // Sealed, not bare JSON: this payload carries the signup password, which
+      // createVerifiedUser() needs in the clear to call auth.admin.createUser.
+      registration_data: registrationData ? { sealed: seal(registrationData) } : null,
     });
 
   if (error) {
@@ -49,10 +80,11 @@ async function storeOTP(
   }
 }
 
-// Delete a specific OTP (used when email delivery fails)
+// Delete the outstanding OTP for this address (used when email delivery fails).
+// The code itself is no longer selectable, and storeOTP has just cleared out any
+// other row for the same (email, otp_type), so those two columns identify it.
 async function deleteOTP(
   email: string,
-  otp: string,
   type: 'email_verification' | 'password_reset'
 ): Promise<void> {
   const normalizedEmail = email.toLowerCase();
@@ -60,7 +92,6 @@ async function deleteOTP(
     .from('email_otps')
     .delete()
     .eq('email', normalizedEmail)
-    .eq('otp_code', otp)
     .eq('otp_type', type);
 }
 
@@ -69,21 +100,27 @@ async function verifyStoredOTP(
   email: string,
   otp: string,
   type: 'email_verification' | 'password_reset'
-): Promise<{ valid: boolean; registrationData?: PendingRegistrationData }> {
+): Promise<{ valid: boolean; otpId?: number; registrationData?: PendingRegistrationData }> {
   const normalizedEmail = email.toLowerCase();
 
-  // Find valid OTP
+  // Narrow in SQL on everything except the code, then compare the hash.
   const { data, error } = await supabase
     .from('email_otps')
-    .select('id, registration_data')
+    .select('id, otp_code, registration_data')
     .eq('email', normalizedEmail)
-    .eq('otp_code', otp)
     .eq('otp_type', type)
     .gt('expires_at', new Date().toISOString())
-    .is('verified_at', null)
-    .single();
+    .is('verified_at', null);
 
-  if (error || !data) {
+  if (error || !data?.length) {
+    return { valid: false };
+  }
+
+  const match = await findMatchingOtp(
+    data as Array<{ id: number; otp_code: string; registration_data: unknown }>,
+    otp,
+  );
+  if (!match) {
     return { valid: false };
   }
 
@@ -91,12 +128,23 @@ async function verifyStoredOTP(
   await supabase
     .from('email_otps')
     .update({ verified_at: new Date().toISOString() })
-    .eq('id', data.id);
+    .eq('id', match.id);
+
+  const sealed = (match.registration_data as { sealed?: string } | null)?.sealed;
 
   return {
     valid: true,
-    registrationData: data.registration_data as PendingRegistrationData | undefined,
+    otpId: match.id,
+    registrationData: open<PendingRegistrationData>(sealed) ?? undefined,
   };
+}
+
+/**
+ * Drop the row once the account it was holding data for exists. Without this the
+ * sealed registration payload lingers until something else prunes the table.
+ */
+export async function consumeRegistrationOTP(otpId: number): Promise<void> {
+  await supabase.from('email_otps').delete().eq('id', otpId);
 }
 
 // Send email verification OTP (for existing users re-verifying)
@@ -111,7 +159,7 @@ export async function sendEmailVerificationOTP(email: string, firstName?: string
 
   if (!emailSent) {
     // Delete the stored OTP since user will never receive it
-    await deleteOTP(email, otp, 'email_verification');
+    await deleteOTP(email, 'email_verification');
     return {
       success: false,
       message: 'Failed to send verification email. Please try again.',
@@ -149,7 +197,7 @@ export async function sendRegistrationOTP(
 
   if (!emailSent) {
     // Delete the stored OTP since user will never receive it
-    await deleteOTP(email, otp, 'email_verification');
+    await deleteOTP(email, 'email_verification');
     return {
       success: false,
       message: 'Failed to send verification email. Please try again.',
@@ -176,7 +224,7 @@ export async function sendRegistrationOTP(
 export async function verifyEmailOTP(
   email: string,
   otp: string
-): Promise<{ success: boolean; message: string; registrationData?: PendingRegistrationData }> {
+): Promise<{ success: boolean; message: string; otpId?: number; registrationData?: PendingRegistrationData }> {
   const result = await verifyStoredOTP(email, otp, 'email_verification');
 
   if (!result.valid) {
@@ -189,6 +237,7 @@ export async function verifyEmailOTP(
   return {
     success: true,
     message: 'Email verified successfully.',
+    otpId: result.otpId,
     registrationData: result.registrationData,
   };
 }
@@ -205,7 +254,7 @@ export async function sendPasswordResetOTPEmail(email: string, firstName?: strin
 
   if (!emailSent) {
     // Delete the stored OTP since user will never receive it
-    await deleteOTP(email, otp, 'password_reset');
+    await deleteOTP(email, 'password_reset');
     return {
       success: false,
       message: 'Failed to send reset email. Please try again.',
@@ -256,14 +305,20 @@ export async function checkPasswordResetOTPVerified(email: string, otp: string):
   // Find OTP that was verified within the time window
   const { data, error } = await supabase
     .from('email_otps')
-    .select('id')
+    .select('id, otp_code')
     .eq('email', normalizedEmail)
-    .eq('otp_code', otp)
     .eq('otp_type', 'password_reset')
-    .gt('verified_at', windowStart)
-    .single();
+    .gt('verified_at', windowStart);
 
-  if (error || !data) {
+  if (error || !data?.length) {
+    return { valid: false };
+  }
+
+  const match = await findMatchingOtp(
+    data as Array<{ id: number; otp_code: string }>,
+    otp,
+  );
+  if (!match) {
     return { valid: false };
   }
 
@@ -271,7 +326,7 @@ export async function checkPasswordResetOTPVerified(email: string, otp: string):
   await supabase
     .from('email_otps')
     .delete()
-    .eq('id', data.id);
+    .eq('id', match.id);
 
   return { valid: true };
 }

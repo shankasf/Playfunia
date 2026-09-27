@@ -1,0 +1,8 @@
+# OpenAI Agents SDK (realtime voice + SIP). Pin this; it drives the API surface.
+# fastapi/uvicorn/httpx are left unpinned so pip resolves versions compatible
+# with openai-agents' own dependency constraints (a hard uvicorn pin conflicts).
+openai-agents==0.17.4
+fastapi
+uvicorn[standard]
+httpx>=0.27,<0.28
+python-dotenv==1.0.1

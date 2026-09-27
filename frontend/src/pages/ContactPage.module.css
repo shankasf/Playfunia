@@ -344,7 +344,8 @@
   gap: 0.15rem;
 }
 
-.contactText a {
+.contactText a,
+.contactText .contactValue {
   color: var(--color-text);
   font-weight: 700;
   font-size: 1rem;
@@ -352,11 +353,12 @@
   transition: color 0.2s ease;
 }
 
-.contactItem:hover .contactText a {
+.contactItem:hover .contactText a,
+.contactItem:hover .contactText .contactValue {
   color: var(--color-secondary);
 }
 
-.contactText span {
+.contactText span:not(.contactValue) {
   font-size: 0.82rem;
   color: var(--color-text-muted);
   font-weight: 500;

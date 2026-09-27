@@ -186,14 +186,28 @@ async function buildAudience(months: number[], channel: Channel) {
 
 export async function previewAudience(months: number[], channel: Channel) {
   const { emailList, smsList } = await buildAudience(months, channel);
-  const sample = [...emailList, ...smsList]
-    .slice(0, 8)
-    .map((c) => ({ name: c.name || '(no name)', email: c.email, phone: c.phone }));
+
+  // Merge into a unique-per-contact list carrying which channels reach them.
+  type Row = { key: string; name: string; email: string | null; phone: string | null; viaEmail: boolean; viaSms: boolean };
+  const map = new Map<string, Row>();
+  const add = (c: Contact, via: 'email' | 'sms') => {
+    let r = map.get(c.key);
+    if (!r) {
+      r = { key: c.key, name: c.name || '(no name)', email: c.email, phone: c.phone, viaEmail: false, viaSms: false };
+      map.set(c.key, r);
+    }
+    if (via === 'email') r.viaEmail = true;
+    else r.viaSms = true;
+  };
+  for (const c of emailList) add(c, 'email');
+  for (const c of smsList) add(c, 'sms');
+  const recipients = [...map.values()];
+
   return {
     emailCount: emailList.length,
     smsCount: smsList.length,
-    uniqueCount: new Set([...emailList.map((c) => c.key), ...smsList.map((c) => c.key)]).size,
-    sample,
+    uniqueCount: recipients.length,
+    recipients,
   };
 }
 
@@ -220,11 +234,11 @@ export async function draftMessage(input: {
     ? input.months.map((m) => MONTH_NAMES[m - 1]).filter(Boolean).join(', ')
     : '';
 
-  const system = 'You are a marketing copywriter for Playfunia, a children\'s indoor play and birthday-party venue. Write warm, friendly, family-oriented promotional copy that is concise and on-brand. Only reference discounts or promo codes that are explicitly provided — never invent offers.';
+  const system = 'You are a marketing copywriter for Playfunia, a children\'s indoor play and birthday-party venue. Write warm, friendly, family-oriented promotional copy that is concise and on-brand. Faithfully follow the admin\'s instructions: if the admin\'s notes mention a specific offer, discount, theme, or message, include it as written. Do not fabricate offers that the admin did not ask for; only feature discounts that are present either in the attached promo code(s) or explicitly stated in the admin\'s notes.';
   const user = `Write marketing copy for an email + SMS campaign.
 Audience: ${monthLabel ? `families with a child's birthday in ${monthLabel}` : 'opted-in Playfunia customers'}.
-Admin's goal/notes: ${input.intent?.trim() || '(none provided — write a general promotional message)'}
-Promo code(s) to feature: ${promoText}
+Admin's goal/notes (follow these instructions closely — if they mention a discount or specific wording, include it): ${input.intent?.trim() || '(none provided — write a general promotional message)'}
+Attached promo code(s) to feature: ${promoText}
 Return STRICT JSON with keys:
 "subject" (email subject line, <= 60 chars),
 "emailBody" (plain text, 2-4 short paragraphs, include the promo code(s) clearly if any),
@@ -261,6 +275,9 @@ interface SendInput {
   isTest: boolean;
   testEmail?: string;
   testPhone?: string;
+  // Optional explicit allow-list of contact keys (email or "p:<phone>") chosen
+  // in the UI. When present, only these opted-in contacts are sent to.
+  selectedKeys?: string[];
   createdByUserId?: number | null;
 }
 
@@ -291,11 +308,21 @@ export async function sendCampaign(input: SendInput) {
       smsTargets = [{ name: 'Test', email: null, phone: normPhone(input.testPhone) }];
     }
   } else {
-    const { emailList, smsList } = await buildAudience(input.months, input.channel);
+    if (input.months.length === 0) {
+      throw new AppError('Select at least one birthday month before sending a bulk campaign.', 400);
+    }
+    let { emailList, smsList } = await buildAudience(input.months, input.channel);
+    // Honor the admin's per-recipient selection (deselected rows are dropped).
+    // Server still only ever sees opted-in contacts, so this can only narrow.
+    if (input.selectedKeys && input.selectedKeys.length > 0) {
+      const keep = new Set(input.selectedKeys);
+      emailList = emailList.filter((c) => keep.has(c.key));
+      smsList = smsList.filter((c) => keep.has(c.key));
+    }
     emailTargets = emailList.map((c) => ({ name: c.name, email: c.email, phone: c.phone }));
     smsTargets = smsList.map((c) => ({ name: c.name, email: c.email, phone: c.phone }));
     if (emailTargets.length + smsTargets.length === 0) {
-      throw new AppError('No opted-in recipients match this audience.', 400);
+      throw new AppError('No opted-in recipients selected. Select at least one recipient.', 400);
     }
     if (emailTargets.length + smsTargets.length > MAX_BULK_RECIPIENTS) {
       throw new AppError(`Audience exceeds the ${MAX_BULK_RECIPIENTS}-recipient safety limit. Narrow the segment.`, 400);
@@ -367,7 +394,7 @@ export async function sendCampaign(input: SendInput) {
   return { campaignId: campaign.campaign_id, sent, failed, audienceCount, status, isTest: input.isTest };
 }
 
-export async function listCampaigns(limit = 50) {
+export async function listCampaigns(limit = 1000) {
   const { data, error } = await supabaseAny
     .from('marketing_campaigns')
     .select('*')

@@ -400,6 +400,54 @@
   color: #ffffff;
 }
 
+/* Internal notes — toggles the notes editor row for one applicant. Amber marks
+   it as admin-only internal content, matching ApplicantNotesControl. */
+.notesBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.notesBtn:hover {
+  border-color: #f59e0b;
+  color: #b45309;
+}
+
+.notesBtnFilled {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.notesDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.notesRow td {
+  background: #fdfaf3;
+}
+
+/* Full-width editor row. Overrides the mobile centering that the table applies
+   to cells without a data-label. */
+.notesCell {
+  padding: 0.75rem 1rem 1rem;
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+
 /* Pagination */
 .pagination {
   display: flex;
@@ -731,6 +779,87 @@
   .header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  /* Don't let fixed input min-widths reintroduce overflow */
+  .filterItem input[type="text"],
+  .filterItem input[type="date"] {
+    min-width: 0;
+  }
+
+  /* Responsive card layout for tables (no horizontal scroll) */
+  .table {
+    min-width: 0 !important;
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  /* visually hide header row (keep for a11y) */
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    margin: 0 0 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.4rem 0.9rem;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    text-align: right;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    min-height: 0;
+    white-space: normal;
+  }
+
+  .table td:last-child {
+    border-bottom: 0;
+    text-align: right;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    flex: 0 0 40%;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  /* cells with no label (colSpan rows) keep full width, centered */
+  .table td:not([data-label])::before {
+    content: none;
+  }
+
+  .table td:not([data-label]) {
+    justify-content: center;
+    text-align: center;
   }
 }
 

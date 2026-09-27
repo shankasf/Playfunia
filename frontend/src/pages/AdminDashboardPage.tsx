@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
-import { formatDate, formatDateTime, formatTime } from '../lib/dateUtils';
+import { formatDate, formatDateTime, formatTime, getAgeET, getCurrentDateET } from '../lib/dateUtils';
 import { fetchPartyPackages, type PartyPackageDto } from '../api/bookings';
 import {
   AdminBooking,
@@ -471,9 +471,14 @@ export function AdminDashboardPage() {
       if (waiverMarketingFilter === 'yes' && !waiver.marketingOptIn) return false;
       if (waiverMarketingFilter === 'no' && waiver.marketingOptIn) return false;
       if (nameLower) {
-        const guardianName = waiver.guardianName?.toLowerCase() || '';
-        const email = waiver.guardianEmail?.toLowerCase() || '';
-        if (!guardianName.includes(nameLower) && !email.includes(nameLower)) return false;
+        // Match anyone on the waiver so staff can look up a kid, teen, or extra adult at check-in
+        const searchable = [
+          waiver.guardianName,
+          waiver.guardianEmail,
+          waiver.waiverCode,
+          ...buildWaiverRoster(waiver).map((person) => person.name),
+        ].map((value) => value?.toLowerCase() || '');
+        if (!searchable.some((value) => value.includes(nameLower))) return false;
       }
       if (waiverDateFilter && waiver.signedAt) {
         const signedDate = waiver.signedAt.split('T')[0];
@@ -1419,6 +1424,7 @@ export function AdminDashboardPage() {
               waiverDisplayCount,
               () => setWaiverDisplayCount((prev) => prev + 5),
               () => setWaiverDisplayCount((prev) => Math.max(5, prev - 5)),
+              isTeamMember,
               isAdmin
             )}
 
@@ -1488,14 +1494,14 @@ export function AdminDashboardPage() {
 
                 return (
                   <tr key={promo.promotion_id}>
-                    <td><strong>{promo.promo_label || '—'}</strong>{promo.promo_note ? <><br /><small style={{ color: '#64748b' }}>{promo.promo_note}</small></> : null}</td>
-                    <td style={{ textTransform: 'capitalize' }}>{promo.product_type}{promo.product_id ? ` #${promo.product_id}` : ' (all)'}</td>
-                    <td>{promo.discount_type === 'percent' ? `${promo.discount_value}%` : `$${promo.discount_value}`}</td>
-                    <td>{formatDate(promo.starts_at)}</td>
-                    <td>{formatDate(promo.ends_at)}</td>
-                    <td>{promo.redemptions}{promo.max_redemptions != null ? ` / ${promo.max_redemptions}` : ''}</td>
-                    <td><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
-                    <td>
+                    <td data-label="Label"><strong>{promo.promo_label || '—'}</strong>{promo.promo_note ? <><br /><small style={{ color: '#64748b' }}>{promo.promo_note}</small></> : null}</td>
+                    <td data-label="Type" style={{ textTransform: 'capitalize' }}>{promo.product_type}{promo.product_id ? ` #${promo.product_id}` : ' (all)'}</td>
+                    <td data-label="Discount">{promo.discount_type === 'percent' ? `${promo.discount_value}%` : `$${promo.discount_value}`}</td>
+                    <td data-label="Starts">{formatDate(promo.starts_at)}</td>
+                    <td data-label="Ends">{formatDate(promo.ends_at)}</td>
+                    <td data-label="Redeemed">{promo.redemptions}{promo.max_redemptions != null ? ` / ${promo.max_redemptions}` : ''}</td>
+                    <td data-label="Status"><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
+                    <td data-label="Actions">
                       <div style={{ display: 'flex', gap: '0.4rem' }}>
                         <button
                           type="button"
@@ -1742,14 +1748,14 @@ export function AdminDashboardPage() {
 
                 return (
                   <tr key={offer.offer_id}>
-                    <td><strong>{offer.title}</strong>{offer.subtitle ? <><br /><small style={{ color: '#64748b' }}>{offer.subtitle}</small></> : null}</td>
-                    <td>{offer.promo_label || '—'}</td>
-                    <td>{offer.plans.length} plan{offer.plans.length !== 1 ? 's' : ''}</td>
-                    <td>{formatDate(offer.starts_at)}</td>
-                    <td>{formatDate(offer.ends_at)}</td>
-                    <td>{offer.redemptions}{offer.max_redemptions != null ? ` / ${offer.max_redemptions}` : ''}</td>
-                    <td><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
-                    <td>
+                    <td data-label="Title"><strong>{offer.title}</strong>{offer.subtitle ? <><br /><small style={{ color: '#64748b' }}>{offer.subtitle}</small></> : null}</td>
+                    <td data-label="Label">{offer.promo_label || '—'}</td>
+                    <td data-label="Plans">{offer.plans.length} plan{offer.plans.length !== 1 ? 's' : ''}</td>
+                    <td data-label="Starts">{formatDate(offer.starts_at)}</td>
+                    <td data-label="Ends">{formatDate(offer.ends_at)}</td>
+                    <td data-label="Redeemed">{offer.redemptions}{offer.max_redemptions != null ? ` / ${offer.max_redemptions}` : ''}</td>
+                    <td data-label="Status"><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
+                    <td data-label="Actions">
                       <div style={{ display: 'flex', gap: '0.4rem' }}>
                         <button
                           type="button"
@@ -2144,17 +2150,17 @@ export function AdminDashboardPage() {
 
                 return (
                   <tr key={coupon.promotion_id}>
-                    <td>
+                    <td data-label="Code">
                       <code style={{ background: '#f1f5f9', padding: '0.15rem 0.45rem', borderRadius: 4, fontWeight: 700 }}>{coupon.code}</code>
                       {coupon.description ? <><br /><small style={{ color: '#64748b' }}>{coupon.description}</small></> : null}
                     </td>
-                    <td>{discountText}</td>
-                    <td>{coupon.applies_to.map(formatCouponCategory).join(', ')}</td>
-                    <td>{coupon.min_purchase_usd != null ? `$${Number(coupon.min_purchase_usd).toFixed(2)}` : '—'}</td>
-                    <td>{coupon.valid_to ? formatDate(coupon.valid_to) : '—'}</td>
-                    <td>{coupon.redemptions}{coupon.max_redemptions != null ? ` / ${coupon.max_redemptions}` : ''}</td>
-                    <td><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
-                    <td>
+                    <td data-label="Discount">{discountText}</td>
+                    <td data-label="Applies to">{coupon.applies_to.map(formatCouponCategory).join(', ')}</td>
+                    <td data-label="Min purchase">{coupon.min_purchase_usd != null ? `$${Number(coupon.min_purchase_usd).toFixed(2)}` : '—'}</td>
+                    <td data-label="Valid until">{coupon.valid_to ? formatDate(coupon.valid_to) : '—'}</td>
+                    <td data-label="Redeemed">{coupon.redemptions}{coupon.max_redemptions != null ? ` / ${coupon.max_redemptions}` : ''}</td>
+                    <td data-label="Status"><span style={{ color: statusColor, fontWeight: 600, fontSize: '0.82rem' }}>{statusLabel}</span></td>
+                    <td data-label="Actions">
                       <div style={{ display: 'flex', gap: '0.4rem' }}>
                         <button
                           type="button"
@@ -2816,7 +2822,7 @@ export function AdminDashboardPage() {
               </div>
 
               <div className={styles.waiverCard}>
-                <h4 className={styles.waiverCardTitle}>Children</h4>
+                <h4 className={styles.waiverCardTitle}>Children &amp; teens</h4>
                 {waiverForm.children.length === 0 && (
                   <p className={styles.emptyHint}>No children added yet.</p>
                 )}
@@ -2883,7 +2889,7 @@ export function AdminDashboardPage() {
               {waiverActionMessage && <p className={styles.modalFeedback}>{waiverActionMessage}</p>}
             </div>
             <div className={styles.modalFooter}>
-              {isAdmin && (
+              {isTeamMember && (
                 <button
                   type="button"
                   onClick={handleWaiverUpdate}
@@ -3669,7 +3675,7 @@ function renderBookingTable(
                 className={booking.id === selectedId ? styles.rowSelected : undefined}
               >
                 {/* Customer */}
-                <td>
+                <td data-label="Customer">
                   <div className={styles.customerDetailsCell}>
                     <strong>{customerDisplay}</strong>
                     <small>{customerEmail || '—'}</small>
@@ -3678,7 +3684,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Event Details */}
-                <td>
+                <td data-label="Event Details">
                   <div className={styles.customerDetailsCell}>
                     <strong>{booking.partyPackage?.name || '—'}</strong>
                     <small>{booking.location || '—'}</small>
@@ -3686,7 +3692,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Party Time */}
-                <td>
+                <td data-label="Party Time">
                   <div className={styles.customerDetailsCell}>
                     <strong>{formatDate(booking.eventDate)}</strong>
                     <small>
@@ -3696,7 +3702,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Children */}
-                <td>
+                <td data-label="Children">
                   <div className={styles.customerDetailsCell}>
                     {children.length > 0 ? children.map((child, i) => (
                       <small key={i}>
@@ -3707,7 +3713,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Extras */}
-                <td>
+                <td data-label="Extras">
                   <div className={styles.customerDetailsCell}>
                     {addOns.length > 0 ? addOns.map((addon, i) => {
                       const addonLabel = addon.label || addon.name || addon.code
@@ -3725,7 +3731,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Payment */}
-                <td>
+                <td data-label="Payment">
                   <div className={styles.paymentCell}>
                     <small><b>Total:</b> {formatCurrency(booking.total)}</small>
                     {booking.cleaningFee > 0 && (
@@ -3756,7 +3762,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Receipt */}
-                <td>
+                <td data-label="Receipt">
                   {booking.receipt ? (
                     <div className={styles.receiptCell}>
                       <a
@@ -3785,13 +3791,13 @@ function renderBookingTable(
                   )}
                 </td>
                 {/* Status */}
-                <td>
+                <td data-label="Status">
                   <span className={isCancelled ? styles.statusCancelled : styles.statusActive}>
                     {booking.status}
                   </span>
                 </td>
                 {/* Booked On */}
-                <td>
+                <td data-label="Booked On">
                   <div className={styles.customerDetailsCell}>
                     {booking.createdAt ? (
                       <>
@@ -3810,7 +3816,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Notes */}
-                <td>
+                <td data-label="Notes">
                   <div className={styles.customerDetailsCell}>
                     {booking.notes && <small>{booking.notes}</small>}
                     {booking.privateNotes && <small className={styles.privateNote}>{booking.privateNotes}</small>}
@@ -3818,7 +3824,7 @@ function renderBookingTable(
                   </div>
                 </td>
                 {/* Actions */}
-                <td>
+                <td data-label="Actions">
                   <div className={styles.bookingActions}>
                     <button
                       type="button"
@@ -3866,6 +3872,74 @@ function renderBookingTable(
   );
 }
 
+type WaiverRosterPerson = {
+  key: string;
+  name: string;
+  role: string;
+  covered: boolean;
+  status: string;
+};
+
+const toDateET = (value?: string | null) =>
+  value ? new Date(value).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) : '';
+
+/**
+ * Everyone on a waiver with their own check-in status. A waiver only covers the
+ * visit on the day it was signed; adults are covered only by their own signature,
+ * kids and teens by the guardian's.
+ */
+function buildWaiverRoster(waiver: AdminWaiver): WaiverRosterPerson[] {
+  const today = getCurrentDateET();
+  const signedToday = toDateET(waiver.signedAt) === today;
+  const staleStatus = waiver.signedAt ? `Last signed ${formatDate(waiver.signedAt)}` : 'Not signed';
+  const minorName = (m: { name?: string; first_name?: string; last_name?: string }) =>
+    m.name?.trim() || `${m.first_name ?? ''} ${m.last_name ?? ''}`.trim() || 'Name not provided';
+  const minorRole = (label: string, birthDate?: string) => {
+    const age = getAgeET(birthDate);
+    return age === null ? label : `${label} · ${age}`;
+  };
+  const guardianSigned = waiver.guardianHasSignature !== false;
+
+  const roster: WaiverRosterPerson[] = [
+    {
+      key: 'guardian',
+      name: waiver.guardianName || 'Guardian',
+      role: 'Adult · Guardian',
+      covered: signedToday && guardianSigned,
+      status: !guardianSigned ? 'No signature' : signedToday ? 'Signed' : staleStatus,
+    },
+  ];
+  (waiver.additionalAdults ?? []).forEach((adult, index) => {
+    const adultSignedToday = toDateET(adult.signedAt || waiver.signedAt) === today;
+    roster.push({
+      key: `adult-${index}`,
+      name: adult.name,
+      role: 'Adult',
+      covered: adult.hasSignature && adultSignedToday,
+      status: !adult.hasSignature ? 'No signature' : adultSignedToday ? 'Signed' : staleStatus,
+    });
+  });
+  (waiver.teens ?? []).forEach((teen, index) => {
+    roster.push({
+      key: `teen-${index}`,
+      name: minorName(teen),
+      role: minorRole('Teen', teen.birthDate ?? teen.birth_date),
+      covered: signedToday && guardianSigned,
+      status: signedToday && guardianSigned ? 'Covered by guardian' : staleStatus,
+    });
+  });
+  (waiver.children ?? []).forEach((child, index) => {
+    roster.push({
+      key: `kid-${index}`,
+      name: minorName(child),
+      role: minorRole('Kid', child.birthDate ?? child.birth_date),
+      covered: signedToday && guardianSigned,
+      status: signedToday && guardianSigned ? 'Covered by guardian' : staleStatus,
+    });
+  });
+  return roster;
+}
+
 function renderWaiverList(
   state: { status: LoadState; data: AdminWaiver[]; error?: string },
   onSelect: (waiver: AdminWaiver) => void,
@@ -3874,7 +3948,8 @@ function renderWaiverList(
   displayCount: number,
   onLoadMore: () => void,
   onShowLess: () => void,
-  canManage: boolean,
+  canEdit: boolean,
+  canDelete: boolean,
 ) {
   if (state.status === 'loading') return <p>Loading waivers...</p>;
   if (state.status === 'error') return <p className={styles.error}>{state.error}</p>;
@@ -3896,6 +3971,32 @@ function renderWaiverList(
             <div>
               <strong>{waiver.guardianName}</strong>
               <span>{waiver.guardianEmail}</span>
+              {(() => {
+                const roster = buildWaiverRoster(waiver);
+                const coveredCount = roster.filter((person) => person.covered).length;
+                const allCovered = coveredCount === roster.length;
+                return (
+                  <div className={styles.waiverRoster} aria-label="Waiver status per person">
+                    <div className={allCovered ? styles.rosterSummaryOk : styles.rosterSummaryWarn}>
+                      {allCovered
+                        ? `All ${roster.length} covered today`
+                        : `${coveredCount} of ${roster.length} covered today`}
+                    </div>
+                    {roster.map((person) => (
+                      <div key={person.key} className={styles.rosterRow}>
+                        <span className={person.covered ? styles.rosterIconOk : styles.rosterIconWarn} aria-hidden="true">
+                          {person.covered ? '✓' : '!'}
+                        </span>
+                        <span className={styles.rosterName}>{person.name}</span>
+                        <span className={styles.rosterRole}>{person.role}</span>
+                        <span className={person.covered ? styles.rosterStatusOk : styles.rosterStatusWarn}>
+                          {person.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {waiver.visitCount && waiver.visitCount > 1 && (
                 <small className={styles.repeatVisitor}>
                   🔁 {waiver.visitCount} visits
@@ -3905,28 +4006,32 @@ function renderWaiverList(
             </div>
             <div className={styles.waiverMeta}>
               <span>{formatDateTime(waiver.signedAt)}</span>
-              {canManage && (
+              {(canEdit || canDelete) && (
                 <div className={styles.waiverActions}>
-                  <button
-                    type="button"
-                    className={styles.editBtn}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelect(waiver);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.deleteBtn}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete(waiver.id, waiver.guardianName);
-                    }}
-                  >
-                    Delete
-                  </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className={styles.editBtn}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect(waiver);
+                      }}
+                    >
+                      Edit
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      type="button"
+                      className={styles.deleteBtn}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete(waiver.id, waiver.guardianName);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -3992,8 +4097,8 @@ function renderTicketLog(
             const allRedeemed = redeemed === entry.codes.length;
             return (
               <tr key={entry.id}>
-                <td>{entry.type}</td>
-                <td>
+                <td data-label="Type">{entry.type}</td>
+                <td data-label="Codes">
                   <div className={styles.ticketCodes}>
                     {entry.codes.map((c) => (
                       <span
@@ -4006,9 +4111,9 @@ function renderTicketLog(
                     ))}
                   </div>
                 </td>
-                <td>{entry.quantity}</td>
-                <td>{formatGuardian(entry.guardian)}</td>
-                <td>
+                <td data-label="Qty">{entry.quantity}</td>
+                <td data-label="Guardian">{formatGuardian(entry.guardian)}</td>
+                <td data-label="Payment">
                   <div className={styles.paymentCell}>
                     <span className={styles.paymentPaid}>
                       Paid: {formatCurrency(entry.total)}
@@ -4018,13 +4123,13 @@ function renderTicketLog(
                     </small>
                   </div>
                 </td>
-                <td>{formatDate(entry.createdAt)}</td>
-                <td>
+                <td data-label="Purchased">{formatDate(entry.createdAt)}</td>
+                <td data-label="Redeemed">
                   <span className={allRedeemed ? styles.redemptionComplete : styles.redemptionPending}>
                     {redeemed}/{entry.codes.length}
                   </span>
                 </td>
-                <td>
+                <td data-label="Actions">
                   {canManage && (
                     <button
                       type="button"
@@ -4085,15 +4190,15 @@ function renderMembershipList(
             const remaining = member.membership?.remainingDays;
             return (
               <tr key={membershipId} className={isSelected ? styles.selectedRow : undefined}>
-                <td>
+                <td data-label="Family">
                   {formatGuardian({
                     firstName: member.firstName,
                     lastName: member.lastName,
                     email: member.email,
                   })}
                 </td>
-                <td className={styles.memberIdCell}>{member.displayId ?? '--'}</td>
-                <td>
+                <td data-label="ID" className={styles.memberIdCell}>{member.displayId ?? '--'}</td>
+                <td data-label="Child">
                   {firstChild ? (
                     <span className={styles.childCell}>
                       {firstChild.photoUrl && (
@@ -4104,13 +4209,13 @@ function renderMembershipList(
                     </span>
                   ) : '--'}
                 </td>
-                <td>{member.membership?.tierName ?? '--'}</td>
-                <td>
+                <td data-label="Tier">{member.membership?.tierName ?? '--'}</td>
+                <td data-label="Status">
                   <span className={isCancelled ? styles.statusCancelled : styles.statusActive}>
                     {status}
                   </span>
                 </td>
-                <td>
+                <td data-label="Expires">
                   {member.membership?.endDate ? (
                     <span>
                       {formatDate(member.membership.endDate)}
@@ -4122,11 +4227,11 @@ function renderMembershipList(
                     </span>
                   ) : '--'}
                 </td>
-                <td>{formatVisitSummary(member.membership)}</td>
-                <td>
+                <td data-label="Visits">{formatVisitSummary(member.membership)}</td>
+                <td data-label="Last visit">
                   {member.membership?.lastVisitAt ? formatDate(member.membership.lastVisitAt) : '--'}
                 </td>
-                <td>
+                <td data-label="Actions">
                   <div className={styles.membershipActions}>
                     <button
                       type="button"
@@ -4238,7 +4343,7 @@ function toWaiverForm(waiver: AdminWaiver): WaiverFormState {
     marketingSmsOptIn: Boolean(waiver.marketingSmsOptIn),
     marketingEmailOptIn: Boolean(waiver.marketingEmailOptIn),
     children: Array.isArray(waiver.children)
-      ? waiver.children.map((child) => {
+      ? [...waiver.children, ...(waiver.teens ?? [])].map((child: AdminWaiver['children'][number]) => {
         const childName = child.name || `${child.first_name || ''} ${child.last_name || ''}`.trim();
         const childDob = child.birthDate || child.birth_date || '';
         return {

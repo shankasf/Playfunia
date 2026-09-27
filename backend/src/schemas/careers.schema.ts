@@ -29,9 +29,40 @@ export const submitJobApplicationSchema = z.object({
   emergencyContactName: z.string().trim().max(200).regex(nameRegex, 'Name must contain only letters, spaces, hyphens, or apostrophes').optional(),
   emergencyContactPhone: z.string().trim().transform(val => val.replace(/\D/g, '')).refine(val => val.length === 0 || val.length === 10, 'Phone must be 10 digits').optional(),
   videoUrl: z.string().trim().url('Please provide a valid video URL').max(2000).optional(),
+  // Screening questionnaire, sent as a JSON string keyed by question id (see SCREENING_QUESTIONS)
+  screeningAnswers: z.preprocess(
+    (val) => {
+      if (val == null || val === '') return undefined;
+      if (typeof val === 'object') return val;
+      if (typeof val !== 'string') return undefined;
+      try {
+        const parsed = JSON.parse(val);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    z.record(z.string().max(64), z.string().trim().max(1000)).optional(),
+  ),
 });
 
 export type SubmitJobApplicationInput = z.infer<typeof submitJobApplicationSchema>;
+
+/**
+ * Screening questionnaire shown on every job application, regardless of listing.
+ * Keep the ids in sync with frontend/src/pages/CareerApplyPage.tsx.
+ */
+export const SCREENING_QUESTIONS: Array<{ id: string; label: string }> = [
+  { id: 'partyPlanning', label: 'Experience with party planning or event decorating?' },
+  { id: 'balloonDecor', label: 'Comfortable creating balloon arches / balloon decorations?' },
+  { id: 'videoSocial', label: 'Skills with videography or social media?' },
+  { id: 'openAvailability', label: 'Open availability?' },
+  { id: 'availabilityDetails', label: 'If not open availability, what is your availability?' },
+  { id: 'over18', label: 'Over the age of 18?' },
+  { id: 'enforceRules', label: 'Comfortable enforcing rules politely but firmly?' },
+  { id: 'physicalWork', label: 'Comfortable with cleaning, standing, and moving throughout the shift?' },
+  { id: 'transportation', label: 'Reliable transportation?' },
+];
 
 export const ALLOWED_RESUME_MIMETYPES = [
   'application/pdf',

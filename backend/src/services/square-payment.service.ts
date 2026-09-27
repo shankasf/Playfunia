@@ -6,6 +6,7 @@ import { appConfig } from '../config/env';
 import { supabaseAny } from '../config/supabase';
 import { UserRepository, PartyBookingRepository, PaymentRepository, OrderRepository, PartyPackageRepository, ChildRepository } from '../repositories';
 import { AppError } from '../utils/app-error';
+import { getPartyPackagePrice } from './party-discount.service';
 import { sendBookingConfirmation, type BookingEmailData } from './email.service';
 import { sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
 import { createReceiptRecord, generateBookingReceiptPDF } from './receipt.service';
@@ -218,7 +219,8 @@ async function sendBookingConfirmationEmail(
   const startTime = booking.start_time ?? 'TBD';
   const location = booking.location_name ?? 'Albany';
   const packageName = partyPackage?.name ?? 'Party Package';
-  const packageBasePrice = partyPackage?.price_usd ?? 0;
+  // Receipt line shows what was charged: the weekday discount is already in subtotal
+  const packageBasePrice = (await getPartyPackagePrice(partyPackage?.price_usd ?? 0, booking.event_date)).price;
   const guestCount = booking.guests ?? 10;
   const totalAmount = booking.total ?? 0;
   const balanceRemaining = booking.balance_remaining ?? 0;

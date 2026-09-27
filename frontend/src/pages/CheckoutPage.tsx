@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { PrimaryButton } from "../components/common/PrimaryButton";
+import { StrikePrice } from "../components/common/StrikePrice";
 import { SquarePaymentForm } from "../components/checkout/SquarePaymentForm";
 import { formatTime, formatDateWithWeekday } from "../lib/dateUtils";
 import {
@@ -277,6 +278,12 @@ export function CheckoutPage() {
                       </button>
                     </div>
                     <dl className={styles.summaryGrid}>
+                      {item.basePrice != null && (
+                        <div>
+                          <dt>Package{item.weekdayDiscountPercent ? ` (weekday ${item.weekdayDiscountPercent}% off)` : ''}</dt>
+                          <dd><StrikePrice price={item.basePrice} originalPrice={item.originalBasePrice} /></dd>
+                        </div>
+                      )}
                       <div>
                         <dt>Total</dt>
                         <dd>{formatCurrency(item.total)}</dd>

@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit';
 import { DateTime } from 'luxon';
 import https from 'https';
 import http from 'http';
+import { signStorageUrl } from './storage-url.service';
 
 export interface WaiverPdfData {
   guardianName: string;
@@ -10,6 +11,10 @@ export interface WaiverPdfData {
   guardianDob?: string;
   relationshipToChildren?: string;
   children: Array<{ name: string; birthDate?: string; gender?: string }>;
+  /** Ages 13-17, signed for by the parent/guardian */
+  teens?: Array<{ name: string; birthDate?: string; gender?: string }>;
+  /** Other adults (18+), each with their own signature */
+  additionalAdults?: Array<{ name: string; typedSignature?: string; signedAt?: string; signatureImageUrl?: string }>;
   signature: string;
   signedAt: string;
   ipAddress: string;
@@ -159,11 +164,33 @@ export async function generateWaiverPdf(data: WaiverPdfData): Promise<Buffer> {
   let signatureImageBuffer: Buffer | null = null;
   if (data.signatureImageUrl) {
     try {
-      signatureImageBuffer = await fetchImageBuffer(data.signatureImageUrl);
+      // waiver-signatures is a private bucket, so the stored URL has to be
+      // exchanged for a short-lived signed one before it can be fetched.
+      const signedUrl = await signStorageUrl(
+        'waiver-signatures',
+        data.signatureImageUrl,
+        300,
+      );
+      if (signedUrl) {
+        signatureImageBuffer = await fetchImageBuffer(signedUrl);
+      }
     } catch {
       // Fallback to typed signature
     }
   }
+
+  const additionalAdults = data.additionalAdults ?? [];
+  const adultSignatureBuffers = await Promise.all(
+    additionalAdults.map(async (adult) => {
+      if (!adult.signatureImageUrl) return null;
+      try {
+        const signedUrl = await signStorageUrl('waiver-signatures', adult.signatureImageUrl, 300);
+        return signedUrl ? await fetchImageBuffer(signedUrl) : null;
+      } catch {
+        return null; // Fallback to typed signature
+      }
+    }),
+  );
 
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -323,60 +350,83 @@ export async function generateWaiverPdf(data: WaiverPdfData): Promise<Buffer> {
     }
     doc.y = detailCardY + detailCardH + 14;
 
-    // ── Children table ──
-    ensureSpace(doc, 60);
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(PURPLE_DARK)
-      .text('Children Covered by This Waiver', MARGIN, doc.y, { width: CONTENT_WIDTH });
-    doc.moveDown(0.35);
+    // ── Minors tables (kids, then teens) ──
+    const drawMinorsTable = (title: string, minors: Array<{ name: string; birthDate?: string; gender?: string }>) => {
+      ensureSpace(doc, 60);
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(PURPLE_DARK)
+        .text(title, MARGIN, doc.y, { width: CONTENT_WIDTH });
+      doc.moveDown(0.35);
 
-    const tableX = MARGIN;
-    const colWidths = [30, 200, 130, 144];
-    const tableHeaderY = doc.y;
-    const headerH = 22;
+      const tableX = MARGIN;
+      const colWidths = [30, 200, 130, 144];
+      const tableHeaderY = doc.y;
+      const headerH = 22;
 
-    roundedRect(doc, tableX, tableHeaderY, CONTENT_WIDTH, headerH, {
-      fill: PURPLE_LIGHT, radius: 5,
-    });
+      roundedRect(doc, tableX, tableHeaderY, CONTENT_WIDTH, headerH, {
+        fill: PURPLE_LIGHT, radius: 5,
+      });
 
-    const headers = ['#', 'Name', 'Date of Birth', 'Gender'];
-    let colX = tableX + 8;
-    for (let i = 0; i < headers.length; i++) {
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(PURPLE_DARK)
-        .text(headers[i]!, colX, tableHeaderY + 6, { width: colWidths[i]! - 8 });
-      colX += colWidths[i]!;
-    }
-
-    let tableRowY = tableHeaderY + headerH;
-    for (let i = 0; i < data.children.length; i++) {
-      ensureSpace(doc, 20);
-      if (doc.y > tableRowY) tableRowY = doc.y;
-
-      const child = data.children[i]!;
-      const dob = child.birthDate ? formatDobDisplay(child.birthDate) : 'N/A';
-      const gender = child.gender || '--';
-      const rowBg = i % 2 === 0 ? '#ffffff' : BG_LIGHT;
-      const tblRowH = 22;
-
-      doc.save();
-      doc.rect(tableX, tableRowY, CONTENT_WIDTH, tblRowH).fill(rowBg);
-      doc.restore();
-
-      colX = tableX + 8;
-      const vals = [`${i + 1}`, child.name, dob, gender];
-      for (let j = 0; j < vals.length; j++) {
-        doc.font('Helvetica').fontSize(8.5).fillColor(TEXT_PRIMARY)
-          .text(vals[j]!, colX, tableRowY + 5, { width: colWidths[j]! - 8 });
-        colX += colWidths[j]!;
+      const headers = ['#', 'Name', 'Date of Birth', 'Gender'];
+      let colX = tableX + 8;
+      for (let i = 0; i < headers.length; i++) {
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(PURPLE_DARK)
+          .text(headers[i]!, colX, tableHeaderY + 6, { width: colWidths[i]! - 8 });
+        colX += colWidths[i]!;
       }
-      tableRowY += tblRowH;
+
+      let tableRowY = tableHeaderY + headerH;
+      for (let i = 0; i < minors.length; i++) {
+        ensureSpace(doc, 20);
+        if (doc.y > tableRowY) tableRowY = doc.y;
+
+        const child = minors[i]!;
+        const dob = child.birthDate ? formatDobDisplay(child.birthDate) : 'N/A';
+        const gender = child.gender || '--';
+        const rowBg = i % 2 === 0 ? '#ffffff' : BG_LIGHT;
+        const tblRowH = 22;
+
+        doc.save();
+        doc.rect(tableX, tableRowY, CONTENT_WIDTH, tblRowH).fill(rowBg);
+        doc.restore();
+
+        colX = tableX + 8;
+        const vals = [`${i + 1}`, child.name, dob, gender];
+        for (let j = 0; j < vals.length; j++) {
+          doc.font('Helvetica').fontSize(8.5).fillColor(TEXT_PRIMARY)
+            .text(vals[j]!, colX, tableRowY + 5, { width: colWidths[j]! - 8 });
+          colX += colWidths[j]!;
+        }
+        tableRowY += tblRowH;
+      }
+
+      // Table bottom border
+      doc.save()
+        .moveTo(tableX, tableRowY).lineTo(tableX + CONTENT_WIDTH, tableRowY)
+        .lineWidth(0.5).strokeColor(BORDER).stroke()
+        .restore();
+      doc.y = tableRowY + 14;
+    };
+
+    const teens = data.teens ?? [];
+    if (data.children.length > 0 || teens.length === 0) {
+      drawMinorsTable('Children (Ages 0-12) Covered by This Waiver', data.children);
+    }
+    if (teens.length > 0) {
+      drawMinorsTable('Teens (Ages 13-17) Covered by This Waiver - Signed for by Parent/Guardian', teens);
     }
 
-    // Table bottom border
-    doc.save()
-      .moveTo(tableX, tableRowY).lineTo(tableX + CONTENT_WIDTH, tableRowY)
-      .lineWidth(0.5).strokeColor(BORDER).stroke()
-      .restore();
-    doc.y = tableRowY + 14;
+    // ── Additional adults list ──
+    if (additionalAdults.length > 0) {
+      ensureSpace(doc, 30 + additionalAdults.length * 14);
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(PURPLE_DARK)
+        .text('Additional Adults (18+) - Each Signed for Themselves', MARGIN, doc.y, { width: CONTENT_WIDTH });
+      doc.moveDown(0.2);
+      additionalAdults.forEach((adult, i) => {
+        doc.font('Helvetica').fontSize(8.5).fillColor(TEXT_PRIMARY)
+          .text(`${i + 1}.  ${adult.name}`, MARGIN + 10, doc.y, { width: CONTENT_WIDTH - 10 });
+      });
+      doc.moveDown(0.6);
+    }
 
     // ── Accepted policies ──
     if (data.acceptedPolicies.length > 0) {
@@ -392,41 +442,65 @@ export async function generateWaiverPdf(data: WaiverPdfData): Promise<Buffer> {
       doc.moveDown(0.5);
     }
 
-    // ── Digital signature ──
-    ensureSpace(doc, 100);
-    divider(doc, BORDER);
+    // ── Digital signatures (guardian, then each additional adult) ──
+    const drawSignatureBox = (
+      heading: string,
+      image: Buffer | null,
+      typed: string,
+      signedAtIso: string,
+    ) => {
+      ensureSpace(doc, 100);
+      divider(doc, BORDER);
 
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(PURPLE_DARK)
-      .text('Digital Signature', MARGIN, doc.y, { width: CONTENT_WIDTH });
-    doc.moveDown(0.3);
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(PURPLE_DARK)
+        .text(heading, MARGIN, doc.y, { width: CONTENT_WIDTH });
+      doc.moveDown(0.3);
 
-    const sigBoxY = doc.y;
-    const sigBoxW = CONTENT_WIDTH;
-    const sigBoxH = signatureImageBuffer ? 65 : 40;
+      const sigBoxY = doc.y;
+      const sigBoxW = CONTENT_WIDTH;
+      const sigBoxH = image ? 65 : 40;
 
-    roundedRect(doc, MARGIN, sigBoxY, sigBoxW, sigBoxH, {
-      fill: '#ffffff', stroke: PURPLE, radius: 8, lineWidth: 1,
-    });
-
-    doc.font('Helvetica').fontSize(6.5).fillColor(TEXT_MUTED)
-      .text('Signed by:', MARGIN + 10, sigBoxY + 5);
-
-    if (signatureImageBuffer) {
-      doc.image(signatureImageBuffer, MARGIN + 10, sigBoxY + 16, {
-        fit: [sigBoxW - 24, sigBoxH - 22],
+      roundedRect(doc, MARGIN, sigBoxY, sigBoxW, sigBoxH, {
+        fill: '#ffffff', stroke: PURPLE, radius: 8, lineWidth: 1,
       });
-    } else {
-      doc.font('Courier-Bold').fontSize(16).fillColor(SIGNATURE_BLUE)
-        .text(data.signature, MARGIN + 10, sigBoxY + 16, { width: sigBoxW - 24 });
-    }
 
-    // Verification info — below signature box
-    doc.y = sigBoxY + sigBoxH + 6;
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(GREEN_CHECK)
-      .text('\u2022 Digitally Signed', MARGIN + 10, doc.y);
-    doc.font('Helvetica').fontSize(7.5).fillColor(TEXT_SECONDARY)
-      .text(`${formatDateTimeET(data.signedAt)}    |    IP: ${data.ipAddress}`, MARGIN + 10, doc.y);
-    doc.moveDown(0.5);
+      doc.font('Helvetica').fontSize(6.5).fillColor(TEXT_MUTED)
+        .text('Signed by:', MARGIN + 10, sigBoxY + 5);
+
+      if (image) {
+        doc.image(image, MARGIN + 10, sigBoxY + 16, {
+          fit: [sigBoxW - 24, sigBoxH - 22],
+        });
+      } else {
+        doc.font('Courier-Bold').fontSize(16).fillColor(SIGNATURE_BLUE)
+          .text(typed, MARGIN + 10, sigBoxY + 16, { width: sigBoxW - 24 });
+      }
+
+      // Verification info — below signature box
+      doc.y = sigBoxY + sigBoxH + 6;
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(GREEN_CHECK)
+        .text('\u2022 Digitally Signed', MARGIN + 10, doc.y);
+      doc.font('Helvetica').fontSize(7.5).fillColor(TEXT_SECONDARY)
+        .text(`${formatDateTimeET(signedAtIso)}    |    IP: ${data.ipAddress}`, MARGIN + 10, doc.y);
+      doc.moveDown(0.5);
+    };
+
+    drawSignatureBox(
+      additionalAdults.length > 0 || teens.length > 0
+        ? `Parent / Guardian Signature - ${data.guardianName} (for self and all minors listed)`
+        : 'Digital Signature',
+      signatureImageBuffer,
+      data.signature,
+      data.signedAt,
+    );
+    additionalAdults.forEach((adult, i) => {
+      drawSignatureBox(
+        `Additional Adult Signature - ${adult.name}`,
+        adultSignatureBuffers[i] ?? null,
+        adult.typedSignature || adult.name,
+        adult.signedAt || data.signedAt,
+      );
+    });
 
     // ── Waiver reference footer card ──
     ensureSpace(doc, 50);

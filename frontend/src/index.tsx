@@ -11,6 +11,11 @@ import { CheckoutProvider } from "./context/CheckoutContext";
 import { WaiverAuthProvider } from "./context/WaiverAuthContext";
 import { swrConfig } from "./lib/swr";
 import reportWebVitals from "./reportWebVitals";
+import { installGlobalErrorLogging } from "./api/client-logs";
+
+// Catch errors that never reach React (async failures, third-party SDKs such as
+// Square's payment iframe, unhandled rejections) and report them server-side.
+installGlobalErrorLogging();
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 root.render(

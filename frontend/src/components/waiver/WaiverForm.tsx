@@ -17,12 +17,23 @@ interface ChildForm {
   gender: string;
 }
 
+interface AdultForm {
+  id: string; // Frontend ID for React key
+  name: string;
+  signatureImage: string | null;
+}
+
+type PersonErrors = { [id: string]: { name?: string; birthDate?: string } };
+
 interface FieldErrors {
   guardianName?: string;
   guardianPhone?: string;
   guardianDob?: string;
   relationship?: string;
-  childErrors?: { [childId: string]: { name?: string; birthDate?: string } };
+  childErrors?: PersonErrors;
+  hasTeens?: string;
+  teenErrors?: PersonErrors;
+  adultErrors?: { [adultId: string]: { name?: string; signature?: string } };
 }
 
 const TERMS_POLICY = 'terms_conditions';
@@ -67,9 +78,25 @@ const isParentAgeValid = (birthDate: string): boolean => {
   return calculateAge(birthDate) >= 18;
 };
 
-const isChildAgeValid = (birthDate: string): boolean => {
+// Kids are 0-12, teens 13-17; anyone 18+ is an adult who signs for themselves
+const KID_MAX_AGE = 12;
+const TEEN_MIN_AGE = 13;
+const TEEN_MAX_AGE = 17;
+const ADULT_AGE_MESSAGE = 'Anyone 18 or older must be added as an adult below and sign for themselves.';
+
+const kidAgeError = (birthDate: string): string | undefined => {
   const age = calculateAge(birthDate);
-  return age >= 0 && age <= 13;
+  if (age > TEEN_MAX_AGE) return ADULT_AGE_MESSAGE;
+  if (age > KID_MAX_AGE) return 'Kids must be 0-12 years old. Add ages 13-17 in the teen section below.';
+  if (age < 0) return 'Birth date cannot be in the future.';
+  return undefined;
+};
+
+const teenAgeError = (birthDate: string): string | undefined => {
+  const age = calculateAge(birthDate);
+  if (age > TEEN_MAX_AGE) return ADULT_AGE_MESSAGE;
+  if (age < TEEN_MIN_AGE) return 'Teens must be 13-17 years old. Add younger children in the kids section above.';
+  return undefined;
 };
 
 const createId = () =>
@@ -88,6 +115,8 @@ interface InitialChild {
 export interface WaiverResult {
   waiverCode: string;
   childCount: number;
+  teens?: Array<{ name: string; birthDate: string; gender?: string }>;
+  additionalAdults?: Array<{ name: string }>;
   signedAt: string;
   id: number;
   guardianName: string;
@@ -108,6 +137,7 @@ interface WaiverFormProps {
   initialMarketingOptIn?: boolean;
   initialSignature?: string;
   initialChildren?: InitialChild[];
+  initialTeens?: InitialChild[];
   onSubmitted?: (data: WaiverResult) => void;
   onGoBack?: () => void;
 }
@@ -122,6 +152,7 @@ export function WaiverForm({
   initialMarketingOptIn,
   initialSignature,
   initialChildren,
+  initialTeens,
   onSubmitted,
   onGoBack,
 }: WaiverFormProps) {
@@ -134,23 +165,27 @@ export function WaiverForm({
   const defaultSignature = ((initialSignature ?? defaultGuardianName) || fallbackName).trim();
   const todayIso = getNewYorkDateIso();
 
-  const initialChildrenRef = useRef<ChildForm[]>(
-    (initialChildren && initialChildren.length > 0
-      ? initialChildren
-      : [{ id: undefined, name: '', birthDate: '', gender: '' }]
-    ).map((child) => {
-      // Parse childId from either childId field or id field (if numeric)
-      const parsedChildId = child.childId ?? (child.id ? parseInt(child.id, 10) : undefined);
-      const childId = parsedChildId && !isNaN(parsedChildId) ? parsedChildId : undefined;
-      return {
-        id: child.id ?? createId(),
-        childId,
-        name: (child.name ?? '').trim(),
-        birthDate: toDateInputValue(child.birthDate),
-        gender: child.gender ?? '',
-      };
-    })
-  );
+  const toChildForm = (child: InitialChild): ChildForm => {
+    // Parse childId from either childId field or id field (if numeric)
+    const parsedChildId = child.childId ?? (child.id ? parseInt(child.id, 10) : undefined);
+    const childId = parsedChildId && !isNaN(parsedChildId) ? parsedChildId : undefined;
+    return {
+      id: child.id ?? createId(),
+      childId,
+      name: (child.name ?? '').trim(),
+      birthDate: toDateInputValue(child.birthDate),
+      gender: child.gender ?? '',
+    };
+  };
+  // Saved minors are re-sorted by today's age, so a kid who has turned 13 moves to the teen list
+  const savedMinors = [...(initialChildren ?? []), ...(initialTeens ?? [])].map(toChildForm);
+  const isSavedTeen = (child: ChildForm) => Boolean(child.birthDate) && calculateAge(child.birthDate) >= TEEN_MIN_AGE;
+  const savedKids = savedMinors.filter((child) => !isSavedTeen(child));
+  const savedTeens = savedMinors.filter(isSavedTeen);
+  const blankMinor = (): ChildForm => ({ id: createId(), childId: undefined, name: '', birthDate: '', gender: '' });
+
+  const initialChildrenRef = useRef<ChildForm[]>(savedKids.length > 0 ? savedKids : [blankMinor()]);
+  const initialTeensRef = useRef<ChildForm[]>(savedTeens);
 
   const initialValuesRef = useRef({
     guardianName: defaultGuardianName,
@@ -171,9 +206,17 @@ export function WaiverForm({
   const [children, setChildren] = useState<ChildForm[]>(() =>
     initialChildrenRef.current.map((child) => ({ ...child }))
   );
+  // Teens question must be answered each time: 'yes' | 'no' | '' (unanswered)
+  const [hasTeens, setHasTeens] = useState<'yes' | 'no' | ''>(initialTeensRef.current.length > 0 ? 'yes' : '');
+  const [teens, setTeens] = useState<ChildForm[]>(() =>
+    initialTeensRef.current.length > 0 ? initialTeensRef.current.map((teen) => ({ ...teen })) : [blankMinor()]
+  );
+  // Additional adults always start empty: nobody's signature is carried over from a past visit
+  const [adults, setAdults] = useState<AdultForm[]>([]);
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [signatureImage, setSignatureImage] = useState<string | null>(null);
-  const [signaturePadOpen, setSignaturePadOpen] = useState(false);
+  // Whose signature the pad is capturing: 'guardian' or an additional adult's id
+  const [signingFor, setSigningFor] = useState<string | null>(null);
   const [status, setStatus] = useState<{ type: 'idle' | 'success' | 'error'; message?: string }>({
     type: 'idle',
   });
@@ -194,6 +237,35 @@ export function WaiverForm({
     );
   };
 
+  const addTeen = () => {
+    setTeens((prev) => [...prev, blankMinor()]);
+  };
+
+  const removeTeen = (id: string) => {
+    setTeens((prev) => (prev.length === 1 ? prev : prev.filter((teen) => teen.id !== id)));
+  };
+
+  const updateTeen = (id: string, field: keyof ChildForm, value: string) => {
+    setTeens((prev) => prev.map((teen) => (teen.id === id ? { ...teen, [field]: value } : teen)));
+  };
+
+  const addAdult = () => {
+    setAdults((prev) => [...prev, { id: createId(), name: '', signatureImage: null }]);
+  };
+
+  const removeAdult = (id: string) => {
+    setAdults((prev) => prev.filter((adult) => adult.id !== id));
+  };
+
+  // Changing an adult's name clears their signature, so it always belongs to the named person
+  const updateAdultName = (id: string, name: string) => {
+    setAdults((prev) => prev.map((adult) => (adult.id === id ? { ...adult, name, signatureImage: null } : adult)));
+  };
+
+  const signingAdult = signingFor && signingFor !== 'guardian'
+    ? adults.find((adult) => adult.id === signingFor)
+    : undefined;
+
   const resetForm = () => {
     setGuardianName(initialValuesRef.current.guardianName);
     setGuardianEmail(initialValuesRef.current.guardianEmail);
@@ -202,6 +274,9 @@ export function WaiverForm({
     setRelationship(initialValuesRef.current.relationship);
     setMarketingOptIn(initialValuesRef.current.marketingOptIn);
     setChildren(initialChildrenRef.current.map((child) => ({ ...child })));
+    setHasTeens(initialTeensRef.current.length > 0 ? 'yes' : '');
+    setTeens(initialTeensRef.current.length > 0 ? initialTeensRef.current.map((teen) => ({ ...teen })) : [blankMinor()]);
+    setAdults([]);
     setAcceptTerms(false);
     setSignatureImage(null);
   };
@@ -258,46 +333,83 @@ export function WaiverForm({
       return;
     }
 
-    // Validate that all children have required fields
-    const validChildren = children.filter(
-      (child) => child.name.trim() && child.birthDate
-    );
-    if (validChildren.length === 0) {
-      setStatus({ type: 'error', message: 'Please add at least one child with name and birth date.' });
+    // Teens question must be answered
+    if (!hasTeens) {
+      errors.hasTeens = 'Please answer whether any teens (ages 13-17) are with you.';
+    }
+    const activeTeens = hasTeens === 'yes' ? teens : [];
+
+    const validChildren = children.filter((child) => child.name.trim() && child.birthDate);
+    const validTeens = activeTeens.filter((teen) => teen.name.trim() && teen.birthDate);
+
+    // Check for incomplete kid/teen entries
+    const isIncomplete = (person: ChildForm) =>
+      (person.name.trim() && !person.birthDate) || (!person.name.trim() && person.birthDate);
+    if (children.some(isIncomplete) || activeTeens.some(isIncomplete)) {
+      setStatus({ type: 'error', message: 'Please complete all child and teen entries or remove incomplete ones.' });
       return;
     }
 
-    // Check for incomplete children entries
-    const incompleteChildren = children.some(
-      (child) => (child.name.trim() && !child.birthDate) || (!child.name.trim() && child.birthDate)
-    );
-    if (incompleteChildren) {
-      setStatus({ type: 'error', message: 'Please complete all child entries or remove incomplete ones.' });
+    if (hasTeens === 'yes' && validTeens.length === 0) {
+      errors.hasTeens = 'Add each teen (ages 13-17) with their name and birth date, or answer No.';
+    }
+
+    if (hasTeens && validChildren.length + validTeens.length === 0) {
+      setStatus({ type: 'error', message: 'Please add at least one child or teen with name and birth date.' });
       return;
     }
 
-    // Validate children (name letters only, age 0-13)
-    const childErrors: { [childId: string]: { name?: string; birthDate?: string } } = {};
-    for (const child of children) {
-      if (child.name.trim() || child.birthDate) {
-        const childErr: { name?: string; birthDate?: string } = {};
-
-        if (child.name.trim() && !isLettersOnly(child.name.trim())) {
-          childErr.name = 'Child name must contain only letters.';
+    // Validate kids (name letters only, age 0-12) and teens (age 13-17)
+    const validatePeople = (people: ChildForm[], ageError: (birthDate: string) => string | undefined) => {
+      const peopleErrors: PersonErrors = {};
+      for (const person of people) {
+        if (!person.name.trim() && !person.birthDate) continue;
+        const personErr: { name?: string; birthDate?: string } = {};
+        if (person.name.trim() && !isLettersOnly(person.name.trim())) {
+          personErr.name = 'Name must contain only letters.';
         }
-
-        if (child.birthDate && !isChildAgeValid(child.birthDate)) {
-          childErr.birthDate = 'Child age must be between 0 and 13 years.';
+        if (person.birthDate) {
+          personErr.birthDate = ageError(person.birthDate);
         }
-
-        if (childErr.name || childErr.birthDate) {
-          childErrors[child.id] = childErr;
+        if (personErr.name || personErr.birthDate) {
+          peopleErrors[person.id] = personErr;
         }
       }
-    }
+      return peopleErrors;
+    };
 
+    const childErrors = validatePeople(children, kidAgeError);
     if (Object.keys(childErrors).length > 0) {
       errors.childErrors = childErrors;
+    }
+    const teenErrors = validatePeople(activeTeens, teenAgeError);
+    if (Object.keys(teenErrors).length > 0) {
+      errors.teenErrors = teenErrors;
+    }
+
+    // Every additional adult needs a name and their own signature, and appears once
+    const adultErrors: NonNullable<FieldErrors['adultErrors']> = {};
+    const seenAdultNames = new Set([guardianName.trim().toLowerCase()]);
+    for (const adult of adults) {
+      const adultErr: { name?: string; signature?: string } = {};
+      const name = adult.name.trim();
+      if (!name) {
+        adultErr.name = 'Full name is required.';
+      } else if (!isLettersOnly(name)) {
+        adultErr.name = 'Name must contain only letters, spaces, hyphens, or apostrophes.';
+      } else if (seenAdultNames.has(name.toLowerCase())) {
+        adultErr.name = 'This person is already on the waiver. Each adult is listed once.';
+      }
+      if (name) seenAdultNames.add(name.toLowerCase());
+      if (!adult.signatureImage) {
+        adultErr.signature = `${name || 'This adult'} must sign for themselves.`;
+      }
+      if (adultErr.name || adultErr.signature) {
+        adultErrors[adult.id] = adultErr;
+      }
+    }
+    if (Object.keys(adultErrors).length > 0) {
+      errors.adultErrors = adultErrors;
     }
 
     // If there are any validation errors, show them and return
@@ -325,6 +437,16 @@ export function WaiverForm({
           birthDate: child.birthDate,
           gender: child.gender || undefined,
         })),
+        teens: validTeens.map((teen) => ({
+          childId: teen.childId,
+          name: teen.name.trim(),
+          birthDate: teen.birthDate,
+          gender: teen.gender || undefined,
+        })),
+        additionalAdults: adults.map((adult) => ({
+          name: adult.name.trim(),
+          signatureImage: adult.signatureImage as string,
+        })),
       };
 
       const response = await apiPost<{
@@ -332,7 +454,7 @@ export function WaiverForm({
         waiverCode?: string;
         signedAt?: string;
         children?: Array<{ name: string }>;
-      }, typeof payload>('/waivers', payload);
+      }, typeof payload>('/waivers', payload, undefined, { preferWaiverToken: true });
       await refreshProfile();
       initialValuesRef.current = {
         guardianName,
@@ -344,6 +466,7 @@ export function WaiverForm({
         marketingOptIn,
       };
       initialChildrenRef.current = children.map((child) => ({ ...child }));
+      initialTeensRef.current = validTeens.map((teen) => ({ ...teen }));
       setStatus({ type: 'success', message: 'Waiver submitted successfully!' });
       if (onSubmitted) {
         const waiverResult: WaiverResult = {
@@ -361,6 +484,12 @@ export function WaiverForm({
             birthDate: c.birthDate,
             gender: c.gender || undefined,
           })),
+          teens: validTeens.map((t) => ({
+            name: t.name.trim(),
+            birthDate: t.birthDate,
+            gender: t.gender || undefined,
+          })),
+          additionalAdults: adults.map((a) => ({ name: a.name.trim() })),
         };
         // Let parent handle navigation
         setTimeout(() => {
@@ -478,7 +607,7 @@ export function WaiverForm({
 
       <div className={styles.section}>
         <h2>Children covered by this waiver</h2>
-        <p className={styles.helper}>Add each child who will be playing at Playfunia. Children must be 0-13 years old.</p>
+        <p className={styles.helper}>Add each child who will be playing at Playfunia. Children must be 0-12 years old.</p>
         <div className={styles.childrenList}>
           {children.map((child) => (
             <div key={child.id} className={styles.childRow}>
@@ -543,6 +672,185 @@ export function WaiverForm({
       </div>
 
       <div className={styles.section}>
+        <h2>Teens (ages 13-17)</h2>
+        <fieldset className={styles.questionGroup}>
+          <legend className={styles.questionLabel}>
+            Are there any teens (ages 13-17) with you? You must add them here. <span className={styles.required}>*</span>
+          </legend>
+          <div className={styles.choiceRow}>
+            <label className={`${styles.choice} ${hasTeens === 'yes' ? styles.choiceActive : ''}`}>
+              <input
+                type="radio"
+                name="hasTeens"
+                value="yes"
+                checked={hasTeens === 'yes'}
+                onChange={() => setHasTeens('yes')}
+              />
+              Yes
+            </label>
+            <label className={`${styles.choice} ${hasTeens === 'no' ? styles.choiceActive : ''}`}>
+              <input
+                type="radio"
+                name="hasTeens"
+                value="no"
+                checked={hasTeens === 'no'}
+                onChange={() => setHasTeens('no')}
+              />
+              No
+            </label>
+          </div>
+          {fieldErrors.hasTeens && <span className={styles.fieldError}>{fieldErrors.hasTeens}</span>}
+        </fieldset>
+        {hasTeens === 'yes' && (
+          <>
+            <p className={styles.helper}>
+              The parent/guardian signs for each teen. Anyone 18 or older must be added as an adult below.
+            </p>
+            <div className={styles.childrenList}>
+              {teens.map((teen) => (
+                <div key={teen.id} className={styles.childRow}>
+                  <label>
+                    Teen name <span className={styles.required}>*</span>
+                    <input
+                      type="text"
+                      value={teen.name}
+                      onChange={(event) => updateTeen(teen.id, 'name', event.target.value.replace(/[^A-Za-zÀ-ÿ\s'-]/g, ''))}
+                      required
+                      maxLength={100}
+                      pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                      title="Letters, spaces, hyphens, and apostrophes only"
+                      className={fieldErrors.teenErrors?.[teen.id]?.name ? styles.inputError : ''}
+                    />
+                    {fieldErrors.teenErrors?.[teen.id]?.name && (
+                      <span className={styles.fieldError}>{fieldErrors.teenErrors[teen.id].name}</span>
+                    )}
+                  </label>
+                  <label>
+                    Birth date <span className={styles.required}>*</span>
+                    <input
+                      type="date"
+                      max={todayIso}
+                      value={teen.birthDate}
+                      onChange={(event) => updateTeen(teen.id, 'birthDate', event.target.value)}
+                      required
+                      className={fieldErrors.teenErrors?.[teen.id]?.birthDate ? styles.inputError : ''}
+                    />
+                    {fieldErrors.teenErrors?.[teen.id]?.birthDate && (
+                      <span className={styles.fieldError}>{fieldErrors.teenErrors[teen.id].birthDate}</span>
+                    )}
+                  </label>
+                  <label>
+                    Gender (optional)
+                    <select
+                      value={teen.gender}
+                      onChange={(event) => updateTeen(teen.id, 'gender', event.target.value)}
+                    >
+                      <option value="">Prefer not to say</option>
+                      <option value="Female">Female</option>
+                      <option value="Male">Male</option>
+                      <option value="Non-binary">Non-binary</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </label>
+                  {teens.length > 1 && (
+                    <button
+                      type="button"
+                      className={styles.removeButton}
+                      onClick={() => removeTeen(teen.id)}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button type="button" className={styles.addButton} onClick={addTeen}>
+              + Add another teen
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className={styles.section}>
+        <h2>Other adults (18+)</h2>
+        <p className={styles.helper}>
+          Every adult who enters must be on the waiver. Each adult signs for themselves on this device &mdash;
+          one adult cannot sign for another.
+        </p>
+        {adults.length > 0 && (
+          <div className={styles.childrenList}>
+            {adults.map((adult, index) => {
+              const adultError = fieldErrors.adultErrors?.[adult.id];
+              const displayName = adult.name.trim() || `Adult ${index + 2}`;
+              return (
+                <div key={adult.id} className={styles.adultRow}>
+                  <label>
+                    Full name <span className={styles.required}>*</span>
+                    <input
+                      type="text"
+                      value={adult.name}
+                      onChange={(event) => updateAdultName(adult.id, event.target.value.replace(/[^A-Za-zÀ-ÿ\s'-]/g, ''))}
+                      required
+                      maxLength={200}
+                      pattern="[A-Za-zÀ-ÿ\s'\-]+"
+                      title="Letters, spaces, hyphens, and apostrophes only"
+                      autoComplete="off"
+                      className={adultError?.name ? styles.inputError : ''}
+                    />
+                    {adultError?.name && <span className={styles.fieldError}>{adultError.name}</span>}
+                  </label>
+                  <div className={styles.adultSignature}>
+                    <span className={styles.adultSignatureLabel}>
+                      Signature of {displayName} <span className={styles.required}>*</span>
+                    </span>
+                    {adult.signatureImage ? (
+                      <div className={styles.signaturePreview}>
+                        <img
+                          src={adult.signatureImage}
+                          alt={`Signature of ${displayName}`}
+                          className={styles.signaturePreviewImage}
+                        />
+                        <button
+                          type="button"
+                          className={styles.resignButton}
+                          onClick={() => setSigningFor(adult.id)}
+                        >
+                          Re-sign
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className={styles.signButton}
+                        onClick={() => setSigningFor(adult.id)}
+                        disabled={!adult.name.trim()}
+                      >
+                        {adult.name.trim() ? `Hand the tablet to ${adult.name.trim()} to sign` : 'Enter their name, then tap to sign'}
+                      </button>
+                    )}
+                    {adultError?.signature && <span className={styles.fieldError}>{adultError.signature}</span>}
+                    <p className={styles.helperSmall}>
+                      By signing, {displayName} confirms they are 18 or older, have read and agree to this waiver, and are signing for themselves.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.removeButton}
+                    onClick={() => removeAdult(adult.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button type="button" className={styles.addButton} onClick={addAdult}>
+          + Add another adult
+        </button>
+      </div>
+
+      <div className={styles.section}>
         <h2>Agreements</h2>
         <label className={styles.checkboxLabel}>
           <input
@@ -565,7 +873,7 @@ export function WaiverForm({
       </div>
 
       <div className={styles.section}>
-        <h2>Signature <span className={styles.required}>*</span></h2>
+        <h2>{adults.length > 0 ? 'Parent / Guardian signature' : 'Signature'} <span className={styles.required}>*</span></h2>
         {signatureImage ? (
           <div className={styles.signaturePreview}>
             <img
@@ -576,7 +884,7 @@ export function WaiverForm({
             <button
               type="button"
               className={styles.resignButton}
-              onClick={() => setSignaturePadOpen(true)}
+              onClick={() => setSigningFor('guardian')}
             >
               Re-sign
             </button>
@@ -585,22 +893,35 @@ export function WaiverForm({
           <button
             type="button"
             className={styles.signButton}
-            onClick={() => setSignaturePadOpen(true)}
+            onClick={() => setSigningFor('guardian')}
           >
             Tap to Sign
           </button>
         )}
         <p className={styles.helperSmall}>
-          Your handwritten signature will be captured and included in the waiver document.
+          {adults.length > 0 || hasTeens === 'yes'
+            ? 'The parent/guardian signs for themselves and for every child and teen listed above.'
+            : 'Your handwritten signature will be captured and included in the waiver document.'}
         </p>
       </div>
 
       <SignaturePadModal
-        open={signaturePadOpen}
-        onClose={() => setSignaturePadOpen(false)}
+        open={signingFor !== null}
+        signerName={
+          signingAdult
+            ? signingAdult.name.trim()
+            : adults.length > 0 ? guardianName.trim() || undefined : undefined
+        }
+        onClose={() => setSigningFor(null)}
         onAccept={(dataUrl) => {
-          setSignatureImage(dataUrl);
-          setSignaturePadOpen(false);
+          if (signingFor === 'guardian') {
+            setSignatureImage(dataUrl);
+          } else if (signingFor) {
+            setAdults((prev) =>
+              prev.map((adult) => (adult.id === signingFor ? { ...adult, signatureImage: dataUrl } : adult))
+            );
+          }
+          setSigningFor(null);
         }}
       />
 

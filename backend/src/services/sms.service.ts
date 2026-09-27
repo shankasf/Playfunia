@@ -1,5 +1,7 @@
 import twilio from 'twilio';
+import { DateTime } from 'luxon';
 import { appConfig } from '../config/env';
+import { PromotionRepository } from '../repositories';
 
 // Initialize Twilio client - lazy initialized
 let twilioClient: twilio.Twilio | null = null;
@@ -367,16 +369,68 @@ export async function sendWaiverConfirmationSms(data: WaiverSmsData, notificatio
 // Birthday offer marketing SMS — sent after every waiver sign for new and
 // returning customers. The body already ends with "Reply STOP to opt out."
 // so withStopFooter() will not double-append.
+//
+// The promo code and discount are NOT hardcoded: they are resolved from the
+// promotions table at send time, so the monthly codes the admin sets up roll
+// over on their own and an expired campaign is never sent.
 export interface BirthdayOfferSmsData {
   phone: string;
   guardianName: string;
 }
 
+// Minimal shape of a promotions row needed to render the offer copy.
+export interface BirthdayOfferPromo {
+  code: string;
+  percent_off?: number | string | null;
+  amount_off_usd?: number | string | null;
+}
+
+const BOOK_PARTY_URL = 'https://playfunia.com/book-party';
+
+function formatDiscount(promo: BirthdayOfferPromo): string | null {
+  const percent = promo.percent_off != null ? Number(promo.percent_off) : 0;
+  if (percent > 0) return `${percent % 1 === 0 ? percent.toFixed(0) : percent}%`;
+  const amount = promo.amount_off_usd != null ? Number(promo.amount_off_usd) : 0;
+  if (amount > 0) return `$${amount.toFixed(2)}`;
+  return null;
+}
+
+/**
+ * Render the birthday offer body. Keeps the wording of the approved A2P sample
+ * and only substitutes the month, code and discount. When no promotion is live
+ * (`promo` is null, or it has no usable discount) we drop the code sentence
+ * rather than send a stale offer.
+ */
+export function buildBirthdayOfferSmsBody(
+  guardianName: string,
+  promo: BirthdayOfferPromo | null,
+  now: Date = new Date(),
+): string {
+  const firstName = (guardianName || '').trim().split(/\s+/)[0] || 'there';
+  const month = DateTime.fromJSDate(now).setZone('America/New_York').toFormat('LLLL');
+  const discount = promo ? formatDiscount(promo) : null;
+  const offer = promo && discount
+    ? `Use code ${promo.code.toUpperCase()} and get ${discount} off your party booking!`
+    : 'Book your party with us and let us make it unforgettable!';
+  return `Playfunia Birthday Offer! 🎉 Hi ${firstName}, celebrating a birthday in ${month}? ${offer} Book now at ${BOOK_PARTY_URL}. Reply STOP to opt out.`;
+}
+
 export async function sendBirthdayOfferSms(data: BirthdayOfferSmsData, notificationId?: number): Promise<SendSmsResult> {
-  const firstName = (data.guardianName || '').trim().split(/\s+/)[0] || 'there';
+  const now = new Date();
+  let promo: BirthdayOfferPromo | null = null;
+  try {
+    promo = (await PromotionRepository.findActiveForCategory('party_booking', now)) as BirthdayOfferPromo | null;
+  } catch (err) {
+    // Never block the send on a promo lookup failure — fall back to the
+    // neutral copy, which is always safe to deliver.
+    console.error('[SMS] Failed to resolve active birthday promotion:', err);
+  }
+  if (!promo) {
+    console.warn('[SMS] No active party_booking promotion - sending birthday offer without a code');
+  }
   return sendSms({
     to: data.phone,
-    body: `Playfunia Birthday Offer! 🎉 Hi ${firstName}, celebrating a birthday in May? Use code MAY10 and get 10% off your party booking! Book now at https://playfunia.com/book-party. Reply STOP to opt out.`,
+    body: buildBirthdayOfferSmsBody(data.guardianName, promo, now),
     notificationId,
   });
 }

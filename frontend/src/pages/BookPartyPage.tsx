@@ -24,10 +24,18 @@ import {
 } from '../api/bookings';
 import { addChild } from '../api/users';
 import { getPartyAddOns, getPricingConfig, type PartyAddOnPricing, type PricingConfig } from '../api/pricing';
+import { StrikePrice } from '../components/common/StrikePrice';
 import styles from './BookPartyPage.module.css';
 
 const PARTY_LOCATIONS = ['Albany'] as const;
 const BOOKING_STATE_KEY = 'playfunia_booking_state';
+
+// Mon-Fri party dates get the weekday package discount (the server applies the
+// actual price; this only drives the preview before an estimate is loaded)
+function isWeekdayDate(date: Date): boolean {
+  const day = date.getDay();
+  return day >= 1 && day <= 5;
+}
 
 /** Format a Date to YYYY-MM-DD using local date components (avoids toISOString UTC shift) */
 function toLocalISODate(date: Date): string {
@@ -204,6 +212,11 @@ const PACKAGE_QUICK_TIPS: Record<string, string> = {
   'super fun': 'Party supplies included – everything you need for a fun and colorful celebration',
   'mega fun': 'Custom themed decor – tableware, balloons & more',
 };
+
+// Whole-dollar prices read cleaner on the cards ($399, not $399.00)
+function formatPackagePrice(value: number): string {
+  return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
+}
 
 function getPackageQuickTip(name: string): string | null {
   return PACKAGE_QUICK_TIPS[name.trim().toLowerCase()] ?? null;
@@ -598,6 +611,7 @@ export function BookPartyPage() {
           guests: Math.max(packageQty * (selectedPackage?.maxGuests ?? 12), 1),
           extraAdults: extraAdultQty,
           addOns: addOnPayload.length > 0 ? addOnPayload : undefined,
+          eventDate: selectedDate ? toLocalISODate(selectedDate) : undefined,
         });
         if (!active) return;
         setEstimate(result);
@@ -615,7 +629,7 @@ export function BookPartyPage() {
     }
     calculateEstimate();
     return () => { active = false; };
-  }, [selectedPackageId, location, packageQty, extraAdultQty, addOnPayload, selectedPackage?.maxGuests]);
+  }, [selectedPackageId, location, packageQty, extraAdultQty, addOnPayload, selectedPackage?.maxGuests, selectedDate]);
 
   // Generate calendar days for the modal monthly calendar
   const calendarDays = useMemo(() => {
@@ -838,6 +852,9 @@ export function BookPartyPage() {
         // Pricing breakdown for display
         durationMinutes: selectedPackage?.durationMinutes,
         basePrice: estimate?.basePrice ?? selectedPackage?.basePrice,
+        originalBasePrice: estimate?.isWeekdayDiscount ? estimate.originalBasePrice : undefined,
+        weekdayDiscount: estimate?.isWeekdayDiscount ? estimate.weekdayDiscount : undefined,
+        weekdayDiscountPercent: estimate?.isWeekdayDiscount ? estimate.weekdayDiscountPercent : undefined,
         extraAdultCount: extraAdultQty,
         extraAdultFee: estimate?.extraAdultFee,
         extraAdultTotal: estimate?.extraAdultTotal,
@@ -875,6 +892,9 @@ export function BookPartyPage() {
         // Pricing breakdown for display
         durationMinutes: selectedPackage?.durationMinutes,
         basePrice: estimate?.basePrice ?? selectedPackage?.basePrice,
+        originalBasePrice: estimate?.isWeekdayDiscount ? estimate.originalBasePrice : undefined,
+        weekdayDiscount: estimate?.isWeekdayDiscount ? estimate.weekdayDiscount : undefined,
+        weekdayDiscountPercent: estimate?.isWeekdayDiscount ? estimate.weekdayDiscountPercent : undefined,
         extraAdultCount: extraAdultQty,
         extraAdultFee: estimate?.extraAdultFee,
         extraAdultTotal: estimate?.extraAdultTotal,
@@ -979,6 +999,8 @@ export function BookPartyPage() {
                 const extraAdultPrice = pkg.extraAdultPrice ?? 10;
                 const extraChildPrice = pkg.extraChildPrice ?? 40;
                 const quickTip = getPackageQuickTip(pkg.name);
+                const guestsIncluded = pkg.maxGuests ?? 10;
+                const hasWeekdayPrice = (pkg.weekdayDiscountPercent ?? 0) > 0 && pkg.weekdayPrice != null;
 
                 return (
                   <button
@@ -987,24 +1009,35 @@ export function BookPartyPage() {
                     className={styles.packageCard}
                     onClick={() => openModal(pkg)}
                   >
-                    <div className={styles.packageCardHeader}>
-                      <h3>{pkg.name}</h3>
-                      <span className={styles.packageCardPrice}>${pkg.basePrice}</span>
+                    <div className={styles.packageCardTop}>
+                      <h3 className={styles.packageCardName}>{pkg.name}</h3>
+                      {quickTip && <p className={styles.packageCardTagline}>{quickTip}</p>}
                     </div>
-                    {quickTip && (
-                      <div className={styles.packageQuickTip}>
-                        <span className={styles.packageQuickTipIcon} aria-hidden="true">👉</span>
-                        <span className={styles.packageQuickTipText}>{quickTip}</span>
-                      </div>
-                    )}
-                    <div className={styles.packageCardRules}>
-                      <div className={styles.packageCardRulesTitle}>What&apos;s included &amp; pricing rules</div>
-                      <ul className={styles.packageCardRulesList}>
-                        <li><strong>One adult per child included</strong></li>
-                        <li>Each additional kid is <strong>${extraChildPrice}</strong></li>
-                        <li>Each additional guest is <strong>${extraAdultPrice}</strong></li>
-                      </ul>
+                    <div className={styles.packageCardPricing}>
+                      {hasWeekdayPrice ? (
+                        <>
+                          <div className={styles.packageCardPriceRow}>
+                            <span className={styles.packageCardPrice}>{formatPackagePrice(pkg.weekdayPrice!)}</span>
+                            <s className={styles.packageCardPriceWas}>{formatPackagePrice(pkg.basePrice)}</s>
+                            <span className={styles.packageCardBadge}>{pkg.weekdayDiscountPercent}% off</span>
+                          </div>
+                          <p className={styles.packageCardPriceNote}>
+                            Mon–Fri parties · Sat–Sun {formatPackagePrice(pkg.basePrice)}
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <div className={styles.packageCardPriceRow}>
+                            <span className={styles.packageCardPrice}>{formatPackagePrice(pkg.basePrice)}</span>
+                          </div>
+                          <p className={styles.packageCardPriceNote}>per party</p>
+                        </>
+                      )}
                     </div>
+                    <p className={styles.packageCardGuests}>
+                      <strong>{guestsIncluded} kids + {guestsIncluded} adults</strong> included
+                      <span> (one adult per child)</span>
+                    </p>
                     {features.length > 0 && (
                       <ul className={styles.packageCardFeatureList}>
                         {features.map((feature, idx) => {
@@ -1023,38 +1056,43 @@ export function BookPartyPage() {
                         })}
                       </ul>
                     )}
-                    {additionalTerms.length > 0 && (
-                      <div
-                        className={styles.additionalTermsRow}
-                        onClick={(e) => toggleTerms(e, pkg.id)}
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <span>Additional Terms</span>
-                        <div className={`${styles.tooltipWrapper}${dismissedTermsId === pkg.id ? ` ${styles.tooltipDismissed}` : ''}`}>
-                          <span className={styles.tooltipIcon}>?</span>
-                          <div className={`${styles.tooltipContent}${openTermsId === pkg.id ? ` ${styles.tooltipOpen}` : ''}`}>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              className={styles.tooltipClose}
-                              onClick={(e) => closeTerms(e, pkg.id)}
-                              aria-label="Close"
-                            >
-                              &times;
-                            </span>
-                            <strong>Additional Terms</strong>
-                            <ol>
-                              {additionalTerms.map((term, idx) => (
-                                <li key={idx}><strong>{term.title}</strong> — {term.description}</li>
-                              ))}
-                            </ol>
+                    <div className={styles.packageCardFooter}>
+                      <p className={styles.packageCardExtras}>
+                        Extra kid <strong>${extraChildPrice}</strong> · Extra guest <strong>${extraAdultPrice}</strong>
+                      </p>
+                      {additionalTerms.length > 0 && (
+                        <div
+                          className={styles.additionalTermsRow}
+                          onClick={(e) => toggleTerms(e, pkg.id)}
+                          role="button"
+                          tabIndex={0}
+                        >
+                          <span>Additional Terms</span>
+                          <div className={`${styles.tooltipWrapper}${dismissedTermsId === pkg.id ? ` ${styles.tooltipDismissed}` : ''}`}>
+                            <span className={styles.tooltipIcon}>?</span>
+                            <div className={`${styles.tooltipContent}${openTermsId === pkg.id ? ` ${styles.tooltipOpen}` : ''}`}>
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                className={styles.tooltipClose}
+                                onClick={(e) => closeTerms(e, pkg.id)}
+                                aria-label="Close"
+                              >
+                                &times;
+                              </span>
+                              <strong>Additional Terms</strong>
+                              <ol>
+                                {additionalTerms.map((term, idx) => (
+                                  <li key={idx}><strong>{term.title}</strong> — {term.description}</li>
+                                ))}
+                              </ol>
+                            </div>
                           </div>
                         </div>
+                      )}
+                      <div className={styles.packageCardAction}>
+                        Select package
                       </div>
-                    )}
-                    <div className={styles.packageCardAction}>
-                      Select Package
                     </div>
                   </button>
                 );
@@ -1201,6 +1239,19 @@ export function BookPartyPage() {
                           <h3 className={styles.timeSlotsTitle}>
                             {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York' })}
                           </h3>
+                          {selectedPackage && (
+                            <p className={styles.selectTimeHint} style={{ color: '#15803d', fontWeight: 600 }}>
+                              {selectedPackage.name}:{' '}
+                              {isWeekdayDate(selectedDate) && (selectedPackage.weekdayDiscountPercent ?? 0) > 0 && selectedPackage.weekdayPrice != null ? (
+                                <>
+                                  <StrikePrice price={selectedPackage.weekdayPrice} originalPrice={selectedPackage.basePrice} />
+                                  {' '}(weekday {selectedPackage.weekdayDiscountPercent}% off)
+                                </>
+                              ) : (
+                                <>${selectedPackage.basePrice.toFixed(2)} (weekend price)</>
+                              )}
+                            </p>
+                          )}
                           {slotsLoading ? (
                             <p className={styles.slotsLoading}>Loading available times...</p>
                           ) : slotsError ? (
@@ -1255,6 +1306,16 @@ export function BookPartyPage() {
                           {formatTime(selectedSlot ?? '')} - {formatTime(getEndTime(selectedSlot ?? '', (modal.selectedPackage?.durationMinutes ?? 120) + (addOns.extraHour ? 60 : 0)))} | {selectedDate?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })}
                         </span>
                       </div>
+                      {estimate && (
+                        <div className={styles.bookingSummaryItem}>
+                          <span className={styles.bookingSummaryIcon}>🎉</span>
+                          <span>
+                            {selectedPackage?.name ?? 'Package'}:{' '}
+                            <StrikePrice price={estimate.basePrice} originalPrice={estimate.isWeekdayDiscount ? estimate.originalBasePrice : undefined} />
+                            {estimate.isWeekdayDiscount && ` (weekday ${estimate.weekdayDiscountPercent}% off)`}
+                          </span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Add-ons Section */}
@@ -1596,6 +1657,9 @@ export function BookPartyPage() {
                     <span className={styles.modalTotalAmount} style={{ color: '#dc2626' }}>Error</span>
                   ) : (
                     <span className={styles.modalTotalAmount}>${estimate.total.toFixed(2)}</span>
+                  )}
+                  {!estimateLoading && !estimateError && estimate?.isWeekdayDiscount && (estimate.weekdayDiscount ?? 0) > 0 && (
+                    <span className={styles.modalTotalLabel}>Weekday discount: −${estimate.weekdayDiscount!.toFixed(2)}</span>
                   )}
                 </div>
               ) : (

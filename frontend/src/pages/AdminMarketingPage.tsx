@@ -14,11 +14,14 @@ import {
   type LivePromo,
   type MarketingChannel,
   type AudiencePreview,
+  type AudienceRecipient,
   type MarketingCampaign,
 } from '../api/marketing';
 import styles from './AdminMarketingPage.module.css';
 
 type LoadState = 'idle' | 'loading' | 'error';
+
+const RECIPIENTS_PER_PAGE = 10;
 
 function promoLabel(p: LivePromo): string {
   const discount = p.percent_off ? `${p.percent_off}% off` : p.amount_off_usd ? `$${p.amount_off_usd} off` : '';
@@ -44,13 +47,39 @@ export function AdminMarketingPage() {
   const [drafting, setDrafting] = useState(false);
 
   const [preview, setPreview] = useState<AudiencePreview | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [recipientPage, setRecipientPage] = useState(0);
   const [testEmail, setTestEmail] = useState(user?.email ?? '');
   const [testPhone, setTestPhone] = useState('');
   const [sending, setSending] = useState(false);
   const [banner, setBanner] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState<'campaign' | 'history'>('campaign');
 
   const wantEmail = channel === 'email' || channel === 'both';
   const wantSms = channel === 'sms' || channel === 'both';
+
+  // Audience only counts when a segment is explicitly selected; otherwise 0
+  // (we never silently default a bulk send to the entire opted-in list).
+  const hasSegment = selectedMonths.size > 0;
+  const recipients = useMemo<AudienceRecipient[]>(
+    () => (hasSegment ? preview?.recipients ?? [] : []),
+    [hasSegment, preview],
+  );
+  // Counts reflect the rows the admin currently has checked.
+  const selectedRecipients = useMemo(
+    () => recipients.filter((r) => selectedKeys.has(r.key)),
+    [recipients, selectedKeys],
+  );
+  const emailCount = selectedRecipients.filter((r) => r.viaEmail).length;
+  const smsCount = selectedRecipients.filter((r) => r.viaSms).length;
+  const uniqueCount = selectedRecipients.length;
+
+  const pageCount = Math.max(1, Math.ceil(recipients.length / RECIPIENTS_PER_PAGE));
+  const safePage = Math.min(recipientPage, pageCount - 1);
+  const visibleRecipients = recipients.slice(
+    safePage * RECIPIENTS_PER_PAGE,
+    safePage * RECIPIENTS_PER_PAGE + RECIPIENTS_PER_PAGE,
+  );
 
   const loadAll = useCallback(async () => {
     setStatsState('loading');
@@ -69,13 +98,17 @@ export function AdminMarketingPage() {
   useEffect(() => { void loadAll(); }, [loadAll]);
 
   // Live audience preview whenever months/channel change (debounced).
+  // Recompute the audience and default every recipient to selected.
   useEffect(() => {
     const t = window.setTimeout(async () => {
       try {
         const p = await previewMarketingAudience({ months: Array.from(selectedMonths), channel });
         setPreview(p);
+        setSelectedKeys(new Set(p.recipients.map((r) => r.key)));
+        setRecipientPage(0);
       } catch {
         setPreview(null);
+        setSelectedKeys(new Set());
       }
     }, 300);
     return () => window.clearTimeout(t);
@@ -95,6 +128,19 @@ export function AdminMarketingPage() {
       next.has(code) ? next.delete(code) : next.add(code);
       return next;
     });
+  };
+
+  const toggleRecipient = (key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const allSelected = recipients.length > 0 && selectedKeys.size === recipients.length;
+  const toggleSelectAll = () => {
+    setSelectedKeys(allSelected ? new Set() : new Set(recipients.map((r) => r.key)));
   };
 
   const selectedMonthLabels = useMemo(
@@ -139,6 +185,7 @@ export function AdminMarketingPage() {
         isTest,
         testEmail: testEmail || undefined,
         testPhone: testPhone || undefined,
+        selectedKeys: isTest ? undefined : Array.from(selectedKeys),
       });
       setBanner({
         type: result.failed > 0 ? 'err' : 'ok',
@@ -153,14 +200,35 @@ export function AdminMarketingPage() {
   };
 
   const handleSendBulk = () => {
-    const n = preview?.uniqueCount ?? 0;
+    const n = uniqueCount;
+    if (!hasSegment) {
+      setBanner({ type: 'err', text: 'Select at least one birthday month before sending.' });
+      return;
+    }
     if (n === 0) {
       setBanner({ type: 'err', text: 'No opted-in recipients match this audience.' });
       return;
     }
-    const seg = selectedMonthLabels.length ? `birthdays in ${selectedMonthLabels.join(', ')}` : 'all opted-in contacts';
-    if (!window.confirm(`Send this ${channel.toUpperCase()} campaign to ${n} opted-in recipient(s) (${seg})? This cannot be undone.`)) return;
+    const seg = `birthdays in ${selectedMonthLabels.join(', ')}`;
+    const ok = window.confirm(
+      `This will send a ${channel.toUpperCase()} message to ${n} ${n === 1 ? 'person' : 'people'} (${seg}). Are you sure you want to send now? This cannot be undone.`,
+    );
+    if (!ok) return;
     void doSend(false);
+  };
+
+  const handleSendTest = () => {
+    const where = [
+      wantEmail && testEmail.trim() ? testEmail.trim() : null,
+      wantSms && testPhone.trim() ? testPhone.trim() : null,
+    ].filter(Boolean).join(' and ');
+    if (!where) {
+      setBanner({ type: 'err', text: `Enter a test ${wantEmail ? 'email' : ''}${wantEmail && wantSms ? ' / ' : ''}${wantSms ? 'phone' : ''} first.` });
+      return;
+    }
+    const ok = window.confirm(`This will send a test ${channel.toUpperCase()} message to ${where}. Are you sure you want to send now?`);
+    if (!ok) return;
+    void doSend(true);
   };
 
   return (
@@ -187,10 +255,34 @@ export function AdminMarketingPage() {
         {banner && <div className={banner.type === 'ok' ? styles.bannerOk : styles.bannerErr}>{banner.text}</div>}
         {statsState === 'loading' && <p className={styles.muted}>Loading marketing data...</p>}
 
+        {/* Tabs */}
+        <div className={styles.tabBar} role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'campaign'}
+            className={`${styles.tabBtn} ${activeTab === 'campaign' ? styles.tabBtnActive : ''}`}
+            onClick={() => setActiveTab('campaign')}
+          >
+            New campaign
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'history'}
+            className={`${styles.tabBtn} ${activeTab === 'history' ? styles.tabBtnActive : ''}`}
+            onClick={() => setActiveTab('history')}
+          >
+            History{campaigns.length ? ` (${campaigns.length})` : ''}
+          </button>
+        </div>
+
+        {activeTab === 'campaign' && (
+        <>
         {/* Step 1: Birthday segment */}
         <section className={styles.panel}>
           <h2 className={styles.panelTitle}>1 · Birthday segment</h2>
-          <p className={styles.panelHint}>Pick one or more months to target families with a child's birthday then. Leave all unselected to reach every opted-in contact. Counts show opted-in reach.</p>
+          <p className={styles.panelHint}>Pick one or more months to target families with a child's birthday then. You must select at least one month — bulk send stays disabled until you do. Counts show opted-in reach.</p>
           <div className={styles.monthGrid}>
             {(stats?.months ?? []).map((m) => {
               const active = selectedMonths.has(m.month);
@@ -278,33 +370,87 @@ export function AdminMarketingPage() {
           <h2 className={styles.panelTitle}>5 · Review &amp; send</h2>
           <div className={styles.audienceBox}>
             <div className={styles.audienceCounts}>
-              {wantEmail && <span><strong>{preview?.emailCount ?? 0}</strong> email</span>}
-              {wantSms && <span><strong>{preview?.smsCount ?? 0}</strong> SMS</span>}
-              <span className={styles.audienceUnique}><strong>{preview?.uniqueCount ?? 0}</strong> unique opted-in recipient(s)</span>
+              {wantEmail && <span><strong>{emailCount}</strong> email</span>}
+              {wantSms && <span><strong>{smsCount}</strong> SMS</span>}
+              <span className={styles.audienceUnique}><strong>{uniqueCount}</strong> selected of {recipients.length} opted-in</span>
             </div>
-            {preview?.sample && preview.sample.length > 0 && (
-              <p className={styles.sample}>e.g. {preview.sample.slice(0, 4).map((s) => s.name || s.email || s.phone).join(', ')}…</p>
+            {!hasSegment && <p className={styles.sample}>Select at least one birthday month above to build an audience.</p>}
+            {hasSegment && recipients.length === 0 && (
+              <p className={styles.sample}>No opted-in recipients match this segment / channel.</p>
             )}
           </div>
+
+          {hasSegment && recipients.length > 0 && (
+            <div className={styles.recipientsWrap}>
+              <div className={styles.recipientsBar}>
+                <span>{uniqueCount} of {recipients.length} selected</span>
+                <div className={styles.recipientsActions}>
+                  <button type="button" className={styles.linkBtn} onClick={() => setSelectedKeys(new Set(recipients.map((r) => r.key)))}>Select all</button>
+                  <button type="button" className={styles.linkBtn} onClick={() => setSelectedKeys(new Set())}>Clear all</button>
+                </div>
+              </div>
+              <div className={styles.tableWrap}>
+                <table className={styles.recipientsTable}>
+                  <thead>
+                    <tr>
+                      <th className={styles.checkCol}>
+                        <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} aria-label="Select all recipients" />
+                      </th>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Phone</th>
+                      <th>Reach</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleRecipients.map((r) => {
+                      const checked = selectedKeys.has(r.key);
+                      return (
+                        <tr key={r.key} className={checked ? undefined : styles.rowOff} onClick={() => toggleRecipient(r.key)}>
+                          <td className={styles.checkCol} data-label="Select">
+                            <input type="checkbox" checked={checked} onChange={() => toggleRecipient(r.key)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${r.name}`} />
+                          </td>
+                          <td data-label="Name">{r.name}</td>
+                          <td data-label="Email">{r.email || '—'}</td>
+                          <td data-label="Phone">{r.phone || '—'}</td>
+                          <td data-label="Reach">{[r.viaEmail ? '✉' : '', r.viaSms ? '✆' : ''].filter(Boolean).join(' ') || '—'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {pageCount > 1 && (
+                <div className={styles.pagination}>
+                  <button type="button" className={styles.pageBtn} onClick={() => setRecipientPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}>‹ Prev</button>
+                  <span className={styles.pageInfo}>Page {safePage + 1} of {pageCount}</span>
+                  <button type="button" className={styles.pageBtn} onClick={() => setRecipientPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}>Next ›</button>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className={styles.sendRow}>
             <div className={styles.testInputs}>
               {wantEmail && <input className={styles.input} placeholder="Test email" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} />}
               {wantSms && <input className={styles.input} placeholder="Test phone (+1…)" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} />}
-              <button type="button" className={styles.ghostBtn} onClick={() => doSend(true)} disabled={sending || !contentValid}>
+              <button type="button" className={styles.ghostBtn} onClick={handleSendTest} disabled={sending || !contentValid}>
                 {sending ? 'Sending…' : 'Send test'}
               </button>
             </div>
-            <button type="button" className={styles.primaryBtn} onClick={handleSendBulk} disabled={sending || !contentValid}>
-              {sending ? 'Sending…' : `Send to ${preview?.uniqueCount ?? 0} recipient(s)`}
+            <button type="button" className={styles.primaryBtn} onClick={handleSendBulk} disabled={sending || !contentValid || uniqueCount === 0}>
+              {sending ? 'Sending…' : `Send to ${uniqueCount} recipient(s)`}
             </button>
           </div>
           {!contentValid && <p className={styles.warn}>Fill in the {wantEmail ? 'subject + email body' : ''}{wantEmail && wantSms ? ' and ' : ''}{wantSms ? 'SMS body' : ''} before sending.</p>}
         </section>
+        </>
+        )}
 
         {/* History */}
+        {activeTab === 'history' && (
         <section className={styles.panel}>
-          <h2 className={styles.panelTitle}>Campaign history</h2>
+          <h2 className={styles.panelTitle}>Campaign history <span className={styles.subtle}>(all sends &amp; tests)</span></h2>
           {campaigns.length === 0 ? (
             <p className={styles.muted}>No campaigns sent yet.</p>
           ) : (
@@ -316,13 +462,13 @@ export function AdminMarketingPage() {
                 <tbody>
                   {campaigns.map((c) => (
                     <tr key={c.campaign_id}>
-                      <td>{c.created_at ? formatDate(c.created_at) : '—'}{c.is_test ? ' (test)' : ''}</td>
-                      <td>{c.channel}</td>
-                      <td className={styles.subjectCell}>{c.subject || c.sms_body || '—'}</td>
-                      <td>{c.audience_count}</td>
-                      <td className={styles.ok}>{c.sent_count}</td>
-                      <td className={c.failed_count > 0 ? styles.bad : undefined}>{c.failed_count}</td>
-                      <td><span className={styles.statusBadge} data-status={c.status}>{c.status}</span></td>
+                      <td data-label="Date">{c.created_at ? formatDate(c.created_at) : '—'}{c.is_test ? ' (test)' : ''}</td>
+                      <td data-label="Channel">{c.channel}</td>
+                      <td className={styles.subjectCell} data-label="Subject / SMS">{c.subject || c.sms_body || '—'}</td>
+                      <td data-label="Audience">{c.audience_count}</td>
+                      <td className={styles.ok} data-label="Sent">{c.sent_count}</td>
+                      <td className={c.failed_count > 0 ? styles.bad : undefined} data-label="Failed">{c.failed_count}</td>
+                      <td data-label="Status"><span className={styles.statusBadge} data-status={c.status}>{c.status}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -330,6 +476,7 @@ export function AdminMarketingPage() {
             </div>
           )}
         </section>
+        )}
       </div>
     </div>
   );

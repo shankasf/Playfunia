@@ -240,6 +240,42 @@
   border-radius: var(--radius-md);
 }
 
+.included {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.9rem;
+  background: #f0fdf4;
+  border: 2px solid #bbf7d0;
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.includedLabel {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #166534;
+  padding: 0.15rem 0.55rem;
+  background: #dcfce7;
+  border-radius: 999px;
+}
+
+.includedValue {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #052e16;
+}
+
+.includedValue strong {
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  color: #15803d;
+}
+
 .meta strong {
   color: var(--color-secondary);
   font-family: 'Fredoka', sans-serif;

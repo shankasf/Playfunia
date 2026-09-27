@@ -203,3 +203,19 @@ export function toDateInputValue(value?: string): string {
   const day = String(parsed.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * Whole-year age today (ET) for a birth date string, or null if missing/invalid.
+ */
+export function getAgeET(birthDate?: string | null): number | null {
+  const dob = toDateInputValue(birthDate ?? undefined);
+  if (!dob) return null;
+  const [birthYear, birthMonth, birthDay] = dob.split('-').map(Number);
+  const [year, month, day] = getCurrentDateET().split('-').map(Number);
+  let age = year - birthYear;
+  if (month < birthMonth || (month === birthMonth && day < birthDay)) age--;
+  return age;
+}
+
+/** Waiver minors: kids are 0-12, teens 13-17 (18+ sign as adults). */
+export const isTeenAge = (birthDate?: string | null): boolean => (getAgeET(birthDate) ?? 0) >= 13;

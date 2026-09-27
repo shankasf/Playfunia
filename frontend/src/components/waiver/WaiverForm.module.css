@@ -298,8 +298,93 @@ textarea:focus {
   background: rgba(124, 58, 237, 0.2);
 }
 
+.questionGroup {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.questionLabel {
+  font-weight: 600;
+  color: var(--color-text);
+  padding: 0;
+  margin-bottom: 0.25rem;
+}
+
+.choiceRow {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  min-width: 110px;
+  transition: all 0.2s;
+}
+
+.choice input {
+  width: auto;
+  margin: 0;
+  accent-color: #7c3aed;
+}
+
+.choiceActive {
+  border-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  color: #7c3aed;
+}
+
+.adultRow {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 2fr;
+  gap: 1rem;
+  align-items: start;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.04), rgba(124, 58, 237, 0.04));
+  border: 2px solid rgba(14, 165, 233, 0.18);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem 1.5rem 1.5rem;
+  position: relative;
+}
+
+.adultRow label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.adultSignature {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.adultSignatureLabel {
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.signButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 @media (max-width: 720px) {
   .form {
     padding: 2rem;
+  }
+
+  .adultRow {
+    grid-template-columns: 1fr;
   }
 }

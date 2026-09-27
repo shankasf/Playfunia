@@ -34,6 +34,7 @@ const sendSchema = z.object({
   isTest: z.boolean().default(false),
   testEmail: z.string().max(200).optional(),
   testPhone: z.string().max(40).optional(),
+  selectedKeys: z.array(z.string().max(320)).max(2000).optional(),
 });
 
 export const getMarketingStatsHandler = asyncHandler(async (_req, res) => {

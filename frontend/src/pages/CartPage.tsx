@@ -28,6 +28,8 @@ import { uploadChildPhoto } from '../api/child-photo';
 import { addChild } from '../api/users';
 import { MEMBERSHIP_REFUND_POLICY_ITEMS } from '../data/membershipRefundPolicy';
 import { validateCoupon, type CouponCartItem, type ValidateCouponSuccess } from '../api/coupons';
+import { logClientEvent, logClientError } from '../api/client-logs';
+import { StrikePrice } from '../components/common/StrikePrice';
 import styles from './CartPage.module.css';
 
 // Default tax rate (fallback before API loads)
@@ -495,9 +497,21 @@ export function CartPage() {
 
   const handleReservationExpire = useCallback(() => {
     setReservationExpired(true);
-    setError('Your reservation has expired. Please try again.');
+    // This blocks the purchase entirely but never contacts the server, so it is
+    // invisible in every backend table. Report it — a customer stuck here looks
+    // identical to a customer who simply never tried.
+    logClientEvent({
+      severity: 'warn',
+      source: 'checkout_timer_expired',
+      message: 'Checkout timer expired before payment was submitted',
+      context: {
+        hadBackendReservation: allReservationIds.length > 0,
+        checkoutSessionId,
+        expiresAt: reservationExpiresAt,
+      },
+    });
     // Don't auto-close payment form, let user see the message
-  }, []);
+  }, [allReservationIds, checkoutSessionId, reservationExpiresAt]);
 
   const handleBackFromPayment = useCallback(async () => {
     // Cancel all reservations (not just the first)
@@ -735,6 +749,12 @@ export function CartPage() {
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed. Please try again.');
+      logClientError('checkout_payment', err, {
+        itemCount: pendingItems.length,
+        itemTypes: pendingItems.map(i => i.type),
+        checkoutSessionId,
+        reservationId,
+      });
     } finally {
       setProcessing(false);
     }
@@ -788,8 +808,8 @@ export function CartPage() {
             <div className={styles.bookingBreakdown}>
               {item.basePrice && (
                 <div className={styles.breakdownLine}>
-                  <span>Base package</span>
-                  <span>${item.basePrice.toFixed(2)}</span>
+                  <span>Base package{item.weekdayDiscountPercent ? ` (weekday ${item.weekdayDiscountPercent}% off)` : ''}</span>
+                  <StrikePrice price={item.basePrice} originalPrice={item.originalBasePrice} />
                 </div>
               )}
               {(item.extraAdultCount ?? 0) > 0 && (
@@ -1302,8 +1322,8 @@ export function CartPage() {
                             </div>
                             {item.basePrice && (
                               <div className={styles.summaryDetailRow}>
-                                <span>Base package</span>
-                                <span>${item.basePrice.toFixed(2)}</span>
+                                <span>Base package{item.weekdayDiscountPercent ? ` (weekday ${item.weekdayDiscountPercent}% off)` : ''}</span>
+                                <StrikePrice price={item.basePrice} originalPrice={item.originalBasePrice} />
                               </div>
                             )}
                             {(item.extraAdultCount ?? 0) > 0 && (
@@ -1484,16 +1504,25 @@ export function CartPage() {
                             expiresAt={reservationExpiresAt}
                             onExpire={handleReservationExpire}
                           />
-                          <span className={styles.reservationNote}>
-                            Complete your payment to secure your purchase
-                          </span>
+                          {!reservationExpired && (
+                            <span className={styles.reservationNote}>
+                              Complete your payment to secure your purchase
+                            </span>
+                          )}
                         </div>
                       )}
 
                       {/* Reservation Expired Warning */}
                       {reservationExpired && (
                         <div className={styles.reservationExpired}>
-                          Your reservation has expired. Please go back and try again.
+                          <span>Your reservation has expired.</span>
+                          <button
+                            type="button"
+                            className={styles.reservationExpiredRetry}
+                            onClick={handleBackFromPayment}
+                          >
+                            Start over
+                          </button>
                         </div>
                       )}
 

@@ -20,15 +20,29 @@ export function setWaiverAuthToken(token: string | null) {
   waiverAuthToken = token;
 }
 
-function buildHeaders(init?: RequestInit) {
+type RequestOptions = {
+  /**
+   * For waiver-scoped endpoints. When a waiver auth token is present it
+   * represents the person currently being processed (e.g. a customer being
+   * checked in at a staff-operated kiosk), so it must take precedence over the
+   * operator's main-account token. Otherwise the operator's own waiver would be
+   * returned/overwritten instead of the customer's.
+   */
+  preferWaiverToken?: boolean;
+};
+
+function buildHeaders(init?: RequestInit, opts?: RequestOptions) {
   const headers = new Headers(init?.headers ?? {});
 
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  // Use main auth token if available, otherwise use waiver auth token
-  const tokenToUse = authToken ?? waiverAuthToken;
+  // Waiver endpoints prefer the waiver token (the current waiver subject);
+  // everything else prefers the main-account token.
+  const tokenToUse = opts?.preferWaiverToken
+    ? (waiverAuthToken ?? authToken)
+    : (authToken ?? waiverAuthToken);
   if (tokenToUse && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${tokenToUse}`);
   }
@@ -58,10 +72,10 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiGet<T>(path: string, init?: RequestInit, opts?: RequestOptions): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: buildHeaders(init),
+    headers: buildHeaders(init, opts),
   });
 
   return handleResponse<T>(response);
@@ -70,13 +84,14 @@ export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
 export async function apiPost<TResponse, TBody>(
   path: string,
   body: TBody,
-  init?: RequestInit
+  init?: RequestInit,
+  opts?: RequestOptions
 ): Promise<TResponse> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     body: JSON.stringify(body),
     ...init,
-    headers: buildHeaders(init),
+    headers: buildHeaders(init, opts),
   });
 
   return handleResponse<TResponse>(response);

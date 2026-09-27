@@ -47,10 +47,13 @@ export function PartyPackages({ packages, isLoading }: Props) {
             <div className={styles.badge}>{pkg?.durationMinutes ?? "--"} min</div>
             <h3>{pkg?.name ?? "Party loading"}</h3>
             <p className={styles.description}>{pkg?.description ?? "Finding the perfect celebration..."}</p>
-            <div className={styles.meta}>
-              <span>
-                <strong>{pkg?.maxGuests ?? "--"}</strong> kids included
+            <div className={styles.included}>
+              <span className={styles.includedLabel}>Included</span>
+              <span className={styles.includedValue}>
+                <strong>{pkg?.maxGuests ?? "--"}</strong> kids + <strong>{pkg?.maxGuests ?? "--"}</strong> adults
               </span>
+            </div>
+            <div className={styles.meta}>
               <span>
                 Starting at <strong>${pkg?.basePrice ?? "--"}</strong>
               </span>

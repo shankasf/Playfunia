@@ -6,9 +6,11 @@ interface SignaturePadModalProps {
   open: boolean;
   onClose: () => void;
   onAccept: (dataUrl: string) => void;
+  /** Shown in the header so the right person signs, e.g. when the tablet is handed to another adult */
+  signerName?: string;
 }
 
-export function SignaturePadModal({ open, onClose, onAccept }: SignaturePadModalProps) {
+export function SignaturePadModal({ open, onClose, onAccept, signerName }: SignaturePadModalProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<SignaturePad | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -114,9 +116,11 @@ export function SignaturePadModal({ open, onClose, onAccept }: SignaturePadModal
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <h3 className={styles.title}>Sign Below</h3>
+          <h3 className={styles.title}>{signerName ? `${signerName}, sign below` : 'Sign Below'}</h3>
           <p className={styles.subtitle}>
-            Use your finger, stylus, or mouse to sign
+            {signerName
+              ? 'Only this adult may sign here. Use your finger, stylus, or mouse.'
+              : 'Use your finger, stylus, or mouse to sign'}
           </p>
         </div>
 

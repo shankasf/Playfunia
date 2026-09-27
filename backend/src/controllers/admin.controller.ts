@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { DateTime } from 'luxon';
 
 import * as AdminService from '../services/admin.service';
+import { parseAdditionalAdults, splitMinorsByAge } from '../utils/waiver-people';
 import { recordMembershipVisitByMembershipId, getMembershipDetails } from '../services/membership.service';
 import type { SupabaseAuthenticatedRequest } from '../middleware/supabase-auth.middleware';
 import { MembershipPlanRepository } from '../repositories';
@@ -26,12 +27,14 @@ import {
   adminMembershipPlanUpdateSchema,
   adminWaiverUpdateSchema,
   adminJobApplicationStatusUpdateSchema,
+  adminJobApplicationNotesUpdateSchema,
   adminJobApplicationUpdateSchema,
   adminJobListingCreateSchema,
   adminJobListingUpdateSchema,
 } from '../schemas/admin.schema';
 import { adminCreateBookingSchema } from '../schemas/booking.schema';
 import { sendTeamRoleAssignment } from '../services/email.service';
+import { signStorageUrls } from '../services/storage-url.service';
 import { logger } from '../utils/logger';
 
 function hasAdmin(roles: string[] | null | undefined): boolean {
@@ -502,6 +505,26 @@ async function buildPlansMap() {
   }]));
 }
 
+/**
+ * child-photos is a private bucket, so the photoUrl produced by
+ * transformMembership (a stored object path / legacy public URL) has to be
+ * exchanged for a short-lived signed URL before it leaves the API. Done in one
+ * batch across every child in the payload.
+ */
+async function signChildPhotoUrls(
+  memberships: Array<Record<string, unknown>>,
+): Promise<void> {
+  const childRefs = memberships.flatMap(
+    m => (m.children as Array<{ photoUrl: string | null }> | undefined) ?? [],
+  );
+  if (childRefs.length === 0) return;
+
+  const signed = await signStorageUrls('child-photos', childRefs.map(c => c.photoUrl));
+  childRefs.forEach((child, i) => {
+    child.photoUrl = signed[i] ?? null;
+  });
+}
+
 export const listMembershipsHandler = asyncHandler(async (req, res) => {
   const status = req.query.status as string | undefined;
   const limit = parseInt(req.query.limit as string) || 100;
@@ -511,6 +534,7 @@ export const listMembershipsHandler = asyncHandler(async (req, res) => {
     buildPlansMap(),
   ]);
   const memberships = rawMemberships.map((m: Record<string, unknown>) => transformMembership(m, plansMap));
+  await signChildPhotoUrls(memberships);
   return res.status(200).json({ memberships });
 });
 
@@ -521,7 +545,9 @@ export const getMembershipHandler = asyncHandler(async (req, res) => {
     buildPlansMap(),
   ]);
   if (!membership) throw new AppError('Membership not found', 404);
-  return res.status(200).json({ membership: transformMembership(membership as Record<string, unknown>, plansMap) });
+  const shaped = transformMembership(membership as Record<string, unknown>, plansMap);
+  await signChildPhotoUrls([shaped]);
+  return res.status(200).json({ membership: shaped });
 });
 
 export const createMembershipHandler = asyncHandler(async (req, res) => {
@@ -986,7 +1012,20 @@ function transformWaiver(w: Record<string, unknown>): Record<string, unknown> {
     guardianDateOfBirth: w.guardian_date_of_birth,
     relationshipToMinor: w.relationship_to_minor ?? w.relationship_to_children,
     guardian: w.customers ?? w.waiver_users ?? null,
-    children: Array.isArray(w.children) ? w.children : [],
+    // Kids (0-12) and teens (13-17) are stored together; split by age for check-in
+    ...(() => {
+      const { kids, teens } = splitMinorsByAge(
+        (Array.isArray(w.children) ? w.children : []) as Array<{ birthDate?: string; birth_date?: string }>,
+      );
+      return { children: kids, teens };
+    })(),
+    additionalAdults: parseAdditionalAdults(w.additional_adults).map((a) => ({
+      name: a.name,
+      signedAt: a.signedAt || null,
+      hasSignature: Boolean(a.signatureImageUrl),
+    })),
+    guardianHasSignature: Boolean(w.signature_image_url || w.digital_signature || w.signature),
+    waiverCode: w.waiver_code ?? null,
     digitalSignature: w.digital_signature ?? w.signature,
     signedAt: w.date_signed ?? w.signed_at ?? w.created_at,
     expiresAt: w.expires_at,
@@ -1423,6 +1462,13 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
 
   const maxChildren = Math.max(1, ...waivers.map(w => (w.children as unknown[])?.length ?? 0));
 
+  // waiver-signatures is a private bucket; the export carries short-lived
+  // signed links instead of the previously public object URLs.
+  const signatureUrls = await signStorageUrls(
+    'waiver-signatures',
+    waivers.map(w => w.signature_image_url),
+  );
+
   const childHeaders: string[] = [];
   for (let i = 1; i <= maxChildren; i++) {
     childHeaders.push(`Child ${i} Name`, `Child ${i} DOB`, `Child ${i} Gender`);
@@ -1447,7 +1493,7 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
     'Marketing Email Opt-in',
   ];
 
-  const rows = waivers.map(waiver => {
+  const rows = waivers.map((waiver, waiverIndex) => {
     const parentName = `${waiver.guardian_first_name || ''} ${waiver.guardian_last_name || ''}`.trim();
     const children = (waiver.children ?? []) as Array<{ name?: string; first_name?: string; last_name?: string; birthDate?: string; birth_date?: string; gender?: string }>;
     const childData: string[] = [];
@@ -1472,7 +1518,7 @@ export const exportWaiversHandler = asyncHandler(async (req, res) => {
       waiver.relationship_to_minor ?? '',
       ...childData,
       waiver.digital_signature ?? '',
-      waiver.signature_image_url ?? '',
+      signatureUrls[waiverIndex] ?? '',
       waiver.date_signed ?? '',
       waiver.expires_at ?? '',
       waiver.archive_until ?? '',
@@ -1519,12 +1565,21 @@ export const listJobApplicationsHandler = asyncHandler(async (req, res) => {
   const search = req.query.search as string | undefined;
   const dateFrom = req.query.dateFrom as string | undefined;
   const dateTo = req.query.dateTo as string | undefined;
+  const archivedParam = req.query.archived as string | undefined;
+  const archived = archivedParam === 'true' ? true : archivedParam === 'false' ? false : undefined;
 
   const result = await AdminService.listJobApplications({
-    status, listingId, search, dateFrom, dateTo, limit, offset,
+    status, listingId, search, dateFrom, dateTo, archived, limit, offset,
   });
   return res.status(200).json({ applications: result.data, total: result.count });
 });
+
+// The acting admin's email, recorded alongside any admin_notes change so the
+// hiring team can see who last touched a note. Null when the request somehow
+// carries no identified user rather than attributing the edit to nobody.
+function notesAuthorFrom(req: Request): string | null {
+  return (req as SupabaseAuthenticatedRequest).user?.email ?? null;
+}
 
 export const getJobApplicationHandler = asyncHandler(async (req, res) => {
   const applicationId = parseIntParam(req.params.id);
@@ -1557,9 +1612,20 @@ export const updateJobApplicationStatusHandler = asyncHandler(async (req, res) =
   const applicationId = parseIntParam(req.params.id);
   const validated = adminJobApplicationStatusUpdateSchema.parse(req.body);
   const application = await AdminService.updateJobApplicationStatus(
-    applicationId, validated.status, validated.admin_notes,
+    applicationId, validated.status, validated.admin_notes, notesAuthorFrom(req),
   );
   return res.status(200).json({ application });
+});
+
+// Internal hiring notes — admin-only, dedicated save so a note can be written
+// from the applicants list without submitting the full applicant edit form.
+export const updateJobApplicationNotesHandler = asyncHandler(async (req, res) => {
+  const applicationId = parseIntParam(req.params.id);
+  const validated = adminJobApplicationNotesUpdateSchema.parse(req.body);
+  const notes = await AdminService.updateJobApplicationNotes(
+    applicationId, validated.admin_notes, notesAuthorFrom(req),
+  );
+  return res.status(200).json({ notes });
 });
 
 export const deleteJobApplicationHandler = asyncHandler(async (req, res) => {
@@ -1576,7 +1642,9 @@ export const listJobListingsForFilterHandler = asyncHandler(async (_req, res) =>
 export const updateJobApplicationHandler = asyncHandler(async (req, res) => {
   const applicationId = parseIntParam(req.params.id);
   const validated = adminJobApplicationUpdateSchema.parse(req.body);
-  const application = await AdminService.updateJobApplication(applicationId, validated);
+  const application = await AdminService.updateJobApplication(
+    applicationId, validated, notesAuthorFrom(req),
+  );
   return res.status(200).json({ application });
 });
 

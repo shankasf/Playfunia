@@ -14,6 +14,7 @@ import { getTaxRate, roundCurrency } from './pricing-config.service';
 import { AppError } from '../utils/app-error';
 import { PAYMENT_STATUS } from '../utils/payment-statuses';
 import { publishAdminEvent } from './admin-events.service';
+import { getPartyPackagePrice } from './party-discount.service';
 
 import type {
   BookingAvailabilityInput,
@@ -218,9 +219,10 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     end: scheduledEndDateTime,
   });
 
+  const packagePrice = await getPartyPackagePrice(partyPackage.price_usd, startDateTime);
   const pricing = await calculateBookingPricing({
     partyPackage: {
-      basePrice: partyPackage.price_usd,
+      basePrice: packagePrice.price,
       maxGuests: partyPackage.base_children,
     },
     guests: input.guests,
@@ -553,9 +555,10 @@ export async function estimateBookingPrice(input: BookingEstimateInput) {
 
   const addOnDetails = await buildAddOnDetails(input.addOns);
 
+  const packagePrice = await getPartyPackagePrice(partyPackage.price_usd, input.eventDate);
   const pricing = await calculateBookingPricing({
     partyPackage: {
-      basePrice: partyPackage.price_usd,
+      basePrice: packagePrice.price,
       maxGuests: partyPackage.base_children,
     },
     guests: input.guests,
@@ -565,7 +568,11 @@ export async function estimateBookingPrice(input: BookingEstimateInput) {
   });
 
   return {
-    basePrice: partyPackage.price_usd,
+    basePrice: packagePrice.price,
+    originalBasePrice: packagePrice.originalPrice,
+    weekdayDiscount: packagePrice.discount,
+    weekdayDiscountPercent: packagePrice.discountPercent,
+    isWeekdayDiscount: packagePrice.isWeekdayDiscount,
     extraAdultCount: pricing.extraAdultCount,
     extraAdultFee: pricing.extraAdultFee,
     extraAdultTotal: pricing.extraAdultTotal,
@@ -643,9 +650,10 @@ export async function recalculateBookingPricing(bookingId: string) {
   const addOns = (booking.add_ons ?? []) as Array<{ id: string; quantity?: number }>;
   const addOnDetails = await buildAddOnDetails(addOns);
 
+  const packagePrice = await getPartyPackagePrice(basePrice, booking.event_date);
   const pricing = await calculateBookingPricing({
     partyPackage: {
-      basePrice,
+      basePrice: packagePrice.price,
       maxGuests,
     },
     guests: booking.guests ?? 10,
@@ -664,7 +672,9 @@ export async function recalculateBookingPricing(bookingId: string) {
   return {
     bookingId: String(booking.booking_id),
     reference: booking.reference,
-    basePrice,
+    basePrice: packagePrice.price,
+    originalBasePrice: packagePrice.originalPrice,
+    weekdayDiscount: packagePrice.discount,
     subtotal: pricing.subtotal,
     cleaningFee: pricing.cleaningFee,
     tax: pricing.tax,
@@ -938,9 +948,10 @@ export async function createGuestBooking(input: CreateGuestBookingInput): Promis
     end: scheduledEndDateTime,
   });
 
+  const packagePrice = await getPartyPackagePrice(partyPackage.price_usd, startDateTime);
   const pricing = await calculateBookingPricing({
     partyPackage: {
-      basePrice: partyPackage.price_usd,
+      basePrice: packagePrice.price,
       maxGuests: partyPackage.base_children,
     },
     guests: input.guests,

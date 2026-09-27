@@ -15,6 +15,10 @@ export type BookingCartItem = {
   // Pricing breakdown for display
   durationMinutes?: number;
   basePrice?: number;
+  // Weekday (Mon-Fri) package discount; basePrice is already discounted
+  originalBasePrice?: number;
+  weekdayDiscount?: number;
+  weekdayDiscountPercent?: number;
   extraAdultCount?: number;
   extraAdultFee?: number;
   extraAdultTotal?: number;

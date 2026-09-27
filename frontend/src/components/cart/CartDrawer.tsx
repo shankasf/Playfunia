@@ -20,6 +20,7 @@ import {
   isValidPhone,
   isValidEmail,
 } from '../../utils/validation';
+import { StrikePrice } from '../common/StrikePrice';
 import styles from './CartDrawer.module.css';
 
 // Default tax rate (fallback before API loads)
@@ -477,7 +478,10 @@ export function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
             {/* Brief breakdown */}
             {item.basePrice && (
               <div className={styles.bookingBreakdown}>
-                <span>Base: ${item.basePrice.toFixed(2)}</span>
+                <span>
+                  Base: <StrikePrice price={item.basePrice} originalPrice={item.originalBasePrice} />
+                  {item.weekdayDiscountPercent ? ` (weekday ${item.weekdayDiscountPercent}% off)` : ''}
+                </span>
                 {(item.extraAdultCount ?? 0) > 0 && (
                   <span>+{item.extraAdultCount} adults</span>
                 )}

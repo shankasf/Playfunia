@@ -65,6 +65,33 @@
   margin-bottom: 1.25rem;
   box-shadow: 0 12px 30px -26px rgba(15, 23, 42, 0.5);
 }
+
+/* Tabs: New campaign | History */
+.tabBar {
+  display: inline-flex;
+  gap: 0.25rem;
+  background: #f1f5f9;
+  border-radius: 12px;
+  padding: 0.3rem;
+  margin-bottom: 1.25rem;
+}
+.tabBtn {
+  border: none;
+  background: none;
+  padding: 0.6rem 1.4rem;
+  border-radius: 9px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #4b5563;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.tabBtn:hover { color: #7c3aed; }
+.tabBtnActive {
+  background: #fff;
+  color: #7c3aed;
+  box-shadow: 0 2px 6px -2px rgba(15, 23, 42, 0.25);
+}
 .panelTitle { margin: 0 0 0.4rem; font-size: 1.05rem; font-weight: 700; color: #1e1b4b; }
 .panelHint { margin: 0 0 1rem; font-size: 0.85rem; color: #6b7280; }
 .subtle { font-weight: 500; color: #9ca3af; font-size: 0.8rem; }
@@ -187,8 +214,115 @@
 .statusBadge[data-status="partial"] { background: #fffbeb; color: #b45309; }
 .statusBadge[data-status="failed"] { background: #fef2f2; color: #b91c1c; }
 
+/* Selectable, paginated recipient table (Step 5) */
+.recipientsWrap { border: 1px solid #eef2f7; border-radius: 12px; overflow: hidden; margin-bottom: 1.2rem; }
+.recipientsBar {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.65rem 0.9rem; background: #f8fafc; border-bottom: 1px solid #eef2f7;
+  font-size: 0.85rem; color: #4b5563; font-weight: 600;
+}
+.recipientsActions { display: flex; gap: 1rem; }
+.recipientsActions .linkBtn { margin-top: 0; }
+.recipientsTable { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.recipientsTable th { text-align: left; padding: 0.55rem 0.7rem; color: #6b7280; font-weight: 600; border-bottom: 1px solid #eef2f7; white-space: nowrap; background: #fff; }
+.recipientsTable td { padding: 0.55rem 0.7rem; border-bottom: 1px solid #f5f7fa; color: #374151; }
+.recipientsTable tbody tr { cursor: pointer; }
+.recipientsTable tbody tr:hover { background: #faf5ff; }
+.checkCol { width: 38px; text-align: center; }
+.checkCol input { width: 16px; height: 16px; cursor: pointer; accent-color: #7c3aed; }
+.rowOff td:not(.checkCol) { color: #9ca3af; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 0.65rem; background: #f8fafc; border-top: 1px solid #eef2f7; }
+.pageInfo { font-size: 0.82rem; color: #6b7280; font-weight: 600; }
+.pageBtn {
+  border: 1px solid #e5e7eb; background: #fff; border-radius: 8px; padding: 0.35rem 0.8rem;
+  font-size: 0.82rem; font-weight: 600; color: #4b5563; cursor: pointer;
+}
+.pageBtn:hover:not(:disabled) { border-color: #c4b5fd; color: #7c3aed; }
+.pageBtn:disabled { opacity: 0.45; cursor: default; }
+
 @media (max-width: 720px) {
   .statRow { grid-template-columns: 1fr; }
   .monthGrid { grid-template-columns: repeat(3, 1fr); }
   .sendRow { flex-direction: column; align-items: stretch; }
+}
+
+/* Responsive card layout: tables stack into cards below 900px (no horizontal scroll) */
+@media (max-width: 900px) {
+  .recipientsTable,
+  .table {
+    min-width: 0 !important;
+    width: 100%;
+    border-collapse: collapse;
+  }
+  /* visually hide header row (keep for a11y) */
+  .recipientsTable thead,
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .recipientsTable,
+  .recipientsTable tbody,
+  .recipientsTable tr,
+  .recipientsTable td,
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+  .recipientsTable tr,
+  .table tr {
+    margin: 0 0 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.4rem 0.9rem;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+  .recipientsTable td,
+  .table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    text-align: right;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    min-height: 0;
+    white-space: normal;
+  }
+  .recipientsTable td:last-child,
+  .table td:last-child {
+    border-bottom: 0;
+  }
+  .recipientsTable td::before,
+  .table td::before {
+    content: attr(data-label);
+    flex: 0 0 40%;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+  /* cells with no label (colSpan rows) keep full width, centered */
+  .recipientsTable td:not([data-label])::before,
+  .table td:not([data-label])::before { content: none; }
+  .recipientsTable td:not([data-label]),
+  .table td:not([data-label]) { justify-content: center; text-align: center; }
+
+  /* checkbox cell: reset fixed width/centering so it stacks cleanly as a card row */
+  .recipientsTable td.checkCol { width: 100%; text-align: right; }
+
+  /* subject cell goes full width in card mode (no ellipsis truncation) */
+  .subjectCell { max-width: none; white-space: normal; overflow: visible; text-overflow: clip; }
 }

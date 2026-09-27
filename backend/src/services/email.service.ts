@@ -3,6 +3,7 @@ import { randomInt } from 'crypto';
 import { DateTime } from 'luxon';
 import { appConfig } from '../config/env';
 import { logger } from '../utils/logger';
+import { SCREENING_QUESTIONS } from '../schemas/careers.schema';
 
 // Admin emails for receiving copies of all notifications (from env config)
 const ADMIN_EMAILS = appConfig.adminEmails;
@@ -1502,6 +1503,7 @@ export interface JobApplicationNotificationData {
     contentType: string;
   };
   videoLink?: string;
+  screeningAnswers?: Record<string, string>;
 }
 
 export async function sendJobApplicationNotification(data: JobApplicationNotificationData): Promise<boolean> {
@@ -1521,6 +1523,30 @@ export async function sendJobApplicationNotification(data: JobApplicationNotific
   const coverLetterHtml = data.coverLetter
     ? `<tr><td colspan="2" style="padding: 8px 0; color: #4b5563; font-weight: 600;">Cover Letter</td></tr>
        <tr><td colspan="2" style="padding: 8px 16px; color: #1e1b4b; background: #f9fafb; border-radius: 8px; white-space: pre-wrap;">${esc(data.coverLetter).replace(/\n/g, '<br>')}</td></tr>`
+    : '';
+
+  const screeningRows = SCREENING_QUESTIONS
+    .map(q => ({ label: q.label, answer: data.screeningAnswers?.[q.id]?.trim() }))
+    .filter((row): row is { label: string; answer: string } => !!row.answer);
+
+  const screeningHtml = screeningRows.length
+    ? `<div style="background: #eff6ff; padding: 20px; border-radius: 12px; margin: 20px 0;">
+         <h3 style="color: #1e1b4b; margin: 0 0 12px 0;">Screening Questions</h3>
+         <table style="width: 100%; border-collapse: collapse;">
+           ${screeningRows.map(row => {
+             const val = row.answer.toLowerCase() === 'yes'
+               ? '<span style="color:#059669;font-weight:bold;">Yes</span>'
+               : row.answer.toLowerCase() === 'no'
+                 ? '<span style="color:#dc2626;font-weight:bold;">No</span>'
+                 : esc(row.answer);
+             return `<tr><td style="padding: 8px 0; color: #4b5563; font-weight: 600; width: 60%;">${esc(row.label)}</td><td style="padding: 8px 0; color: #1e1b4b;">${val}</td></tr>`;
+           }).join('')}
+         </table>
+       </div>`
+    : '';
+
+  const screeningText = screeningRows.length
+    ? `\n\nSCREENING QUESTIONS:\n${screeningRows.map(r => `${r.label} ${r.answer}`).join('\n')}`
     : '';
 
   const attachments: EmailAttachment[] = data.resumeFile
@@ -1567,6 +1593,8 @@ export async function sendJobApplicationNotification(data: JobApplicationNotific
           </table>
         </div>
 
+        ${screeningHtml}
+
         ${safeEcName ? `
         <div style="background: #fef3c7; padding: 20px; border-radius: 12px; margin: 20px 0;">
           <h3 style="color: #1e1b4b; margin: 0 0 12px 0;">Emergency Contact</h3>
@@ -1585,20 +1613,13 @@ export async function sendJobApplicationNotification(data: JobApplicationNotific
         </div>
         ` : ''}
 
-        ${data.videoLink ? `
-        <div style="background: #ede9fe; padding: 20px; border-radius: 12px; margin: 20px 0; text-align: center;">
-          <h3 style="color: #1e1b4b; margin: 0 0 12px 0;">Video Introduction</h3>
-          <a href="${esc(data.videoLink)}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background: linear-gradient(135deg, #7c3aed, #a855f7); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">Watch Video</a>
-        </div>
-        ` : '<p style="color: #9ca3af;">No video was provided.</p>'}
-
         ${data.resumeFile ? '<p style="color: #059669; font-weight: 600;">Resume attached to this email.</p>' : '<p style="color: #9ca3af;">No resume was uploaded.</p>'}
 
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
         <p style="color: #9ca3af; font-size: 12px; text-align: center;">This is an automated notification from the Playfunia careers page.</p>
       </div>
     `,
-    text: `NEW JOB APPLICATION: ${data.jobTitle} (${data.department})\n\nAPPLICANT:\nName: ${data.applicantName}\nEmail: ${data.applicantEmail}\nPhone: ${data.applicantPhone}${data.dateOfBirth ? `\nDOB: ${data.dateOfBirth}` : ''}\n\nEXPERIENCE:\nExperience with Children: ${data.hasExperienceWithChildren ? 'Yes' : 'No'}${data.schedulePreference ? `\nSchedule Preference: ${data.schedulePreference}` : ''}${data.availableStartDate ? `\nAvailable Start: ${data.availableStartDate}` : ''}${data.howHeard ? `\nHow Heard: ${data.howHeard}` : ''}${data.emergencyContactName ? `\n\nEMERGENCY CONTACT:\nName: ${data.emergencyContactName}\nPhone: ${data.emergencyContactPhone || 'Not provided'}` : ''}${data.coverLetter ? `\n\nCOVER LETTER:\n${data.coverLetter}` : ''}${data.videoLink ? `\n\nVIDEO INTRODUCTION:\n${data.videoLink}` : ''}\n\nResume: ${data.resumeFile ? 'Attached' : 'Not uploaded'}`,
+    text: `NEW JOB APPLICATION: ${data.jobTitle} (${data.department})\n\nAPPLICANT:\nName: ${data.applicantName}\nEmail: ${data.applicantEmail}\nPhone: ${data.applicantPhone}${data.dateOfBirth ? `\nDOB: ${data.dateOfBirth}` : ''}\n\nEXPERIENCE:\nExperience with Children: ${data.hasExperienceWithChildren ? 'Yes' : 'No'}${data.schedulePreference ? `\nSchedule Preference: ${data.schedulePreference}` : ''}${data.availableStartDate ? `\nAvailable Start: ${data.availableStartDate}` : ''}${data.howHeard ? `\nHow Heard: ${data.howHeard}` : ''}${data.emergencyContactName ? `\n\nEMERGENCY CONTACT:\nName: ${data.emergencyContactName}\nPhone: ${data.emergencyContactPhone || 'Not provided'}` : ''}${screeningText}${data.coverLetter ? `\n\nCOVER LETTER:\n${data.coverLetter}` : ''}\n\nResume: ${data.resumeFile ? 'Attached' : 'Not uploaded'}`,
   });
 }
 
@@ -1808,6 +1829,8 @@ export interface WaiverConfirmationEmailData {
   guardianName: string;
   childNames: string[];
   childCount: number;
+  teenNames?: string[];   // Ages 13-17, signed for by the guardian
+  adultNames?: string[];  // Additional adults, each signed for themselves
   signedAt: string;       // ISO datetime
   waiverId: number;       // submission_id
   waiverCode: string;     // short code e.g. "A7K3Q9"
@@ -1822,6 +1845,26 @@ export async function sendWaiverConfirmation(data: WaiverConfirmationEmailData):
   const safeLocation = escapeHtml(data.location);
   const childNamesHtml = data.childNames.map(n => `<li style="padding: 4px 0; color: #1e1b4b;">${escapeHtml(n)}</li>`).join('');
   const childNamesText = data.childNames.join(', ');
+  const teenNames = data.teenNames ?? [];
+  const adultNames = data.adultNames ?? [];
+  const namesListHtml = (names: string[]) =>
+    names.map(n => `<li style="padding: 4px 0; color: #1e1b4b;">${escapeHtml(n)}</li>`).join('');
+  const extraPeopleRowsHtml = [
+    teenNames.length > 0 ? { label: `Teens (${teenNames.length})`, names: teenNames } : null,
+    adultNames.length > 0 ? { label: `Additional adults (${adultNames.length})`, names: adultNames } : null,
+  ]
+    .filter((row): row is { label: string; names: string[] } => row !== null)
+    .map(row => `
+            <tr>
+              <td style="padding: 8px 0; color: #4b5563;">${row.label}</td>
+              <td style="padding: 8px 0; text-align: right; color: #1e1b4b;">
+                <ul style="list-style: none; padding: 0; margin: 0; text-align: right;">${namesListHtml(row.names)}</ul>
+              </td>
+            </tr>`)
+    .join('');
+  const extraPeopleText =
+    (teenNames.length > 0 ? `\nTeens (${teenNames.length}): ${teenNames.join(', ')}` : '') +
+    (adultNames.length > 0 ? `\nAdditional adults (${adultNames.length}): ${adultNames.join(', ')}` : '');
 
   // Format signedAt in Eastern Time
   const signedDate = DateTime.fromISO(data.signedAt).setZone(BUSINESS_TIMEZONE);
@@ -1871,7 +1914,7 @@ export async function sendWaiverConfirmation(data: WaiverConfirmationEmailData):
               <td style="padding: 8px 0; text-align: right; color: #1e1b4b;">
                 <ul style="list-style: none; padding: 0; margin: 0; text-align: right;">${childNamesHtml}</ul>
               </td>
-            </tr>
+            </tr>${extraPeopleRowsHtml}
           </table>
         </div>
 
@@ -1884,7 +1927,7 @@ export async function sendWaiverConfirmation(data: WaiverConfirmationEmailData):
         <p style="color: #9ca3af; font-size: 12px; text-align: center;">Playfunia - Where fun happens!</p>
       </div>
     `,
-    text: `Hi ${data.guardianName}! Your Playfunia waiver has been confirmed.\n\nWaiver Reference: ${data.waiverCode}\nDate & Time: ${formattedDate}\nLocation: ${data.location}\nChildren (${data.childCount}): ${childNamesText}\n\nIMPORTANT: Waivers must be completed on the same day as your visit. Please show your waiver code ${data.waiverCode} to staff at the door.\n\nPlayfunia - Where fun happens!`,
+    text: `Hi ${data.guardianName}! Your Playfunia waiver has been confirmed.\n\nWaiver Reference: ${data.waiverCode}\nDate & Time: ${formattedDate}\nLocation: ${data.location}\nChildren (${data.childCount}): ${childNamesText}${extraPeopleText}\n\nIMPORTANT: Waivers must be completed on the same day as your visit. Please show your waiver code ${data.waiverCode} to staff at the door.\n\nPlayfunia - Where fun happens!`,
     ...(attachments.length > 0 ? { attachments } : {}),
   });
 }

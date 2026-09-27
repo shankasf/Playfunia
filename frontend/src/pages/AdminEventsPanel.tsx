@@ -305,7 +305,7 @@ export function AdminEventsPanel() {
                 <tbody>
                   {events.map(event => (
                     <tr key={event.event_id}>
-                      <td>
+                      <td data-label="Poster">
                         {event.image_url ? (
                           <img src={event.image_url} alt="" className={styles.posterThumb} />
                         ) : (
@@ -314,14 +314,14 @@ export function AdminEventsPanel() {
                           </div>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Title">
                         <div className={styles.eventTitle}>{event.title}</div>
                         {event.description && (
                           <div className={styles.eventDesc}>{event.description}</div>
                         )}
                       </td>
-                      <td>{formatDateDisplay(event.start_date)}</td>
-                      <td>
+                      <td data-label="Event Date">{formatDateDisplay(event.start_date)}</td>
+                      <td data-label="Status">
                         {isPast(event) ? (
                           <span className={`${styles.badge} ${styles.badgePast}`}>Completed</span>
                         ) : event.is_published ? (
@@ -330,7 +330,7 @@ export function AdminEventsPanel() {
                           <span className={`${styles.badge} ${styles.badgeDraft}`}>Draft</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Actions">
                         <div className={styles.actionButtons}>
                           <button
                             className={`${styles.actionButton} ${styles.editButton}`}

@@ -16,6 +16,7 @@ import { generateWaiverPdf, type WaiverPdfData } from './waiver-pdf.service';
 import { sendWaiverConfirmation } from './email.service';
 import { uploadSignatureImage } from './signature-upload.service';
 import { logger } from '../utils/logger';
+import { parseAdditionalAdults, splitMinorsByAge, type AdditionalAdult } from '../utils/waiver-people';
 import type { SignWaiverInput } from '../schemas/waiver.schema';
 import type { WaiverConfirmationEmailData } from './email.service';
 import type { WaiverSmsData } from './sms.service';
@@ -58,6 +59,8 @@ function queueWaiverNotifications(params: {
   guardianDob?: string;
   relationshipToChildren?: string;
   children: Array<{ name: string; birthDate?: string; gender?: string }>;
+  teens?: Array<{ name: string; birthDate?: string; gender?: string }>;
+  additionalAdults?: AdditionalAdult[];
   signedAt: string;
   signature: string;
   ipAddress: string;
@@ -69,6 +72,8 @@ function queueWaiverNotifications(params: {
     guardianDob, relationshipToChildren, children, signedAt,
     signature, ipAddress, acceptedPolicies, signatureImageUrl,
   } = params;
+  const teens = params.teens ?? [];
+  const additionalAdults = params.additionalAdults ?? [];
 
   if (!guardianEmail && !guardianPhone) return;
 
@@ -86,6 +91,8 @@ function queueWaiverNotifications(params: {
         guardianDob,
         relationshipToChildren,
         children,
+        teens,
+        additionalAdults,
         signature,
         signedAt,
         ipAddress,
@@ -106,6 +113,8 @@ function queueWaiverNotifications(params: {
         guardianName,
         childNames: children.map(c => c.name),
         childCount: children.length,
+        teenNames: teens.map(t => t.name),
+        adultNames: additionalAdults.map(a => a.name),
         signedAt,
         waiverId,
         waiverCode,
@@ -134,7 +143,7 @@ function queueWaiverNotifications(params: {
       const smsData: WaiverSmsData = {
         phone: guardianPhone,
         guardianName,
-        childCount: children.length,
+        childCount: children.length + teens.length,
         waiverCode,
         signedAt,
       };
@@ -163,10 +172,17 @@ function hasWaiverDataChanged(
     guardian_phone?: string;
     guardian_date_of_birth?: string;
     relationship_to_children?: string;
+    additional_adults?: unknown;
   },
   existingChildren: Array<{ childId?: number; name: string; birth_date: string; gender?: string }>,
   input: SignWaiverInput
 ): boolean {
+  // Additional adults sign for themselves on every visit, so a waiver that had
+  // (or now has) any is never "unchanged" - re-stamping the old submission would
+  // make those adults look signed today without them touching the tablet.
+  if (parseAdditionalAdults(latestWaiver.additional_adults).length > 0) return true;
+  if (input.additionalAdults.length > 0) return true;
+
   // Compare guardian info
   if (latestWaiver.guardian_name !== input.guardianName) return true;
   if ((latestWaiver.guardian_email || '') !== (input.guardianEmail || '')) return true;
@@ -178,8 +194,8 @@ function hasWaiverDataChanged(
 
   if ((latestWaiver.relationship_to_children || '') !== (input.relationshipToChildren || '')) return true;
 
-  // Compare children using ID-based matching
-  const inputChildren = input.children || [];
+  // Compare minors (kids + teens share storage) using ID-based matching
+  const inputChildren = allMinors(input);
 
   // Different count = data changed
   if (existingChildren.length !== inputChildren.length) return true;
@@ -266,8 +282,8 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput, ipA
     const existingChildren = await ChildRepository.findByCustomerId(customerId);
     const processedChildIds: number[] = [];
 
-    // Process each child from input
-    for (const child of input.children) {
+    // Process each minor (kids + teens) from input
+    for (const child of allMinors(input)) {
       const { firstName, lastName } = splitName(child.name);
       if (!firstName || !firstName.trim()) {
         throw new AppError('Each child must include a first name.', 400);
@@ -332,6 +348,7 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput, ipA
     if (input.signatureImage) {
       signatureImageUrl = (await uploadSignatureImage(input.signatureImage, 0)) ?? undefined;
     }
+    const additionalAdults = await uploadAdditionalAdultSignatures(input);
 
     // Create waiver submission with child_ids
     const waiver = await WaiverRepository.create({
@@ -349,6 +366,7 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput, ipA
       waiver_code: waiverCode,
       ip_address: ipAddress,
       signature_image_url: signatureImageUrl,
+      additional_adults: additionalAdults,
     });
 
     publishAdminEvent('waiver.updated', {
@@ -366,7 +384,9 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput, ipA
       guardianPhone: input.guardianPhone,
       guardianDob: input.guardianDob?.toISOString().split('T')[0],
       relationshipToChildren: input.relationshipToChildren,
-      children: input.children.map(c => ({ name: c.name, birthDate: c.birthDate?.toISOString(), gender: c.gender })),
+      children: toNotificationPeople(input.children),
+      teens: toNotificationPeople(input.teens),
+      additionalAdults,
       signedAt: waiver.signed_at,
       signature: input.signature,
       ipAddress,
@@ -386,6 +406,13 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput, ipA
         gender: child.gender,
         childId: childIds[index],
       })),
+      teens: input.teens.map((teen, index) => ({
+        name: teen.name,
+        birthDate: teen.birthDate.toISOString(),
+        gender: teen.gender,
+        childId: childIds[input.children.length + index],
+      })),
+      additionalAdults: additionalAdults.map(a => ({ name: a.name, signedAt: a.signedAt })),
       signedAt: waiver.signed_at,
       signature: waiver.signature,
     };
@@ -401,6 +428,33 @@ export async function signWaiver(guardianId: string, input: SignWaiverInput, ipA
   }
 }
 
+/** Kids and teens are both minors signed for by the guardian and stored together. */
+function allMinors(input: SignWaiverInput) {
+  return [...input.children, ...input.teens];
+}
+
+function toNotificationPeople(people: SignWaiverInput['children']) {
+  return people.map(c => ({ name: c.name, birthDate: c.birthDate?.toISOString(), gender: c.gender }));
+}
+
+/**
+ * Upload each additional adult's own signature. Unlike the guardian's (which
+ * falls back to the typed name), an adult with no stored signature is not
+ * covered, so a failed upload fails the whole submission.
+ */
+async function uploadAdditionalAdultSignatures(input: SignWaiverInput): Promise<AdditionalAdult[]> {
+  const signedAt = new Date().toISOString();
+  const adults: AdditionalAdult[] = [];
+  for (const adult of input.additionalAdults) {
+    const signatureImageUrl = await uploadSignatureImage(adult.signatureImage, 0);
+    if (!signatureImageUrl) {
+      throw new AppError(`We couldn't save the signature for ${adult.name}. Please have them sign again.`, 400);
+    }
+    adults.push({ name: adult.name.trim(), typedSignature: adult.name.trim(), signatureImageUrl, signedAt });
+  }
+  return adults;
+}
+
 function splitName(fullName: string) {
   const parts = fullName.trim().split(/\s+/);
   const [firstNameRaw, ...rest] = parts;
@@ -414,8 +468,15 @@ function splitName(fullName: string) {
  * Children are fetched from waiver_user_children table, not JSONB
  */
 function transformWaiverSubmission(waiver: Record<string, unknown>) {
-  // Children may come from the join (waiver_user_children) or be resolved separately
-  const children = Array.isArray(waiver.children) ? waiver.children : [];
+  // Children may come from the join (waiver_user_children) or be resolved separately.
+  // Kids (0-12) and teens (13-17) are stored together and split by age.
+  const minors = (Array.isArray(waiver.children) ? waiver.children : []).map((c: Record<string, unknown>) => ({
+    childId: (c.childId ?? c.waiver_user_child_id ?? c.child_id ?? undefined) as number | undefined,
+    name: (c.name ?? (`${c.first_name || ''} ${c.last_name || ''}`.trim() || null)) as string | null,
+    birthDate: (c.birthDate ?? c.birth_date ?? null) as string | null,
+    gender: (c.gender ?? null) as string | null,
+  }));
+  const { kids, teens } = splitMinorsByAge(minors);
 
   return {
     id: waiver.submission_id ?? waiver.waiver_submission_id,
@@ -428,12 +489,10 @@ function transformWaiverSubmission(waiver: Record<string, unknown>) {
     relationshipToChildren: waiver.relationship_to_children ?? waiver.relationship_to_minor ?? null,
     relationshipToMinor: waiver.relationship_to_minor ?? waiver.relationship_to_children ?? null,
     childIds: waiver.child_ids || [],
-    children: children.map((c: Record<string, unknown>) => ({
-      childId: c.childId ?? c.waiver_user_child_id ?? c.child_id ?? undefined,
-      name: c.name ?? (`${c.first_name || ''} ${c.last_name || ''}`.trim() || null),
-      birthDate: c.birthDate ?? c.birth_date ?? null,
-      gender: c.gender ?? null,
-    })),
+    children: kids,
+    teens,
+    additionalAdults: parseAdditionalAdults(waiver.additional_adults)
+      .map(a => ({ name: a.name, signedAt: a.signedAt, hasSignature: Boolean(a.signatureImageUrl) })),
     signature: waiver.digital_signature ?? waiver.signature ?? null,
     digitalSignature: waiver.digital_signature ?? null,
     signedAt: waiver.signed_at,
@@ -584,8 +643,8 @@ export async function listWaiversForWaiverUser(waiverUserId: string) {
   return uniqueWaivers.map((waiver) => {
     // If waiver has no children from the query, attach the waiver user's children
     const transformed = transformWaiverSubmission(waiver);
-    if (!transformed.children || transformed.children.length === 0) {
-      transformed.children = childrenMapped;
+    if (transformed.children.length === 0 && transformed.teens.length === 0) {
+      return transformWaiverSubmission({ ...waiver, children: childrenMapped });
     }
     return transformed;
   });
@@ -641,7 +700,8 @@ export async function signWaiverForWaiverUser(
   try {
     // Fetch existing children from waiver_user_children for comparison (with childId)
     const existingChildrenRaw = waiverUser.waiver_user_children || [];
-    const existingChildren = existingChildrenRaw.map((c: Record<string, unknown>) => ({
+    const existingChildren: Array<{ childId?: number; name: string; birth_date: string; gender?: string }> =
+      existingChildrenRaw.map((c: Record<string, unknown>) => ({
       childId: c.waiver_user_child_id as number | undefined,
       name: `${c.minor_first_name || ''} ${c.minor_last_name || ''}`.trim(),
       birth_date: c.minor_date_of_birth as string || '',
@@ -656,6 +716,7 @@ export async function signWaiverForWaiverUser(
       if (latestWaiver && !hasWaiverDataChanged(latestWaiver, existingChildren, input)) {
         // Data hasn't changed - record the visit and update timestamps
         const visitSignedAt = new Date().toISOString();
+        const { kids: existingKids, teens: existingTeens } = splitMinorsByAge(existingChildren);
 
         await WaiverUserRepository.update(waiverUser.waiver_user_id, {
           last_waiver_signed_at: visitSignedAt,
@@ -695,9 +756,8 @@ export async function signWaiverForWaiverUser(
           guardianPhone: latestWaiver.guardian_phone,
           guardianDob: latestWaiver.guardian_date_of_birth,
           relationshipToChildren: latestWaiver.relationship_to_children,
-          children: existingChildren.map((c: { name: string; birth_date: string; gender?: string }) => ({
-            name: c.name, birthDate: c.birth_date, gender: c.gender,
-          })),
+          children: existingKids.map(c => ({ name: c.name, birthDate: c.birth_date, gender: c.gender })),
+          teens: existingTeens.map(c => ({ name: c.name, birthDate: c.birth_date, gender: c.gender })),
           signedAt: visitSignedAt,
           signature: latestWaiver.signature || input.signature,
           ipAddress,
@@ -712,11 +772,9 @@ export async function signWaiverForWaiverUser(
           guardianEmail: latestWaiver.guardian_email,
           guardianPhone: latestWaiver.guardian_phone,
           waiverCode,
-          children: existingChildren.map((c: { name: string; birth_date: string; gender?: string }) => ({
-            name: c.name,
-            birthDate: c.birth_date,
-            gender: c.gender,
-          })),
+          children: existingKids.map(c => ({ name: c.name, birthDate: c.birth_date, gender: c.gender })),
+          teens: existingTeens.map(c => ({ name: c.name, birthDate: c.birth_date, gender: c.gender })),
+          additionalAdults: [],
           signedAt: visitSignedAt, // Current visit time
           signature: latestWaiver.signature,
           quickResign: true,
@@ -761,8 +819,8 @@ export async function signWaiverForWaiverUser(
 
     await WaiverUserRepository.update(waiverUser.waiver_user_id, updateData);
 
-    // Validate children have names and birth dates
-    const validChildren = input.children.filter(child => child.birthDate);
+    // Validate minors (kids + teens) have names and birth dates
+    const validChildren = allMinors(input).filter(child => child.birthDate);
     for (const child of validChildren) {
       if (!child.name || !child.name.trim()) {
         throw new AppError('Child name is required', 400);
@@ -793,6 +851,7 @@ export async function signWaiverForWaiverUser(
     } else if (previousSignatureImageUrl) {
       signatureImageUrl = previousSignatureImageUrl;
     }
+    const additionalAdults = await uploadAdditionalAdultSignatures(input);
 
     // Create waiver submission record (no JSONB children - stored in waiver_user_children)
     const waiver = await WaiverRepository.create({
@@ -809,6 +868,7 @@ export async function signWaiverForWaiverUser(
       waiver_code: waiverCode,
       ip_address: ipAddress,
       signature_image_url: signatureImageUrl,
+      additional_adults: additionalAdults,
     });
 
     // Record the visit linked to the new waiver
@@ -833,7 +893,9 @@ export async function signWaiverForWaiverUser(
       guardianPhone: input.guardianPhone,
       guardianDob: input.guardianDob?.toISOString().split('T')[0],
       relationshipToChildren: input.relationshipToChildren,
-      children: input.children.map(c => ({ name: c.name, birthDate: c.birthDate?.toISOString(), gender: c.gender })),
+      children: toNotificationPeople(input.children),
+      teens: toNotificationPeople(input.teens),
+      additionalAdults,
       signedAt: waiver.signed_at,
       signature: input.signature,
       ipAddress,
@@ -852,6 +914,12 @@ export async function signWaiverForWaiverUser(
         birthDate: child.birthDate.toISOString(),
         gender: child.gender,
       })),
+      teens: input.teens.map((teen) => ({
+        name: teen.name,
+        birthDate: teen.birthDate.toISOString(),
+        gender: teen.gender,
+      })),
+      additionalAdults: additionalAdults.map(a => ({ name: a.name, signedAt: a.signedAt })),
       signedAt: waiver.signed_at,
       signature: waiver.signature,
       quickResign: input.quickResign ?? false,

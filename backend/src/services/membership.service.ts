@@ -4,6 +4,7 @@ import { MembershipRepository, MembershipPlanRepository, MembershipVisitReposito
 import { AppError } from '../utils/app-error';
 import { logger } from '../utils/logger';
 import { supabaseAny } from '../config/supabase';
+import { signStorageUrl } from './storage-url.service';
 import { multiplyDollars, calculateTax, addDollars } from '../utils/currency';
 import { publishAdminEvent } from './admin-events.service';
 import { sendMembershipConfirmation, sendQueuedMembershipConfirmation } from './email.service';
@@ -832,13 +833,17 @@ export async function lookupMembershipForCheckIn(displayId: string) {
       email: customer?.email ?? null,
       phone: customer?.phone ?? null,
     },
-    children: children.map(c => ({
-      id: c.child_id,
-      firstName: c.first_name,
-      lastName: c.last_name ?? null,
-      birthDate: c.birth_date ?? null,
-      photoUrl: c.photo_url ?? null,
-    })),
+    // child-photos is a private bucket: hand the front desk short-lived signed
+    // links rather than the previously public object URLs.
+    children: await Promise.all(
+      children.map(async c => ({
+        id: c.child_id,
+        firstName: c.first_name,
+        lastName: c.last_name ?? null,
+        birthDate: c.birth_date ?? null,
+        photoUrl: await signStorageUrl('child-photos', c.photo_url),
+      })),
+    ),
   };
 }
 

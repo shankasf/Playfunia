@@ -55,11 +55,6 @@ export async function submitApplicationHandler(req: Request, res: Response, next
       );
     }
 
-    // Require at least a video URL or video file
-    if (!parsed.data.videoUrl && !videoFile) {
-      throw new AppError('A video introduction is required. Please provide a video link or upload a video file.', 400);
-    }
-
     const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
 
     const result = await submitJobApplication(

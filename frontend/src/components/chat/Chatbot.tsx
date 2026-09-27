@@ -130,15 +130,24 @@ const QUICK_PROMPTS: { emoji: string; label: string; prompt: string }[] = [
 ];
 
 // SVG icons — inline so no extra deps and we can animate fill/stroke.
+// Refined speech-bubble with a soft, friendly face — clean rounded silhouette
+// that reads clearly at small sizes and feels polished/professional.
 const ChatIcon = () => (
-  <svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">
+  <svg viewBox="0 0 24 24" width="30" height="30" fill="none" aria-hidden="true">
     <path
-      d="M4 5a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H9.5l-4 4a.75.75 0 0 1-1.25-.56V16A3 3 0 0 1 4 13Z"
+      d="M12 3C6.99 3 3 6.4 3 10.6c0 2.05.97 3.9 2.55 5.27-.1 1.2-.58 2.3-1.4 3.18-.3.32-.08.85.36.81 1.8-.16 3.34-.78 4.5-1.66 1.02.31 2.12.48 3.12.48 5.01 0 9-3.4 9-7.6S17.01 3 12 3Z"
       fill="currentColor"
     />
-    <circle cx="9" cy="9" r="1.1" fill="#fff" />
-    <circle cx="12" cy="9" r="1.1" fill="#fff" />
-    <circle cx="15" cy="9" r="1.1" fill="#fff" />
+    {/* friendly eyes + smile */}
+    <circle cx="8.6" cy="10.3" r="1.15" fill="#fff" />
+    <circle cx="15.4" cy="10.3" r="1.15" fill="#fff" />
+    <path
+      d="M8.6 13c.85.95 2.05 1.45 3.4 1.45S14.55 13.95 15.4 13"
+      stroke="#fff"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </svg>
 );
 
@@ -456,6 +465,18 @@ export function Chatbot() {
             </form>
 
             {error ? <div className={styles.status}>{error}</div> : null}
+
+            <div className={styles.poweredBy}>
+              powered by{' '}
+              <a
+                className={styles.poweredByBrand}
+                href="https://callsphere.ai/"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                CallSphere LLC
+              </a>
+            </div>
           </div>
         </>
       ) : (
@@ -476,10 +497,12 @@ export function Chatbot() {
             aria-label="Open Playfunia chatbot"
           >
             <span className={styles.fabAura} aria-hidden="true" />
+            <span className={styles.fabRing} aria-hidden="true" />
             <span className={styles.fabIcon}>
               <ChatIcon />
             </span>
             <span className={styles.fabSparkle} aria-hidden="true">✨</span>
+            <span className={styles.fabStatus} aria-hidden="true" />
           </button>
         </div>
       )}

@@ -5,6 +5,7 @@
 
 import { supabase, supabaseAny } from '../config/supabase';
 import { logDbOperation } from '../utils/logger';
+import { parseAdditionalAdults, type AdditionalAdult } from '../utils/waiver-people';
 import type {
   User,
   Customer,
@@ -994,6 +995,7 @@ function mapWaiverSubmission(data: WaiverSubmissionData): WaiverSubmissionData {
     marketingOptIn: data.marketing_sms_opt_in || data.marketing_email_opt_in,
     acceptedPolicies: data.accepted_policies,
     waiverCode: data.waiver_code ?? null,
+    additionalAdults: parseAdditionalAdults(data.additional_adults),
     allergies: null, // Removed from schema
     medicalNotes: null, // Removed from schema
     insuranceProvider: null, // Removed from schema
@@ -1088,6 +1090,7 @@ export const WaiverRepository = {
     ip_address?: string;
     waiver_code?: string;
     signature_image_url?: string;
+    additional_adults?: AdditionalAdult[];
   }) {
     // Parse guardian_name into first/last if provided
     let firstName = waiverData.guardian_first_name;
@@ -1100,6 +1103,7 @@ export const WaiverRepository = {
     }
 
     const insertData: Record<string, unknown> = {
+      additional_adults: waiverData.additional_adults ?? [],
       customer_id: waiverData.customer_id,
       waiver_user_id: waiverData.waiver_user_id,
       guardian_first_name: firstName || 'Unknown',
@@ -1769,6 +1773,37 @@ export const PromotionRepository = {
     const { data, error } = await query;
     if (error) throw error;
     return data ?? [];
+  },
+
+  /**
+   * Find the promotion that is live *right now* for a given coupon category.
+   *
+   * Eligibility mirrors evaluateCoupon() in coupon.service.ts so we never
+   * advertise a code that checkout would reject: active flag, date window
+   * contains `now`, category matches (or the coupon applies to everything),
+   * and the redemption cap has not been reached.
+   *
+   * When several promotions overlap we pick the one ending soonest — that is
+   * the most "current" of the monthly codes. Returns null when nothing is live,
+   * so callers can fall back to a neutral message instead of an expired offer.
+   */
+  async findActiveForCategory(category: string, now: Date = new Date()) {
+    const nowIso = now.toISOString();
+    const { data, error } = await supabaseAny
+      .from('promotions')
+      .select('*')
+      .eq('is_active', true)
+      .or(`valid_from.is.null,valid_from.lte.${nowIso}`)
+      .or(`valid_to.is.null,valid_to.gte.${nowIso}`)
+      .overlaps('applies_to', [category, 'all'])
+      .order('valid_to', { ascending: true, nullsFirst: false });
+    if (error) throw error;
+
+    const usable = (data ?? []).filter(
+      (p: { max_redemptions: number | null; redemptions: number | null }) =>
+        p.max_redemptions == null || (p.redemptions ?? 0) < p.max_redemptions,
+    );
+    return usable[0] ?? null;
   },
 
   async create(payload: {
@@ -3093,6 +3128,17 @@ export const JobListingRepository = {
 };
 
 // ============= Job Application Repository =============
+
+// Every write that changes admin_notes stamps who touched it and when, so the
+// notes control can show provenance no matter which screen the edit came from.
+// author is undefined when the caller has no authenticated actor to attribute
+// (e.g. an internal script) — in that case the previous author is cleared
+// rather than left pointing at someone who did not make this edit.
+function stampNotesMetadata(updates: Record<string, unknown>, author?: string | null): void {
+  updates.admin_notes_updated_at = new Date().toISOString();
+  updates.admin_notes_updated_by = author ?? null;
+}
+
 export const JobApplicationRepository = {
   async create(applicationData: {
     listing_id: number;
@@ -3120,6 +3166,7 @@ export const JobApplicationRepository = {
     video_original_name: string | null;
     video_mime_type: string | null;
     video_size_bytes: number | null;
+    screening_answers: Record<string, string> | null;
   }) {
     const { data, error } = await supabaseAny
       .from('job_applications')
@@ -3156,6 +3203,7 @@ export const JobApplicationRepository = {
     search?: string;
     dateFrom?: string;
     dateTo?: string;
+    archived?: boolean;
     limit?: number;
     offset?: number;
   }) {
@@ -3164,6 +3212,9 @@ export const JobApplicationRepository = {
       .select('*, job_listings(listing_id, title)', { count: 'exact' });
 
     if (options?.status) query = query.eq('status', options.status);
+    // archived === false -> active inbox only; true -> archived folder only; undefined -> all
+    if (options?.archived === true) query = query.not('archived_at', 'is', null);
+    else if (options?.archived === false) query = query.is('archived_at', null);
     if (options?.listingId) query = query.eq('listing_id', options.listingId);
     if (options?.search) {
       const s = options.search.replace(/%/g, '\\%').replace(/_/g, '\\_').trim();
@@ -3192,12 +3243,23 @@ export const JobApplicationRepository = {
     return data;
   },
 
-  async updateStatus(applicationId: number, status: string, adminNotes?: string) {
+  async updateStatus(
+    applicationId: number,
+    status: string,
+    adminNotes?: string,
+    archivedAt?: string | null,
+    notesAuthor?: string | null,
+  ) {
     const updates: Record<string, unknown> = {
       status,
       updated_at: new Date().toISOString(),
     };
-    if (adminNotes !== undefined) updates.admin_notes = adminNotes;
+    if (adminNotes !== undefined) {
+      updates.admin_notes = adminNotes;
+      stampNotesMetadata(updates, notesAuthor);
+    }
+    // archivedAt is computed from the new status by the service layer; undefined means "leave unchanged"
+    if (archivedAt !== undefined) updates.archived_at = archivedAt;
 
     const { data, error } = await supabaseAny
       .from('job_applications')
@@ -3209,8 +3271,33 @@ export const JobApplicationRepository = {
     return data;
   },
 
-  async update(applicationId: number, updates: Record<string, unknown>) {
-    const payload = { ...updates, updated_at: new Date().toISOString() };
+  // Dedicated notes save for the applicants list / detail notes control.
+  // Kept separate from update() so saving a note never touches applicant
+  // fields, and so an empty note collapses to NULL rather than ''.
+  async updateNotes(applicationId: number, notes: string, author?: string | null) {
+    const trimmed = notes.trim();
+    const updates: Record<string, unknown> = {
+      admin_notes: trimmed === '' ? null : trimmed,
+      updated_at: new Date().toISOString(),
+    };
+    stampNotesMetadata(updates, author);
+
+    const { data, error } = await supabaseAny
+      .from('job_applications')
+      .update(updates)
+      .eq('application_id', applicationId)
+      .select('application_id, admin_notes, admin_notes_updated_at, admin_notes_updated_by')
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async update(applicationId: number, updates: Record<string, unknown>, notesAuthor?: string | null) {
+    const payload: Record<string, unknown> = { ...updates, updated_at: new Date().toISOString() };
+    // The full applicant edit form can carry admin_notes too — keep its
+    // provenance in step with the dedicated notes control.
+    if ('admin_notes' in updates) stampNotesMetadata(payload, notesAuthor);
+
     const { data, error } = await supabaseAny
       .from('job_applications')
       .update(payload)

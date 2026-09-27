@@ -22,6 +22,8 @@ import { webhookRouter } from './webhook.routes';
 import { refundRouter } from './refund.routes';
 import { careersRouter } from './careers.routes';
 import { couponRouter } from './coupon.routes';
+import { voiceRouter } from './voice.routes';
+import { clientLogRouter } from './client-log.routes';
 
 export const apiRouter = Router();
 
@@ -47,3 +49,5 @@ apiRouter.use('/webhooks', webhookRouter);
 apiRouter.use('/refunds', refundRouter);
 apiRouter.use('/careers', careersRouter);
 apiRouter.use('/coupons', couponRouter);
+apiRouter.use('/voice', voiceRouter);
+apiRouter.use('/client-logs', clientLogRouter);

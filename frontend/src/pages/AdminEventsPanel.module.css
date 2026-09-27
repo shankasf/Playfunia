@@ -742,6 +742,98 @@
     flex-direction: column;
     align-items: flex-start;
   }
+
+  /* Card-mode table: stop horizontal scroll, stack each row as a card */
+  .table {
+    min-width: 0 !important;
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  /* visually hide header row (keep for a11y) */
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .table,
+  .table tbody,
+  .table tr,
+  .table td {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    margin: 0 0 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.4rem 0.9rem;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    text-align: right;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    min-height: 0;
+    white-space: normal;
+  }
+
+  .table td:last-child {
+    border-bottom: 0;
+    text-align: right;
+  }
+
+  .table td::before {
+    content: attr(data-label);
+    flex: 0 0 40%;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+
+  /* cells with no label (colSpan rows) keep full width, centered */
+  .table td:not([data-label])::before {
+    content: none;
+  }
+
+  .table td:not([data-label]) {
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* keep poster image from overflowing the card cell */
+  .posterThumb,
+  .posterPlaceholder {
+    max-width: 120px;
+  }
+
+  /* action buttons align right within the card cell */
+  .actionButtons {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  /* don't let the progress bar's fixed min-width force overflow on small screens */
+  .uploadProgressBar {
+    min-width: 0;
+  }
 }
 
 @media (max-width: 640px) {

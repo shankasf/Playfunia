@@ -48,15 +48,23 @@ const guardianDobSchema = z.coerce
   .refine(date => isNotFutureDate(date), 'Date cannot be in the future')
   .refine(date => calculateAge(date) >= 18, 'Parent/Guardian must be at least 18 years old');
 
-// Child birth date must be 0-13 years old
+// Child birth date must be 0-12 years old (13-17 go in the teen section)
 const childBirthDateSchema = z.coerce
   .date()
   .refine(date => !Number.isNaN(date.getTime()), 'Date is required')
   .refine(date => isNotFutureDate(date), 'Date cannot be in the future')
   .refine(date => {
     const age = calculateAge(date);
-    return age >= 0 && age <= 13;
-  }, 'Child age must be between 0 and 13 years');
+    return age >= 0 && age <= 12;
+  }, 'Kids must be 0-12 years old. Add ages 13-17 in the teen section.');
+
+// Teen birth date must be 13-17 years old; 18+ must be added as an adult
+const teenBirthDateSchema = z.coerce
+  .date()
+  .refine(date => !Number.isNaN(date.getTime()), 'Date is required')
+  .refine(date => isNotFutureDate(date), 'Date cannot be in the future')
+  .refine(date => calculateAge(date) >= 13, 'Teens must be 13-17 years old. Add younger children in the kids section.')
+  .refine(date => calculateAge(date) <= 17, 'Anyone 18 or older must be added as an adult and sign for themselves.');
 
 // Phone must be exactly 10 digits
 const phoneSchema = z
@@ -84,6 +92,19 @@ const waiverChildSchema = z.object({
   ).optional(),
 });
 
+const waiverTeenSchema = waiverChildSchema.extend({
+  name: nameSchema.refine(val => val.length > 0, 'Teen name is required'),
+  birthDate: teenBirthDateSchema,
+});
+
+// Each additional adult signs for themselves on the same device
+const additionalAdultSchema = z.object({
+  name: nameSchema.refine(val => val.length > 0, 'Adult name is required'),
+  signatureImage: z
+    .string({ message: 'Each adult must sign for themselves' })
+    .regex(/^data:image\/png;base64,/, 'Each adult must sign for themselves'),
+});
+
 export const signWaiverSchema = z.object({
   guardianId: z.string().min(1),
   guardianName: nameSchema.refine(val => val.length > 0, 'Guardian name is required'),
@@ -98,9 +119,30 @@ export const signWaiverSchema = z.object({
   acceptedPolicies: z.array(z.string().min(1)).nonempty('Must accept policies'),
   expiresAt: z.coerce.date().optional(),
   marketingOptIn: z.boolean(),
-  children: z.array(waiverChildSchema).min(1, 'At least one child must be listed'),
+  children: z.array(waiverChildSchema).default([]),
+  teens: z.array(waiverTeenSchema).default([]),
+  additionalAdults: z.array(additionalAdultSchema).max(20, 'Too many adults on one waiver').default([]),
   // Quick re-sign flag - if true, only record visit if data unchanged
   quickResign: z.boolean().optional(),
-});
+})
+  .refine(data => data.children.length + data.teens.length > 0, {
+    message: 'At least one child or teen must be listed',
+    path: ['children'],
+  })
+  .superRefine((data, ctx) => {
+    // One entry per adult: the guardian can't also be listed as an additional adult
+    const seen = new Set([data.guardianName.trim().toLowerCase()]);
+    data.additionalAdults.forEach((adult, index) => {
+      const key = adult.name.trim().toLowerCase();
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${adult.name} is already on this waiver. Each adult is listed once and signs for themselves.`,
+          path: ['additionalAdults', index, 'name'],
+        });
+      }
+      seen.add(key);
+    });
+  });
 
 export type SignWaiverInput = z.infer<typeof signWaiverSchema>;
