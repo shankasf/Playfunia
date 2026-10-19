@@ -1,6 +1,7 @@
 import { UserRepository, WaiverUserRepository, WaiverRepository } from '../repositories';
 import { signJwt } from '../utils/jwt';
 import type { WaiverAuthLookupInput, WaiverAuthLoginInput } from '../schemas/waiver-auth.schema';
+import { assertDeliverableEmail } from './email-validation.service';
 
 export type LookupResult = {
   status: 'main_user' | 'waiver_user' | 'not_found';
@@ -170,6 +171,12 @@ export async function loginOrRegisterWaiverUser(
         const waiverGuardianName = `${existingWaiver.guardian_first_name || ''} ${existingWaiver.guardian_last_name || ''}`.trim();
         guardianNameFromMainUser = waiverGuardianName || guardianNameFromMainUser;
       }
+    }
+
+    // Brand-new guardian typing their email at the kiosk: refuse typos, dead
+    // domains and previously bounced addresses right here, before the form.
+    if (email && !mainUserEmail) {
+      await assertDeliverableEmail(email);
     }
 
     // Don't create DB record yet — defer until waiver is actually submitted.

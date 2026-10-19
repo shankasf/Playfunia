@@ -7,6 +7,7 @@ import pinoHttp from 'pino-http';
 import { appConfig } from './config/env';
 import { errorHandlerMiddleware } from './middleware/error-handler.middleware';
 import { apiRouter } from './routes';
+import { rejectInvalidEmailsInBody } from './middleware/email-validation.middleware';
 import { logger } from './utils/logger';
 
 export function createApp() {
@@ -51,6 +52,9 @@ export function createApp() {
     const limit = req.path === '/api/waivers' ? '10mb' : '2mb';
     express.json({ limit })(req, res, next);
   });
+
+  // Reject undeliverable email addresses in any request body (see middleware).
+  app.use(rejectInvalidEmailsInBody);
 
   app.use('/api', apiRouter);
 
