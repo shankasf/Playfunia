@@ -8,6 +8,7 @@ import {
   MAX_VIDEO_SIZE_BYTES,
 } from '../schemas/careers.schema';
 import { AppError } from '../utils/app-error';
+import { assertDeliverableEmail } from '../services/email-validation.service';
 
 export async function listJobListingsHandler(_req: Request, res: Response, next: NextFunction) {
   try {
@@ -54,6 +55,8 @@ export async function submitApplicationHandler(req: Request, res: Response, next
         400,
       );
     }
+
+    await assertDeliverableEmail(parsed.data.email);
 
     const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
 

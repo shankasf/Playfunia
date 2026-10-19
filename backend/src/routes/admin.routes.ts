@@ -204,10 +204,29 @@ import {
   previewAudienceHandler,
   draftMessageHandler,
   sendCampaignHandler,
+  uploadMarketingImageHandler,
   listCampaignsHandler as listMarketingCampaignsHandler,
   getCampaignHandler as getMarketingCampaignHandler,
+  listSuppressionsHandler,
+  syncSuppressionsHandler,
 } from '../controllers/marketing.controller';
+import {
+  getChatbotSettingsHandler,
+  updateChatbotSettingsHandler,
+  listChatbotModelsHandler,
+  testChatbotHandler,
+  listKbDocumentsHandler,
+  getKbDocumentHandler,
+  createKbTextDocumentHandler,
+  uploadKbDocumentHandler,
+  replaceKbDocumentFileHandler,
+  updateKbDocumentHandler,
+  reindexKbDocumentHandler,
+  deleteKbDocumentHandler,
+  searchKbHandler,
+} from '../controllers/chatbot-admin.controller';
 import { AppError } from '../utils/app-error';
+import { KB_MAX_FILE_BYTES } from '../services/knowledge-base.service';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -220,6 +239,63 @@ const upload = multer({
     }
   },
 });
+
+// Marketing email image: one image, jpeg/png/webp/gif, max 5 MB. Multer errors
+// are not AppErrors (the error middleware would answer 500), so they are
+// translated into readable 400s here.
+const MARKETING_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const marketingImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (MARKETING_IMAGE_TYPES.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new AppError('Unsupported image type. Upload a JPEG, PNG, WebP or GIF image.', 400));
+    }
+  },
+}).single('image');
+
+function marketingImageUploadMiddleware(req: Request, res: Response, next: NextFunction) {
+  marketingImageUpload(req, res, (err: unknown) => {
+    if (!err) return next();
+    if (err instanceof AppError) return next(err);
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(new AppError('Image is too large. The maximum size is 5 MB.', 400));
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT') {
+        return next(new AppError('Upload exactly one image in the "image" field.', 400));
+      }
+      return next(new AppError(`Image upload failed: ${err.message}`, 400));
+    }
+    return next(new AppError('Image upload failed. Send the file as multipart/form-data in the "image" field.', 400, { cause: err }));
+  });
+}
+
+// Knowledge base file upload: any file type, one file, max 25 MB. Unsupported
+// types are accepted and stored as "unsearchable" by the service.
+const kbFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: KB_MAX_FILE_BYTES, files: 1 },
+}).single('file');
+
+function kbFileUploadMiddleware(req: Request, res: Response, next: NextFunction) {
+  kbFileUpload(req, res, (err: unknown) => {
+    if (!err) return next();
+    if (err instanceof AppError) return next(err);
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(new AppError('File is too large. The maximum size is 25 MB.', 400));
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT') {
+        return next(new AppError('Upload exactly one file in the "file" field.', 400));
+      }
+      return next(new AppError(`File upload failed: ${err.message}`, 400));
+    }
+    return next(new AppError('File upload failed. Send the file as multipart/form-data in the "file" field.', 400, { cause: err }));
+  });
+}
 
 export const adminRouter = Router();
 
@@ -519,8 +595,27 @@ adminRouter.get('/marketing/live-promos', listLivePromosHandler);
 adminRouter.post('/marketing/audience-preview', previewAudienceHandler);
 adminRouter.post('/marketing/draft', draftMessageHandler);
 adminRouter.post('/marketing/send', sendCampaignHandler);
+adminRouter.post('/marketing/image', marketingImageUploadMiddleware, uploadMarketingImageHandler);
 adminRouter.get('/marketing/campaigns', listMarketingCampaignsHandler);
+adminRouter.get('/marketing/suppressions', listSuppressionsHandler);
+adminRouter.post('/marketing/suppressions/sync', syncSuppressionsHandler);
 adminRouter.get('/marketing/campaigns/:id', getMarketingCampaignHandler);
+
+// AI Chatbot (admin only via the staff allow-list) — live settings read by the
+// chatbot service + widget, and the pgvector knowledge base (kb_documents/kb_chunks).
+adminRouter.get('/chatbot/settings', getChatbotSettingsHandler);
+adminRouter.patch('/chatbot/settings', updateChatbotSettingsHandler);
+adminRouter.get('/chatbot/models', listChatbotModelsHandler);
+adminRouter.post('/chatbot/test', testChatbotHandler);
+adminRouter.get('/chatbot/kb/documents', listKbDocumentsHandler);
+adminRouter.post('/chatbot/kb/documents', createKbTextDocumentHandler);
+adminRouter.post('/chatbot/kb/upload', kbFileUploadMiddleware, uploadKbDocumentHandler);
+adminRouter.post('/chatbot/kb/search', searchKbHandler);
+adminRouter.get('/chatbot/kb/documents/:id', getKbDocumentHandler);
+adminRouter.patch('/chatbot/kb/documents/:id', updateKbDocumentHandler);
+adminRouter.post('/chatbot/kb/documents/:id/replace', kbFileUploadMiddleware, replaceKbDocumentFileHandler);
+adminRouter.post('/chatbot/kb/documents/:id/reindex', reindexKbDocumentHandler);
+adminRouter.delete('/chatbot/kb/documents/:id', deleteKbDocumentHandler);
 
 // Event Reconciliation (admin only)
 // POST /api/admin/reconciliation/run?hours=24

@@ -2,7 +2,12 @@
 
 The agent has access to:
   * ~24 structured-data tools (curated SQL behind each one — see tools.py)
-  * One semantic-search tool over the text KB
+  * One semantic-search tool over the admin-managed pgvector knowledge base
+    (documents uploaded/edited in the admin panel at /admin/chatbot)
+
+Runtime behaviour (model, temperature, tool-turn cap, system prompt override,
+KB on/off and top-k) comes from the `chatbot_settings` table via settings.py,
+so admins can tune the bot without a redeploy.
 
 The LLM is the router. It inspects the question, chooses the right tool(s),
 calls them (possibly several in sequence for multi-step queries), then writes
@@ -20,12 +25,17 @@ from typing import Any
 from openai import AsyncOpenAI, OpenAIError
 
 from logger import log_query
+from settings import get_settings
 from tools import TOOL_HANDLERS, TOOL_SCHEMAS, get_location
 
 log = logging.getLogger("playfunia.agent")
 
+# Fallbacks only — the effective values come from get_settings() per request.
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 MAX_TOOL_TURNS = 6   # safety cap — each turn = one round of tool calls
+
+KB_TOOL_NAME = "search_knowledge_base"
+TOOL_SCHEMAS_NO_KB = [t for t in TOOL_SCHEMAS if t["function"]["name"] != KB_TOOL_NAME]
 
 
 def _load_store_contact() -> dict:
@@ -55,6 +65,8 @@ if STORE_CONTACT.get("phone"):
         _CONTACT_LINE += f" or email {STORE_CONTACT['email']}"
 
 
+# Built-in default. An admin can override it from /admin/chatbot (chatbot_settings.system_prompt);
+# when they do, _build_system_prompt() still appends the store contact line below.
 SYSTEM_PROMPT = f"""You are the Playfunia customer support chatbot for an indoor children's play center in Albany, NY.
 
 You have access to two kinds of tools:
@@ -64,8 +76,13 @@ You have access to two kinds of tools:
    fees, events, jobs, faqs, announcements. These run real SQL against the live
    business database and return authoritative facts.
 
-2. search_knowledge_base — semantic search over a curated knowledge base text file.
-   Use ONLY when the question is open-ended/descriptive and no structured tool fits.
+2. search_knowledge_base — semantic search over the admin-managed knowledge base
+   (documents and notes maintained by Playfunia staff).
+   Use when the question is open-ended/descriptive and no structured tool fits,
+   AND whenever search_faqs (or another structured tool) returns no relevant
+   result — always check search_knowledge_base before telling the user that
+   information is not available. Staff upload policies, guides and notices
+   there that the structured tables do not cover.
 
 Rules:
 - For "cheapest", "best for N kids", "how much for a party of X", or any other
@@ -77,6 +94,13 @@ Rules:
   other filters.
 - Quote prices and dates exactly as the tools return them (e.g. "$599",
   "June 18, 2026"). Never invent or estimate numbers.
+- Birthday party packages have two prices: the regular price for Saturday and
+  Sunday parties and a discounted Monday-Friday weekday price (the tools return
+  both as price_display and weekday_price_display). When a customer asks what a
+  party costs, give BOTH prices unless they already told you the date or day;
+  if they gave a date or day, pass party_date or weekday to estimate_party_total
+  and quote that price. Mention that extra guests, add-ons and the cleaning fee
+  are the same on any day.
 - If a tool returns an error, an empty result, or otherwise indicates that
   a specific named entity (a plan, package, promo code, event, etc.) does
   not exist, DO NOT retry with alternative tools or fabricate details.
@@ -92,6 +116,22 @@ Rules:
 - You may call multiple tools in one turn (parallel) or in sequence when an
   answer needs them.
 """
+
+
+# Appended to an admin-supplied prompt so the "contact us" fallback always has
+# real contact details even if the admin forgot to include them.
+_CONTACT_SUFFIX = (
+    f"\n\nStore contact: {_CONTACT_LINE}. Whenever you tell a customer to contact "
+    f"Playfunia directly, include these details in the same sentence."
+) if _CONTACT_LINE else ""
+
+
+def _build_system_prompt(settings: dict) -> str:
+    """Admin override (plus contact line) if set, else the built-in default."""
+    custom = (settings.get("system_prompt") or "").strip()
+    if custom:
+        return custom + _CONTACT_SUFFIX
+    return SYSTEM_PROMPT
 
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -125,7 +165,13 @@ async def run(messages: list[dict]) -> dict:
     Returns ``{"reply": str, "tool_calls": [...]}``. Every call is logged
     fire-and-forget to public.chatbot_query_logs for analytics.
     """
-    convo: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}, *messages]
+    settings = get_settings()
+    model = settings.get("model") or OPENAI_MODEL
+    temperature = float(settings.get("temperature", 0.2))
+    max_turns = int(settings.get("max_tool_turns") or MAX_TOOL_TURNS)
+    tools = TOOL_SCHEMAS if settings.get("kb_enabled", True) else TOOL_SCHEMAS_NO_KB
+
+    convo: list[dict] = [{"role": "system", "content": _build_system_prompt(settings)}, *messages]
     tool_trace: list[dict] = []
     user_message = next((m["content"] for m in reversed(messages)
                          if m.get("role") == "user"), "") or ""
@@ -135,14 +181,14 @@ async def run(messages: list[dict]) -> dict:
     error: str | None = None
 
     try:
-        for turn in range(MAX_TOOL_TURNS):
+        for turn in range(max_turns):
             turn_count = turn + 1
             try:
                 resp = await client.chat.completions.create(
-                    model=OPENAI_MODEL,
+                    model=model,
                     messages=convo,
-                    tools=TOOL_SCHEMAS,
-                    temperature=0.2,
+                    tools=tools,
+                    temperature=temperature,
                 )
             except OpenAIError as e:
                 log.exception("openai call failed")
@@ -192,5 +238,5 @@ async def run(messages: list[dict]) -> dict:
             turn_count=turn_count,
             latency_ms=latency_ms,
             error=error,
-            model=OPENAI_MODEL,
+            model=model,
         ))

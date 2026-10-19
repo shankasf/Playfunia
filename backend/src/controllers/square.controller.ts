@@ -21,6 +21,7 @@ import {
 import { AppError } from '../utils/app-error';
 import { asyncHandler } from '../utils/async-handler';
 import { appConfig } from '../config/env';
+import { assertDeliverableEmail } from '../services/email-validation.service';
 
 export const getSquareConfigHandler = asyncHandler(
   async (_req: Request, res: Response) => {
@@ -43,6 +44,7 @@ export const createSquareCheckoutIntentHandler = asyncHandler(
     }
 
     const payload = parseWithSchema(squareCheckoutIntentSchema, req.body);
+    await assertCheckoutEmailsDeliverable(payload);
     const intent = await createSquareCheckoutPaymentIntent(req.user.id, payload);
     return res.status(200).json(intent);
   },
@@ -64,6 +66,8 @@ export const finalizeSquareCheckoutHandler = asyncHandler(
 export const createSquareGuestCheckoutIntentHandler = asyncHandler(
   async (req: Request, res: Response) => {
     const payload = parseWithSchema(squareGuestCheckoutIntentSchema, req.body);
+    await assertDeliverableEmail(payload.guestEmail);
+    await assertCheckoutEmailsDeliverable(payload);
     const intent = await createSquareGuestCheckoutPaymentIntent(payload);
     return res.status(200).json(intent);
   },
@@ -76,6 +80,19 @@ export const finalizeSquareGuestCheckoutHandler = asyncHandler(
     return res.status(200).json(result);
   },
 );
+
+// Party-booking items carry their own guest email (guestInfo) for non-logged-in
+// buyers; validate those alongside the top-level checkout email.
+async function assertCheckoutEmailsDeliverable(payload: { items?: unknown[] }): Promise<void> {
+  const seen = new Set<string>();
+  for (const item of payload.items ?? []) {
+    const email = (item as { guestInfo?: { email?: unknown } })?.guestInfo?.email;
+    if (typeof email === 'string' && !seen.has(email)) {
+      seen.add(email);
+      await assertDeliverableEmail(email, 'Guest email');
+    }
+  }
+}
 
 function parseWithSchema<T>(schema: { parse: (data: unknown) => T }, data: unknown): T {
   try {

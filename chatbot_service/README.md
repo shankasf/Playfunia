@@ -62,9 +62,13 @@ Response:
 
 ### Retrieval-Augmented Generation (RAG)
 
-- Place reference files (currently `.txt`, `.md`, `.markdown`, `.json`) in `chatbot_service/data/`.
-- A sample knowledge file (`kidz4fun.txt`) is provided as a reference format.
-- On startup the service chunks and embeds those documents into a local ChromaDB store under `chatbot_service/chroma/`.
-- Retrieved snippets are appended to the conversation context before querying OpenAI.
+- The knowledge base lives in Supabase Postgres (pgvector): `kb_documents` / `kb_chunks`, searched via the `kb_search()` SQL function (see `migrations/001_init_pgvector_kb.sql`, `002_kb_grants.sql`, and `backend/migrations/add_chatbot_settings_and_kb_admin.sql`).
+- Documents are managed in the admin panel at **/admin/chatbot → Knowledge Base**: upload any file (txt, md, pdf, docx, xlsx/csv, json, html, images via vision), create/edit text documents inline, enable/disable, reindex, delete. The Node backend extracts text, chunks it, embeds it with `text-embedding-3-large` at 1536 dims and writes the rows. Only documents that are enabled and `ready` are searchable.
+- This service is read-only: `semantic.py` embeds the query (same model/dims, see `embeddings.py`) and calls `kb_search()`. No restart is needed after KB changes.
+- `scripts/backfill_pgvector.py` remains for one-off imports of text files from `data/`; `scripts/export_kb_text.py` regenerates `data/playfunia_knowledge_base.txt` from the business tables.
 
-Restart the service after updating files in `data/`. Adjust CORS by updating `CHATBOT_ALLOWED_ORIGIN` if your frontend runs on a different host.
+### Admin-managed runtime settings
+
+The single row in `chatbot_settings` (edited at **/admin/chatbot → Settings**) controls: `enabled`, `model`, `temperature`, `system_prompt` (empty = built-in default in `agent.py`), `max_tool_turns`, `kb_enabled` (removes the `search_knowledge_base` tool when off), `kb_top_k`, plus widget copy (`greeting`, `quick_prompts`, `capability_phrases`). `settings.py` reads it with a 30s TTL cache, so changes apply within ~30s without a restart. `GET /settings/debug` shows the effective values and their source.
+
+Adjust CORS by updating `CHATBOT_ALLOWED_ORIGIN` if your frontend runs on a different host.

@@ -1,8 +1,19 @@
 import { Request, Response, Router } from 'express';
 
 import { appConfig } from '../config/env';
+import { getPublicChatbotConfig, isChatbotEnabled } from '../services/chatbot-settings.service';
 
 export const chatbotRouter = Router();
+
+/**
+ * Public widget config (admin-managed in /admin/chatbot). Cached 30s server-side.
+ * Mounted at /api/chatbot/config.
+ */
+chatbotRouter.get('/config', async (_req: Request, res: Response) => {
+  const config = await getPublicChatbotConfig();
+  res.set('Cache-Control', 'public, max-age=30');
+  return res.json(config);
+});
 
 /**
  * Proxy endpoint for the chatbot service.
@@ -10,6 +21,9 @@ export const chatbotRouter = Router();
  */
 chatbotRouter.post('/chat', async (req: Request, res: Response) => {
   try {
+    if (!(await isChatbotEnabled())) {
+      return res.status(503).json({ message: 'Chat is currently unavailable.' });
+    }
     const chatbotUrl = `${appConfig.chatbotServiceUrl}/chat`;
 
     const response = await fetch(chatbotUrl, {

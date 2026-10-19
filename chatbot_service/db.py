@@ -38,6 +38,7 @@ ALLOWED_TABLES: frozenset[str] = frozenset({
     "ticket_types", "membership_plans", "party_packages", "party_add_ons",
     "pricing_config", "promotions", "product_promotions", "promo_offers",
     "events", "job_listings", "locations", "store_hours", "faqs", "announcements",
+    "chatbot_settings",
 })
 
 

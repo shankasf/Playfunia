@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import * as MarketingService from '../services/marketing.service';
+import { listSuppressions, syncSesSuppressionList } from '../services/email-validation.service';
 import { supabaseAny } from '../config/supabase';
 import { asyncHandler } from '../utils/async-handler';
 import { AppError } from '../utils/app-error';
@@ -24,6 +25,24 @@ const draftSchema = z.object({
   channel: channelEnum,
 });
 
+// Optional image for the email: any http(s) URL (uploaded or external).
+// Empty string / null are treated as "no image".
+const emailImageUrlSchema = z.preprocess(
+  (v) => (typeof v === 'string' ? v.trim() || undefined : v ?? undefined),
+  z
+    .string()
+    .max(2000, 'Image URL must be 2000 characters or fewer')
+    .refine((v) => {
+      try {
+        const u = new URL(v);
+        return u.protocol === 'http:' || u.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    }, 'Image URL must be a valid http(s) URL')
+    .optional(),
+);
+
 const sendSchema = z.object({
   channel: channelEnum,
   subject: z.string().max(300).optional(),
@@ -35,6 +54,7 @@ const sendSchema = z.object({
   testEmail: z.string().max(200).optional(),
   testPhone: z.string().max(40).optional(),
   selectedKeys: z.array(z.string().max(320)).max(2000).optional(),
+  emailImageUrl: emailImageUrlSchema,
 });
 
 export const getMarketingStatsHandler = asyncHandler(async (_req, res) => {
@@ -75,12 +95,44 @@ export const draftMessageHandler = asyncHandler(async (req, res) => {
 });
 
 export const sendCampaignHandler = asyncHandler(async (req, res) => {
-  const input = sendSchema.parse(req.body);
+  // Zod errors are not AppErrors (the error middleware would answer 500), so
+  // surface validation problems (e.g. a bad pasted image URL) as a readable 400.
+  const parsed = sendSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue?.path.join('.');
+    throw new AppError(`${field ? `${field}: ` : ''}${issue?.message ?? 'Invalid request'}`, 400);
+  }
+  const input = parsed.data;
   const userId = (req as SupabaseAuthenticatedRequest).user?.id;
   const result = await MarketingService.sendCampaign({
     ...input,
     createdByUserId: userId ? parseInt(userId, 10) : null,
   });
+  return res.status(200).json(result);
+});
+
+// Upload one image to attach to a campaign email → { imageUrl }.
+export const uploadMarketingImageHandler = asyncHandler(async (req, res) => {
+  const file = req.file;
+  if (!file) throw new AppError('No image uploaded. Attach an image in the "image" field.', 400);
+  const imageUrl = await MarketingService.uploadMarketingImage({
+    buffer: file.buffer,
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+  });
+  return res.status(200).json({ imageUrl });
+});
+
+// Mirror of the SES account-level suppression list (hard bounces/complaints).
+export const listSuppressionsHandler = asyncHandler(async (_req, res) => {
+  const result = await listSuppressions();
+  return res.status(200).json(result);
+});
+
+export const syncSuppressionsHandler = asyncHandler(async (_req, res) => {
+  const result = await syncSesSuppressionList();
   return res.status(200).json(result);
 });
 

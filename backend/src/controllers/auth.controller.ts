@@ -21,9 +21,12 @@ import {
 } from '../services/otp.service';
 import { AppError } from '../utils/app-error';
 import { asyncHandler } from '../utils/async-handler';
+import { assertDeliverableEmail } from '../services/email-validation.service';
 
 export const registerHandler = asyncHandler(async (req: Request, res: Response) => {
   const parsed = parseWithSchema(registerSchema, req.body);
+  // The OTP goes to this address, so it must be deliverable.
+  await assertDeliverableEmail(parsed.email);
 
   // Prepare registration data (validates email doesn't exist, hashes password)
   const registrationData = await prepareRegistration(parsed);

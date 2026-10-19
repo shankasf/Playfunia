@@ -22,15 +22,18 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(ROOT / ".env")
 
+# Direct host is IPv6-only; from Docker use the session pooler via env overrides
+# (KB_WRITE_DB_HOST=aws-0-us-west-2.pooler.supabase.com, KB_WRITE_DB_USER=postgres.<ref>).
 PG = dict(
-    host="db.wzmcmbkouodsfbfxaozd.supabase.co",
-    port=5432,
-    user="postgres",
-    dbname="postgres",
+    host=os.getenv("KB_WRITE_DB_HOST", "db.wzmcmbkouodsfbfxaozd.supabase.co"),
+    port=int(os.getenv("KB_WRITE_DB_PORT", "5432")),
+    user=os.getenv("KB_WRITE_DB_USER", "postgres"),
+    dbname=os.getenv("KB_WRITE_DB_NAME", "postgres"),
     password=os.environ["supabase_db_password"],
+    sslmode="require",
 )
 
-OUT_PATH = ROOT / "chatbot_service" / "data" / "playfunia_knowledge_base.txt"
+OUT_PATH = Path(os.getenv("KB_OUT_PATH") or (ROOT / "chatbot_service" / "data" / "playfunia_knowledge_base.txt"))
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -248,6 +251,14 @@ def section_parties(cur, out: list[str]):
     row = cur.fetchone()
     if row:
         cleaning_fee = float(row["config_value"])
+    # Weekday (Mon-Fri) package discount — see backend party-discount.service.ts.
+    # Lives in pricing_config as weekday_party_discount_percent; defaults to 50.
+    weekday_pct = 50.0
+    cur.execute("SELECT config_value FROM public.pricing_config "
+                "WHERE config_key='weekday_party_discount_percent' AND is_active IS NOT FALSE")
+    row = cur.fetchone()
+    if row and row.get("config_value") is not None:
+        weekday_pct = max(0.0, min(100.0, float(row["config_value"])))
 
     if not pkgs and not addons:
         return
@@ -258,9 +269,29 @@ def section_parties(cur, out: list[str]):
             "Playfunia hosts birthday parties with exclusive use of a private party room while guests "
             "also enjoy access to the open play area. Three party packages are available at different price points.\n"
         )
+        if weekday_pct > 0:
+            lines = []
+            for r in pkgs:
+                base = float(r.get("price_usd") or 0)
+                wd = round(base * (1 - weekday_pct / 100.0), 2)
+                lines.append(f"{r.get('name')} is {money(wd)} on weekdays instead of {money(base)}")
+            out.append(
+                f"Weekday party pricing: birthday parties booked for Monday through Friday get "
+                f"{pct(weekday_pct)} off the package price. "
+                + "; ".join(lines) + ". "
+                "Saturday and Sunday parties are charged the regular package price. "
+                "The weekday discount applies to the package price only; extra children, extra adults, "
+                "add-ons and the cleaning fee cost the same on any day. The discount is applied "
+                "automatically when you pick a weekday date while booking online.\n"
+            )
     for r in pkgs:
         name = r.get("name")
-        price = money(r.get("price_usd"))
+        base_price = float(r.get("price_usd") or 0)
+        price = money(base_price)
+        if weekday_pct > 0:
+            price = (f"{money(base_price)} for Saturday or Sunday parties, or "
+                     f"{money(round(base_price * (1 - weekday_pct / 100.0), 2))} for Monday-Friday parties "
+                     f"({pct(weekday_pct)} weekday discount)")
         kids = r.get("base_children") or 0
         hours = r.get("base_room_hours")
         hours_str = (f"{hours:g}" if hours is not None else "—").rstrip("0").rstrip(".")
@@ -533,7 +564,7 @@ def main():
     out.append("# Playfunia Knowledge Base\n")
     out.append(
         f"This document contains current business information for Playfunia, "
-        f"extracted from the production database on {datetime.utcnow().strftime('%B %d, %Y')}. "
+        f"extracted from the production database on {datetime.now().strftime('%B %d, %Y')}. "
         "It is organized by topic and written in plain English for use as a chatbot knowledge base.\n"
     )
 

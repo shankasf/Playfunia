@@ -28,6 +28,7 @@ import {
 } from "../schemas/booking.schema";
 import { AppError } from "../utils/app-error";
 import { asyncHandler } from "../utils/async-handler";
+import { assertDeliverableEmail } from '../services/email-validation.service';
 
 export const createBookingHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) {
@@ -146,6 +147,7 @@ export const processSquareDepositHandler = asyncHandler(async (req: Authenticate
 export const createGuestBookingHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   // No auth required for guest bookings
   const payload = parseWithSchema(createGuestBookingSchema, req.body);
+  await assertDeliverableEmail(payload.guestEmail);
   const result = await createGuestBooking(payload);
   return res.status(201).json(result);
 });

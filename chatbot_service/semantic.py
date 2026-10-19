@@ -6,7 +6,10 @@ and 002_kb_grants.sql), so there is no separate vector store to deploy, mount,
 or keep in sync — one connection, one backup.
 
 Exposed to the head agent as the `search_knowledge_base` tool (see tools.py).
-The write side (populating kb_chunks) lives in scripts/backfill_pgvector.py.
+The write side (populating kb_documents / kb_chunks) is the admin panel
+(/admin/chatbot -> Knowledge Base, served by the Node backend); the legacy
+scripts/backfill_pgvector.py still works for one-off text-file imports.
+kb_search() only returns chunks of documents that are enabled and 'ready'.
 """
 from __future__ import annotations
 

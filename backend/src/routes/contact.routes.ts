@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { sendContactInquiry } from '../services/email.service';
+import { assertDeliverableEmail } from '../services/email-validation.service';
+import { isAppError } from '../utils/app-error';
 
 export const contactRouter = Router();
 
@@ -24,6 +26,7 @@ const contactSchema = z.object({
 contactRouter.post('/', contactLimiter, async (req: Request, res: Response) => {
   try {
     const data = contactSchema.parse(req.body);
+    await assertDeliverableEmail(data.email);
 
     const sent = await sendContactInquiry({
       name: data.name,
@@ -40,6 +43,8 @@ contactRouter.post('/', contactLimiter, async (req: Request, res: Response) => {
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ success: false, message: error.issues[0]?.message || 'Invalid input' });
+    } else if (isAppError(error) && error.statusCode < 500) {
+      res.status(error.statusCode).json({ success: false, message: error.message });
     } else {
       console.error('Contact form error:', error);
       res.status(500).json({ success: false, message: 'An unexpected error occurred. Please try again.' });

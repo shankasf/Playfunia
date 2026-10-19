@@ -473,14 +473,35 @@ def find_best_party_package(num_kids: int, needs_food: bool = False,
 
 def estimate_party_total(package_name: str, num_kids: int, num_adults: int = 0,
                           extra_hours: int = 0, addons: list[str] | None = None,
-                          promo_code: str | None = None) -> dict:
-    """Full party cost breakdown including extras, add-ons, cleaning fee, deposit, promo."""
+                          promo_code: str | None = None,
+                          party_date: str | None = None,
+                          weekday: bool | None = None) -> dict:
+    """Full party cost breakdown including extras, add-ons, cleaning fee, deposit, promo.
+
+    `party_date` (YYYY-MM-DD) or `weekday` (True for Mon-Fri) decides whether the
+    weekday package discount applies. With neither, the regular (Sat/Sun) price is
+    used and the result says so, so the model can offer the weekday figure too.
+    """
     pkg_resp = get_party_package(package_name)
     pkg = pkg_resp.get("package")
     if not pkg:
         return {"error": f"Unknown package '{package_name}'."}
 
-    base = pkg["price_usd"]
+    regular_base = pkg["price_usd"]
+    wd_pct = float(pkg.get("weekday_discount_percent") or 0)
+    is_wd = _is_weekday(party_date) if party_date else weekday
+    weekday_applies = bool(is_wd) and wd_pct > 0
+    weekday_discount = round(regular_base * wd_pct / 100.0, 2) if weekday_applies else 0.0
+    base = round(regular_base - weekday_discount, 2)
+    if is_wd is None:
+        day_note = (f"No party date given, so the regular Saturday/Sunday package price was used. "
+                    f"Monday-Friday parties get {_pct(wd_pct)} off the package "
+                    f"({_money(pkg['weekday_price_usd'])} instead of {_money(regular_base)}); ask for the date to confirm."
+                    if wd_pct > 0 else None)
+    elif weekday_applies:
+        day_note = f"Weekday (Mon-Fri) price applied: {_pct(wd_pct)} off the {pkg['name']} package."
+    else:
+        day_note = "Weekend (Sat/Sun) party: regular package price applies."
     base_kids = pkg["base_children"] or 0
     extra_kid_unit = pkg["extra_child_price_usd"]
     extra_adult_unit = pkg["extra_adult_price_usd"]
@@ -552,7 +573,8 @@ def estimate_party_total(package_name: str, num_kids: int, num_adults: int = 0,
     deposit_due = round(total * deposit_pct / 100.0, 2)
 
     breakdown = [
-        {"item": f"{pkg['name']} base ({base_kids} kids, {pkg['base_room_hours']} hrs)",
+        {"item": f"{pkg['name']} base ({base_kids} kids, {pkg['base_room_hours']} hrs)"
+                 + (f" — weekday price, regular {_money(regular_base)}" if weekday_applies else ""),
          "amount_usd": base, "amount_display": _money(base)},
     ]
     if extra_kids > 0:
@@ -580,6 +602,11 @@ def estimate_party_total(package_name: str, num_kids: int, num_adults: int = 0,
         "package": pkg["name"],
         "num_kids": num_kids,
         "num_adults": num_adults,
+        "party_date": party_date,
+        "is_weekday": is_wd,
+        "weekday_discount_applied": weekday_applies,
+        "weekday_discount_usd": weekday_discount,
+        "day_note": day_note,
         "breakdown": breakdown,
         "subtotal_usd": round(subtotal, 2),
         "subtotal_display": _money(subtotal),
@@ -611,14 +638,66 @@ def get_party_addon(code_or_label: str) -> dict:
     return {"addon": _addon_view(row) if row else None}
 
 
+WEEKDAY_DISCOUNT_CONFIG_KEY = "weekday_party_discount_percent"
+DEFAULT_WEEKDAY_DISCOUNT_PERCENT = 50.0
+
+
+def _weekday_discount_percent(cur=None) -> float:
+    """Mon-Fri party discount (percent off the package base price).
+
+    Mirrors backend/src/services/party-discount.service.ts: the value lives in
+    pricing_config under `weekday_party_discount_percent` and defaults to 50
+    when the row is absent. Add-ons, extra guests, cleaning fee and tax are
+    never discounted.
+    """
+    sql = "SELECT config_value FROM pricing_config WHERE config_key = %s AND is_active IS NOT FALSE"
+    try:
+        if cur is not None:
+            row = fetch_one(cur, sql, (WEEKDAY_DISCOUNT_CONFIG_KEY,))
+        else:
+            with ro_cursor() as c:
+                row = fetch_one(c, sql, (WEEKDAY_DISCOUNT_CONFIG_KEY,))
+    except Exception:
+        row = None
+    if not row or row.get("config_value") is None:
+        return DEFAULT_WEEKDAY_DISCOUNT_PERCENT
+    try:
+        return max(0.0, min(100.0, float(row["config_value"])))
+    except (TypeError, ValueError):
+        return DEFAULT_WEEKDAY_DISCOUNT_PERCENT
+
+
+def _is_weekday(party_date: str | None) -> bool | None:
+    """True for Mon-Fri, False for Sat/Sun, None if no/invalid date given."""
+    if not party_date:
+        return None
+    try:
+        d = date.fromisoformat(str(party_date)[:10])
+    except ValueError:
+        return None
+    return d.weekday() <= 4  # Monday=0 ... Friday=4
+
+
 def _package_view(r: dict | None) -> dict | None:
     if not r:
         return None
+    base = float(r.get("price_usd") or 0)
+    wd_pct = _weekday_discount_percent()
+    wd_price = round(base * (1 - wd_pct / 100.0), 2)
     return {
         "package_id": r["package_id"],
         "name": r.get("name"),
-        "price_usd": float(r.get("price_usd") or 0),
-        "price_display": _money(r.get("price_usd")),
+        "price_usd": base,
+        "price_display": _money(base),
+        "price_note": "Regular price, charged for Saturday and Sunday parties.",
+        "weekday_discount_percent": wd_pct,
+        "weekday_price_usd": wd_price,
+        "weekday_price_display": _money(wd_price),
+        "weekday_price_note": (
+            f"Monday-Friday parties get {_pct(wd_pct)} off the package price "
+            f"({_money(wd_price)} instead of {_money(base)}). Extra guests, add-ons and the cleaning fee are not discounted."
+            if wd_pct > 0 else "No weekday discount is currently running."
+        ),
         "base_children": r.get("base_children") or 0,
         "base_room_hours": float(r.get("base_room_hours") or 0),
         "includes_food": bool(r.get("includes_food")),
@@ -1017,13 +1096,17 @@ def _semantic_search_impl(query: str, k: int = 5) -> dict:
     return semantic_search(query, k)
 
 
-def search_knowledge_base(query: str, k: int = 5) -> dict:
-    """Free-form retrieval over the curated text KB.
+def search_knowledge_base(query: str, k: int | None = None) -> dict:
+    """Free-form retrieval over the admin-managed knowledge base (pgvector).
 
     Use this when no structured tool applies — e.g. open-ended questions
     about policies, marketing copy, party-room features, or anything not
-    yet captured as a structured tool.
+    yet captured as a structured tool. When the model does not pass `k`,
+    the admin-configured `kb_top_k` (chatbot_settings) is used.
     """
+    if not k:
+        from settings import get_settings  # lazy: avoid import cycle at module load
+        k = get_settings()["kb_top_k"]
     return _semantic_search_impl(query, k)
 
 
@@ -1139,7 +1222,7 @@ TOOL_SCHEMAS: list[dict] = [
     # ---- party ----
     {"type": "function", "function": {
         "name": "list_party_packages",
-        "description": "List active birthday party packages. For 'cheapest package' use sort='price_asc', limit=1, NO max_price. For 'most expensive' use sort='price_desc', limit=1. Only pass max_price if the user gave an explicit budget. Only pass includes_food/includes_decor if the user requires that feature.",
+        "description": "List active birthday party packages with both the regular (Sat/Sun) price and the discounted Monday-Friday weekday price. For 'cheapest package' use sort='price_asc', limit=1, NO max_price. For 'most expensive' use sort='price_desc', limit=1. Only pass max_price if the user gave an explicit budget. Only pass includes_food/includes_decor if the user requires that feature.",
         "parameters": {"type": "object", "properties": {
             "includes_food":  {"type": "boolean", "description": "ONLY if user requires food included."},
             "includes_decor": {"type": "boolean", "description": "ONLY if user requires decorations included."},
@@ -1164,10 +1247,12 @@ TOOL_SCHEMAS: list[dict] = [
                        }}}},
     {"type": "function", "function": {
         "name": "estimate_party_total",
-        "description": "Full party cost breakdown: base package + extra children + extra adults + optional add-ons (extra hours, face painting, photo/video) + cleaning fee, with optional promo code applied. Returns subtotal, total, and deposit due. Use this for 'how much for a party of N kids?' questions.",
+        "description": "Full party cost breakdown: base package + extra children + extra adults + optional add-ons (extra hours, face painting, photo/video) + cleaning fee, with optional promo code applied. Returns subtotal, total, and deposit due. Use this for 'how much for a party of N kids?' questions. Monday-Friday parties get a weekday discount on the package price: pass party_date (YYYY-MM-DD) or weekday=true/false whenever the user mentioned a date or day; otherwise the regular weekend price is used and day_note explains the weekday option.",
         "parameters": {"type": "object", "required": ["package_name", "num_kids"],
                        "properties": {
                            "package_name": {"type": "string"},
+                           "party_date":   {"type": "string", "description": "Party date as YYYY-MM-DD, if the user gave one."},
+                           "weekday":      {"type": "boolean", "description": "true if the party is Monday-Friday, false for Saturday/Sunday. Use when the user named a day but not a date."},
                            "num_kids":     {"type": "integer", "minimum": 1},
                            "num_adults":   {"type": "integer", "minimum": 0, "default": 0},
                            "extra_hours":  {"type": "integer", "minimum": 0, "default": 0},
@@ -1246,10 +1331,10 @@ TOOL_SCHEMAS: list[dict] = [
     # ---- semantic ----
     {"type": "function", "function": {
         "name": "search_knowledge_base",
-        "description": "Free-form semantic search over the curated Playfunia knowledge base text. Use as a fallback ONLY when no structured tool above fits the question — e.g. open-ended policy or descriptive questions. Returns 5 relevant passages.",
+        "description": "Free-form semantic search over the admin-managed Playfunia knowledge base (documents uploaded in the admin panel). Use when no structured tool above fits the question (open-ended policy or descriptive questions), and ALWAYS as a fallback when search_faqs or another tool returns nothing relevant — before answering that information is unavailable. Returns the most relevant passages; omit `k` to use the configured default.",
         "parameters": {"type": "object", "required": ["query"],
                        "properties": {
                            "query": {"type": "string"},
-                           "k": {"type": "integer", "default": 5},
+                           "k": {"type": "integer", "description": "Optional override of how many passages to return (1-10)."},
                        }}}},
 ]

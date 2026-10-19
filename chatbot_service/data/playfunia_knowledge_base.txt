@@ -1,6 +1,6 @@
 # Playfunia Knowledge Base
 
-This document contains current business information for Playfunia, extracted from the production database on May 16, 2026. It is organized by topic and written in plain English for use as a chatbot knowledge base.
+This document contains current business information for Playfunia, extracted from the production database on October 18, 2026. It is organized by topic and written in plain English for use as a chatbot knowledge base.
 
 ## About Playfunia & Location
 
@@ -24,31 +24,27 @@ The 2 Siblings Bundle is $35 and covers 2 children with unlimited play for the d
 
 The 3 Siblings Bundle is $50 and covers 3 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
 
-The 4 Siblings Bundle is $65 and covers 4 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
-
-The 5 Siblings Bundle is $80 and covers 5 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
-
-The 6 Siblings Bundle is $95 and covers 6 children with unlimited play for the day. This ticket requires a signed waiver and grip socks.
-
 ## Membership Plans
 
 Playfunia memberships give families unlimited open play visits each month for a flat monthly price. Each plan covers a fixed number of children and adults and comes with grip socks and full access to the play areas.
 
-The Mini Plan membership costs $250 per month and covers 1 child and 1 adult with unlimited visits per month. Members also get Grip socks included and Access to all play areas. There is currently a promotion on the Mini Plan: LIMITED TIME - 50% OFF (50% off) through June 18, 2026. Limited promo pricing for early members.
+The Mini Plan membership costs $250 per month and covers 1 child and 1 adult with unlimited visits per month. Members also get Grip socks included and Access to all play areas.
 
-The Super Plan membership costs $440 per month and covers 2 children and 2 adults with unlimited visits per month. Members also get Grip socks included, Access to all play areas, and Priority event access. There is currently a promotion on the Super Plan: LIMITED TIME - 50% OFF (50% off) through June 18, 2026. Limited promo pricing for early members.
+The Super Plan membership costs $440 per month and covers 2 children and 2 adults with unlimited visits per month. Members also get Grip socks included, Access to all play areas, and Priority event access.
 
-The Mega Plan membership costs $630 per month and covers 3 children and 3 adults with unlimited visits per month. Members also get Grip socks included, Access to all play areas, Priority event access, and VIP party discounts. There is currently a promotion on the Mega Plan: LIMITED TIME - 50% OFF (50% off) through June 18, 2026. Limited promo pricing for early members.
+The Mega Plan membership costs $630 per month and covers 3 children and 3 adults with unlimited visits per month. Members also get Grip socks included, Access to all play areas, Priority event access, and VIP party discounts.
 
 ## Birthday Party Packages
 
 Playfunia hosts birthday parties with exclusive use of a private party room while guests also enjoy access to the open play area. Three party packages are available at different price points.
 
-The Mini Fun party package is $399 and covers up to 10 children with 2 hours of private party room time plus all-day open play access. Guests bring their own food, drinks, and decorations for this package. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Bring your own snacks or treats – we make it easy for your party to be exactly how you want. Guests handle decorations, food, and party items – your way, your style. Terms to know: additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
+Weekday party pricing: birthday parties booked for Monday through Friday get 50% off the package price. Mini Fun is $199.50 on weekdays instead of $399; Super Fun is $299.50 on weekdays instead of $599; Mega Fun is $349.50 on weekdays instead of $699. Saturday and Sunday parties are charged the regular package price. The weekday discount applies to the package price only; extra children, extra adults, add-ons and the cleaning fee cost the same on any day. The discount is applied automatically when you pick a weekday date while booking online.
 
-The Super Fun party package is $599 and covers up to 10 children with 2 hours of private party room time plus all-day open play access. The package includes food and drinks. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Party supplies included – everything you need for a fun and colorful celebration|Choose from a blue, pink, or white party theme: tableware, napkins, utensils. One slice of cheese pizza and drinks (water/juice) for every child. Snack tray to share – cookies & chips for everyone to enjoy. Terms to know: pizza and drinks — Only accounted for children. Additional pizza may be purchased separately for adults; additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
+The Mini Fun party package is $399 for Saturday or Sunday parties, or $199.50 for Monday-Friday parties (50% weekday discount) and covers up to 10 children with 2 hours of private party room time plus all-day open play access. Guests bring their own food, drinks, and decorations for this package. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Bring your own snacks or treats – we make it easy for your party to be exactly how you want. Guests handle decorations, food, and party items – your way, your style. Terms to know: additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
 
-The Mega Fun party package is $699 and covers up to 10 children with 2 hours of private party room time plus all-day open play access. The package includes food, drinks, and themed decorations. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Custom themed balloon decorations – bring your child's favorite characters and colors to life. Coordinated theme-matching tableware and extras – plates, cups, and decor that match your theme. Pizza and drinks for every child – one slice of cheese pizza plus water and juice. Snack tray to share – cookies & chips for everyone to enjoy. Terms to know: pizza and drinks — Only accounted for children. Additional pizza may be purchased separately for adults; additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
+The Super Fun party package is $599 for Saturday or Sunday parties, or $299.50 for Monday-Friday parties (50% weekday discount) and covers up to 10 children with 2 hours of private party room time plus all-day open play access. The package includes food and drinks. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Party supplies included – everything you need for a fun and colorful celebration|Choose from a blue, pink, or white party theme: tableware, napkins, utensils. One slice of cheese pizza and drinks (water/juice) for every child. Snack tray to share – cookies & chips for everyone to enjoy. Terms to know: pizza and drinks — Only accounted for children. Additional pizza may be purchased separately for adults; additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
+
+The Mega Fun party package is $699 for Saturday or Sunday parties, or $349.50 for Monday-Friday parties (50% weekday discount) and covers up to 10 children with 2 hours of private party room time plus all-day open play access. The package includes food, drinks, and themed decorations. Extra children are $40 each, extra adults are $10 each. Package details: Enjoy exclusive access to our private party room for 2 hours. Unlimited fun with all-day park access. Custom themed balloon decorations – bring your child's favorite characters and colors to life. Coordinated theme-matching tableware and extras – plates, cups, and decor that match your theme. Pizza and drinks for every child – one slice of cheese pizza plus water and juice. Snack tray to share – cookies & chips for everyone to enjoy. Terms to know: pizza and drinks — Only accounted for children. Additional pizza may be purchased separately for adults; additional time — May be purchased during checkout; additional children and guests — May be added during checkout for a fee; cleaning fee — There is a $50 cleaning fee added to all party orders; party room access — Guests have exclusive access to the party room, the play area remains open to the public.
 
 A cleaning fee of $50 is added to every party booking, and a 50% deposit is required at booking to reserve the party room.
 
@@ -86,7 +82,7 @@ Single admission price: $20. Price for single child admission ticket.
 
 ## Current Promotions & Discount Codes
 
-Promo code MAY10 gives 10% off on party_booking and is valid through June 1, 2026.
+Promo code OCT10 gives 10% off on party_booking and is valid through November 1, 2026. Get 10% off your party booking!.
 
 ## Announcements & Current Programs
 
@@ -94,15 +90,15 @@ These are current Playfunia programs, recurring offers, and announcements that f
 
 Sensory-Friendly Sundays: Reserve limited-capacity sessions with softer lighting, calming music, and extra staff support. A welcoming environment for children who prefer a quieter play experience.
 
-Birthday Week Bonus: Book a birthday party this month and receive complimentary grip socks for up to 10 guests.
-
 Teacher Tuesdays: Educators play for free with any paid child admission every Tuesday. Just show your school ID at the front desk.
 
 ## Events & Special Activities
 
 Playfunia organizes special events on a monthly basis throughout the year, from seasonal celebrations and holiday parties to giveaways and themed family days. Each event typically features festive activities for kids — like face painting, raffles, and photo opportunities — along with a limited-time discount or offer that families can take advantage of during the event. Follow Playfunia on Instagram or check back with us to find out about the next upcoming event.
 
-There are no upcoming events scheduled at this time, but a new event is typically announced each month — reach out to Playfunia for the latest event calendar and active offers.
+Currently scheduled upcoming events:
+
+Event 'HALLOWEEN COSTUME CONTENT' is scheduled for October 31, 2026. Calling all little monsters! 👻🎃 Wear your favorite costume and join us at PlayFunia for a Halloween Costume Contest full of playtime, trick-or-treat fun, surprise treats, and prizes! 📅 October 31 · 3–6 PM 📍 Crossgates Mall — 2nd level near Macy’s 🧒 For children under 13 🎟️ Get 10% OFF admission with this flyer! Bring your boo crew — we can’t wait to see your costumes! 🧡 #PlayFunia #CrossgatesMall #AlbanyNY #HalloweenFun #CostumeContest #LittleMonsters #AlbanyKids
 
 ## Frequently Asked Questions
 

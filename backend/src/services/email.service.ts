@@ -390,19 +390,144 @@ export async function sendTeamRoleAssignment(
 
 // Send a marketing/campaign email. Wraps the (plain-text) body in a branded
 // template and appends a CAN-SPAM opt-out notice. Recipients are opt-in only.
-export async function sendMarketingEmail(to: string, subject: string, body: string): Promise<boolean> {
+//
+// The body is plain text, but links are made clickable in the HTML part:
+// bare http(s):// and www. URLs, markdown-style [label](https://url) and bare
+// email addresses. An optional image is rendered above the copy.
+
+// Group 1/2: markdown [label](url)   Group 3: bare URL   Group 4: bare email.
+// Alternation order + single left-to-right pass guarantees a markdown link's
+// URL is never re-linkified and an email inside a URL never becomes mailto.
+const MARKETING_LINK_PATTERN =
+  '\\[([^\\[\\]\\n]+)\\]\\(((?:https?:\\/\\/|www\\.|mailto:)(?:[^()\\s<>"]|\\([^()\\s<>"]*\\))*)\\)' +
+  '|((?<![A-Za-z0-9_@.\\/-])(?:https?:\\/\\/|www\\.)[^\\s<>"]+)' +
+  '|((?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+)';
+
+const MARKETING_MD_LINK_RE =
+  /\[([^\[\]\n]+)\]\(((?:https?:\/\/|www\.|mailto:)(?:[^()\s<>"]|\([^()\s<>"]*\))*)\)/gi;
+
+const MARKETING_LINK_STYLE = 'color:#7c3aed;text-decoration:underline;';
+
+// Normalise a raw URL into a safe href. Only http:, https: and mailto: are
+// ever returned; anything else (javascript:, data:, garbage) yields null.
+function toSafeMarketingHref(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const candidate = /^www\./i.test(trimmed) ? `https://${trimmed}` : trimmed;
+  if (/^mailto:/i.test(candidate)) {
+    return /^mailto:[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?:\?[^\s<>"]*)?$/i.test(candidate)
+      ? candidate
+      : null;
+  }
+  if (!/^https?:\/\//i.test(candidate)) return null;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    if (!parsed.hostname) return null;
+    return candidate;
+  } catch {
+    return null;
+  }
+}
+
+// Strip trailing sentence punctuation from a bare URL match, keeping a closing
+// paren only when it balances an opening one inside the URL.
+function trimBareUrl(url: string): string {
+  let out = url;
+  for (;;) {
+    const last = out.charAt(out.length - 1);
+    if (/[.,!?;:'*]/.test(last)) {
+      out = out.slice(0, -1);
+    } else if (last === ')' && (out.match(/\)/g) ?? []).length > (out.match(/\(/g) ?? []).length) {
+      out = out.slice(0, -1);
+    } else {
+      return out;
+    }
+  }
+}
+
+function marketingAnchor(href: string, label: string): string {
+  return `<a href="${escapeHtml(href)}" style="${MARKETING_LINK_STYLE}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+}
+
+/**
+ * HTML-escape a chunk of plain marketing text and turn links into anchors.
+ * Single tokenising pass over the RAW text: non-link segments are escaped,
+ * link segments become <a> tags (href/label escaped exactly once).
+ * Newlines are left untouched (the caller converts them to <br/>).
+ */
+export function linkifyMarketingText(text: string): string {
+  const re = new RegExp(MARKETING_LINK_PATTERN, 'gi');
+  let out = '';
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const start = m.index;
+    let consumed = m[0];
+    let anchor: string | null = null;
+
+    if (m[2] !== undefined) {
+      const href = toSafeMarketingHref(m[2]);
+      if (href) anchor = marketingAnchor(href, (m[1] ?? '').trim() || m[2]);
+    } else if (m[3] !== undefined) {
+      consumed = trimBareUrl(m[3]);
+      const href = toSafeMarketingHref(consumed);
+      if (href) anchor = marketingAnchor(href, consumed);
+    } else if (m[4] !== undefined) {
+      anchor = marketingAnchor(`mailto:${m[4]}`, m[4]);
+    }
+
+    if (!consumed) {
+      // Nothing usable matched; step forward so the loop always advances.
+      re.lastIndex = start + 1;
+      continue;
+    }
+    out += escapeHtml(text.slice(cursor, start));
+    out += anchor ?? escapeHtml(consumed);
+    cursor = start + consumed.length;
+    // Trimmed punctuation goes back into the stream as ordinary text.
+    re.lastIndex = cursor;
+  }
+  out += escapeHtml(text.slice(cursor));
+  return out;
+}
+
+// Validate an optional campaign image URL (http/https only).
+function toSafeMarketingImageUrl(imageUrl?: string | null): string | null {
+  if (typeof imageUrl !== 'string') return null;
+  const trimmed = imageUrl.trim();
+  if (!/^https?:\/\//i.test(trimmed) || /[\s<>"]/.test(trimmed)) return null;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Plain-text alternative of a marketing body: `[label](url)` -> `label (url)`. */
+export function marketingBodyToPlainText(body: string): string {
+  return body.replace(MARKETING_MD_LINK_RE, (_all, label: string, url: string) => `${label.trim()} (${url})`);
+}
+
+/** Full branded HTML for a marketing email (pure; no sending). */
+export function renderMarketingEmailHtml(body: string, imageUrl?: string | null): string {
   const paragraphs = body
+    .replace(/\r\n?/g, '\n')
     .split(/\n{2,}/)
-    .map((p) => `<p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 14px;">${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`)
+    .filter((p) => p.trim().length > 0)
+    .map((p) => `<p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 14px;">${linkifyMarketingText(p).replace(/\n/g, '<br/>')}</p>`)
     .join('');
-  return sendEmail({
-    to,
-    subject,
-    html: `
+  const safeImage = toSafeMarketingImageUrl(imageUrl);
+  const imageHtml = safeImage
+    ? `<img src="${escapeHtml(safeImage)}" alt="Playfunia" width="560" style="display:block;width:100%;max-width:560px;height:auto;border-radius:12px;margin:0 auto 20px;border:0;">`
+    : '';
+  return `
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
         <div style="text-align:center;margin-bottom:24px;">
           <h1 style="color:#7c3aed;margin:0;">Playfunia</h1>
         </div>
+        ${imageHtml}
         ${paragraphs}
         <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0;">
         <p style="color:#9ca3af;font-size:12px;text-align:center;">
@@ -410,8 +535,20 @@ export async function sendMarketingEmail(to: string, subject: string, body: stri
           To stop receiving these emails, reply to this message or contact us.
         </p>
       </div>
-    `,
-    text: `${body}\n\n—\nYou're receiving this because you opted in to Playfunia marketing. Reply to opt out.`,
+    `;
+}
+
+export async function sendMarketingEmail(
+  to: string,
+  subject: string,
+  body: string,
+  options?: { imageUrl?: string | null },
+): Promise<boolean> {
+  return sendEmail({
+    to,
+    subject,
+    html: renderMarketingEmailHtml(body, options?.imageUrl),
+    text: `${marketingBodyToPlainText(body)}\n\n—\nYou're receiving this because you opted in to Playfunia marketing. Reply to opt out.`,
   });
 }
 

@@ -27,6 +27,7 @@ const AdminApplicantDetailPage = lazy(() => import("./pages/AdminApplicantDetail
 const AdminEventsPage = lazy(() => import("./pages/AdminEventsPanel").then(m => ({ default: m.AdminEventsPanel })));
 const AdminTeamPage = lazy(() => import("./pages/AdminTeamPage").then(m => ({ default: m.AdminTeamPage })));
 const AdminMarketingPage = lazy(() => import("./pages/AdminMarketingPage").then(m => ({ default: m.AdminMarketingPage })));
+const AdminChatbotPage = lazy(() => import("./pages/AdminChatbotPage").then(m => ({ default: m.AdminChatbotPage })));
 const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage").then(m => ({ default: m.AuthCallbackPage })));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
 const CartPage = lazy(() => import("./pages/CartPage").then(m => ({ default: m.CartPage })));
@@ -213,6 +214,16 @@ function App() {
             <AdminOnlyRoute>
               <Suspense fallback={<PageLoader />}>
                 <AdminMarketingPage />
+              </Suspense>
+            </AdminOnlyRoute>
+          }
+        />
+        <Route
+          path="admin/chatbot"
+          element={
+            <AdminOnlyRoute>
+              <Suspense fallback={<PageLoader />}>
+                <AdminChatbotPage />
               </Suspense>
             </AdminOnlyRoute>
           }

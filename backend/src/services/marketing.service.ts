@@ -12,7 +12,10 @@ import OpenAI from 'openai';
 import { appConfig } from '../config/env';
 import { supabaseAny } from '../config/supabase';
 import { AppError } from '../utils/app-error';
+import { logger } from '../utils/logger';
 import { sendMarketingEmail } from './email.service';
+import { assertDeliverableEmail, describeRejectReason, validateEmailsBulk } from './email-validation.service';
+import { ensureEventImagesBucket } from './event-image.service';
 import { sendMarketingSms } from './sms.service';
 
 export type Channel = 'email' | 'sms' | 'both';
@@ -188,12 +191,16 @@ export async function previewAudience(months: number[], channel: Channel) {
   const { emailList, smsList } = await buildAudience(months, channel);
 
   // Merge into a unique-per-contact list carrying which channels reach them.
-  type Row = { key: string; name: string; email: string | null; phone: string | null; viaEmail: boolean; viaSms: boolean };
+  type Row = {
+    key: string; name: string; email: string | null; phone: string | null; viaEmail: boolean; viaSms: boolean;
+    /** Why the email channel would be skipped for this contact (pre-send validation), or null when deliverable. */
+    invalidEmail: string | null;
+  };
   const map = new Map<string, Row>();
   const add = (c: Contact, via: 'email' | 'sms') => {
     let r = map.get(c.key);
     if (!r) {
-      r = { key: c.key, name: c.name || '(no name)', email: c.email, phone: c.phone, viaEmail: false, viaSms: false };
+      r = { key: c.key, name: c.name || '(no name)', email: c.email, phone: c.phone, viaEmail: false, viaSms: false, invalidEmail: null };
       map.set(c.key, r);
     }
     if (via === 'email') r.viaEmail = true;
@@ -203,10 +210,26 @@ export async function previewAudience(months: number[], channel: Channel) {
   for (const c of smsList) add(c, 'sms');
   const recipients = [...map.values()];
 
+  // Flag addresses that would be skipped at send time so the admin sees it
+  // up front (they are deselected by default in the UI).
+  let invalidEmailCount = 0;
+  if (emailList.length > 0) {
+    const checks = await validateEmailsBulk(emailList.map((c) => c.email!));
+    for (const r of recipients) {
+      if (!r.viaEmail || !r.email) continue;
+      const v = checks.get(r.email.toLowerCase());
+      if (v && !v.ok) {
+        r.invalidEmail = describeRejectReason(v.reason);
+        invalidEmailCount += 1;
+      }
+    }
+  }
+
   return {
     emailCount: emailList.length,
     smsCount: smsList.length,
     uniqueCount: recipients.length,
+    invalidEmailCount,
     recipients,
   };
 }
@@ -279,6 +302,61 @@ interface SendInput {
   // in the UI. When present, only these opted-in contacts are sent to.
   selectedKeys?: string[];
   createdByUserId?: number | null;
+  // Optional image shown in the EMAIL only (uploaded via uploadMarketingImage
+  // or any external http(s) URL pasted by the admin). SMS is unaffected.
+  emailImageUrl?: string | null;
+}
+
+// ---- Campaign email image upload -------------------------------------------
+// Stored in the public `event-images` bucket under `marketing/` so email
+// clients can fetch it without auth.
+const MARKETING_IMAGE_BUCKET = 'event-images';
+export const MARKETING_IMAGE_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+export const MARKETING_IMAGE_MIME_EXT: Readonly<Record<string, string>> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+// Sniff the real format from the file's magic bytes (the multipart mimetype is
+// client-supplied and cannot be trusted on its own).
+function sniffImageMime(buf: Buffer): string | null {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.length >= 6 && (buf.subarray(0, 6).toString('latin1') === 'GIF87a' || buf.subarray(0, 6).toString('latin1') === 'GIF89a')) return 'image/gif';
+  if (buf.length >= 12 && buf.subarray(0, 4).toString('latin1') === 'RIFF' && buf.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+
+export async function uploadMarketingImage(file: { buffer: Buffer; originalname: string; mimetype: string; size: number }): Promise<string> {
+  if (!file.buffer || file.buffer.length === 0) {
+    throw new AppError('The uploaded image is empty.', 400);
+  }
+  if (file.buffer.length > MARKETING_IMAGE_MAX_BYTES) {
+    throw new AppError('Image is too large. The maximum size is 5 MB.', 400);
+  }
+  const mime = sniffImageMime(file.buffer);
+  if (!mime || !MARKETING_IMAGE_MIME_EXT[mime]) {
+    throw new AppError('Unsupported image type. Upload a JPEG, PNG, WebP or GIF image.', 400);
+  }
+
+  await ensureEventImagesBucket();
+
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const storagePath = `marketing/${now.getFullYear()}/${month}/${crypto.randomUUID()}.${MARKETING_IMAGE_MIME_EXT[mime]}`;
+
+  const { error: uploadError } = await supabaseAny.storage
+    .from(MARKETING_IMAGE_BUCKET)
+    .upload(storagePath, file.buffer, { contentType: mime, upsert: false });
+  if (uploadError) {
+    logger.error({ error: uploadError }, 'Failed to upload marketing image');
+    throw uploadError;
+  }
+
+  const { data: urlData } = supabaseAny.storage.from(MARKETING_IMAGE_BUCKET).getPublicUrl(storagePath);
+  return urlData.publicUrl;
 }
 
 const MAX_BULK_RECIPIENTS = 1000;
@@ -301,6 +379,7 @@ export async function sendCampaign(input: SendInput) {
   if (input.isTest) {
     if (wantEmail) {
       if (!normEmail(input.testEmail)) throw new AppError('A valid test email address is required.', 400);
+      await assertDeliverableEmail(input.testEmail, 'Test email');
       emailTargets = [{ name: 'Test', email: normEmail(input.testEmail), phone: null }];
     }
     if (wantSms) {
@@ -329,6 +408,9 @@ export async function sendCampaign(input: SendInput) {
     }
   }
 
+  // The image only applies to the email channel.
+  const emailImageUrl = wantEmail ? (input.emailImageUrl?.trim() || null) : null;
+
   const audienceCount = new Set([
     ...emailTargets.map((t) => t.email).filter(Boolean),
     ...smsTargets.map((t) => t.phone).filter(Boolean),
@@ -342,6 +424,7 @@ export async function sendCampaign(input: SendInput) {
       subject: input.subject ?? null,
       email_body: input.emailBody ?? null,
       sms_body: input.smsBody ?? null,
+      email_image_url: emailImageUrl,
       promo_codes: input.promoCodes,
       birthday_months: input.months,
       audience_count: audienceCount,
@@ -355,13 +438,30 @@ export async function sendCampaign(input: SendInput) {
   const recipients: Array<Record<string, unknown>> = [];
   let sent = 0;
   let failed = 0;
+  let skipped = 0;
+  const skippedDetails: Array<{ email: string; reason: string }> = [];
+
+  // Pre-send validation (syntax, typo domains, DNS MX, SES suppression list).
+  // Anything that fails is recorded as 'skipped' instead of being handed to
+  // SES, where it would hard-bounce and hurt the sender reputation.
+  const emailChecks = emailTargets.length > 0
+    ? await validateEmailsBulk(emailTargets.map((t) => t.email).filter((e): e is string => !!e))
+    : new Map();
 
   for (const t of emailTargets) {
     if (!t.email) continue;
+    const check = emailChecks.get(t.email.toLowerCase());
+    if (check && !check.ok) {
+      skipped += 1;
+      const reason = describeRejectReason(check.reason);
+      skippedDetails.push({ email: t.email, reason });
+      recipients.push({ campaign_id: campaign.campaign_id, name: t.name, email: t.email, phone: t.phone, channel: 'email', status: 'skipped', error: `${reason}: ${check.message}` });
+      continue;
+    }
     let ok = false;
     let err: string | null = null;
     try {
-      ok = await sendMarketingEmail(t.email, input.subject!, input.emailBody!);
+      ok = await sendMarketingEmail(t.email, input.subject!, input.emailBody!, { imageUrl: emailImageUrl });
       if (!ok) err = 'Email not sent (delivery returned false)';
     } catch (e) {
       err = e instanceof Error ? e.message : 'send error';
@@ -388,10 +488,14 @@ export async function sendCampaign(input: SendInput) {
   if (recipients.length) {
     await supabaseAny.from('marketing_recipients').insert(recipients);
   }
-  const status = failed === 0 ? 'sent' : sent === 0 ? 'failed' : 'partial';
-  await supabaseAny.from('marketing_campaigns').update({ sent_count: sent, failed_count: failed, status }).eq('campaign_id', campaign.campaign_id);
+  const status = failed === 0 && !(sent === 0 && skipped > 0) ? 'sent' : sent === 0 ? 'failed' : 'partial';
+  await supabaseAny
+    .from('marketing_campaigns')
+    .update({ sent_count: sent, failed_count: failed, skipped_count: skipped, status })
+    .eq('campaign_id', campaign.campaign_id);
+  if (skipped > 0) logger.info({ campaignId: campaign.campaign_id, skipped, skippedDetails }, '[Marketing] skipped undeliverable addresses');
 
-  return { campaignId: campaign.campaign_id, sent, failed, audienceCount, status, isTest: input.isTest };
+  return { campaignId: campaign.campaign_id, sent, failed, skipped, skippedDetails, audienceCount, status, isTest: input.isTest };
 }
 
 export async function listCampaigns(limit = 1000) {

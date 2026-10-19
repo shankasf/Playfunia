@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { API_BASE_URL } from "../../api/client";
 import styles from "./Chatbot.module.css";
+
+/** Admin-managed widget config served by GET /api/chatbot/config. */
+type ChatConfig = {
+  enabled: boolean;
+  botName: string;
+  greeting: string;
+  quickPrompts: { emoji: string; label: string; prompt: string }[];
+  capabilityPhrases: string[];
+};
 
 /**
  * Creates a pleasant notification chime using Web Audio API
@@ -109,8 +119,12 @@ const CHAT_ENDPOINT = process.env.REACT_APP_CHATBOT_URL
 const SYSTEM_PROMPT =
   "You are an upbeat assistant for Playfunia indoor playgrounds. Provide concise, friendly answers and suggest next steps when helpful.";
 
+const DEFAULT_GREETING =
+  "Hi! I'm the Playfunia helper. Ask me about prices, hours, parties, memberships — or pick a question below to get started 👇";
+
 // Phrases that cycle next to the floating button — short capability teasers.
-const CAPABILITY_PHRASES = [
+// Defaults only; the live values come from the admin-managed chat config.
+const DEFAULT_CAPABILITY_PHRASES = [
   "Plan a birthday party 🎂",
   "Check today's hours ⏰",
   "Find ticket prices 🎟️",
@@ -120,7 +134,8 @@ const CAPABILITY_PHRASES = [
 ];
 
 // Quick-start chips shown on first open. Clicking sends the prompt directly.
-const QUICK_PROMPTS: { emoji: string; label: string; prompt: string }[] = [
+// Defaults only; the live values come from the admin-managed chat config.
+const DEFAULT_QUICK_PROMPTS: { emoji: string; label: string; prompt: string }[] = [
   { emoji: "🎂", label: "Birthday party for 10 kids?",     prompt: "How much for a birthday party for 10 kids?" },
   { emoji: "⏰", label: "Are you open right now?",         prompt: "Are you open right now?" },
   { emoji: "🎟️", label: "Ticket prices",                   prompt: "What are your open play ticket prices?" },
@@ -196,13 +211,10 @@ export function Chatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [phraseIndex, setPhraseIndex] = useState(0);
+  const [config, setConfig] = useState<ChatConfig | null>(null);
+  const [configDisabled, setConfigDisabled] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "Hi! I'm the Playfunia helper. Ask me about prices, hours, parties, memberships — or pick a question below to get started 👇",
-    },
+    { id: "welcome", role: "assistant", content: DEFAULT_GREETING },
   ]);
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -223,14 +235,54 @@ export function Chatbot() {
     playNotificationRef.current = createNotificationSound();
   }, []);
 
+  // Load admin-managed config (greeting, quick prompts, launcher phrases, on/off).
+  // Falls back silently to the built-in defaults if the request fails.
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/chatbot/config`)
+      .then(res => (res.ok ? (res.json() as Promise<Partial<ChatConfig>>) : Promise.reject(new Error("config unavailable"))))
+      .then(data => {
+        if (cancelled || !data || typeof data !== "object") return;
+        if (data.enabled === false) {
+          setConfigDisabled(true);
+          return;
+        }
+        const next: ChatConfig = {
+          enabled: true,
+          botName: typeof data.botName === "string" && data.botName ? data.botName : "Playfunia Assistant",
+          greeting: typeof data.greeting === "string" && data.greeting.trim() ? data.greeting : DEFAULT_GREETING,
+          quickPrompts: Array.isArray(data.quickPrompts)
+            ? data.quickPrompts.filter(q => q && typeof q.label === "string" && typeof q.prompt === "string")
+            : DEFAULT_QUICK_PROMPTS,
+          capabilityPhrases: Array.isArray(data.capabilityPhrases) && data.capabilityPhrases.length
+            ? data.capabilityPhrases.filter(p => typeof p === "string" && p.trim())
+            : DEFAULT_CAPABILITY_PHRASES,
+        };
+        setConfig(next);
+        // Swap the greeting only while the conversation hasn't started.
+        setMessages(prev =>
+          prev.length === 1 && prev[0].id === "welcome"
+            ? [{ id: "welcome", role: "assistant", content: next.greeting }]
+            : prev
+        );
+      })
+      .catch(() => { /* keep defaults */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const quickPrompts = config?.quickPrompts ?? DEFAULT_QUICK_PROMPTS;
+  const capabilityPhrases = config?.capabilityPhrases ?? DEFAULT_CAPABILITY_PHRASES;
+  const phraseCount = capabilityPhrases.length;
+
   // Cycle the capability phrase while the bot is closed.
   useEffect(() => {
     if (isOpen) return;
+    if (phraseCount === 0) return;
     const interval = window.setInterval(() => {
-      setPhraseIndex(i => (i + 1) % CAPABILITY_PHRASES.length);
+      setPhraseIndex(i => (i + 1) % phraseCount);
     }, 2800);
     return () => window.clearInterval(interval);
-  }, [isOpen]);
+  }, [isOpen, phraseCount]);
 
   // Lock body scroll while in fullscreen, restore when leaving.
   useEffect(() => {
@@ -361,6 +413,11 @@ export function Chatbot() {
     isFullscreen ? styles.panelFullscreen : "",
   ].filter(Boolean).join(" ");
 
+  const currentPhrase = phraseCount > 0 ? capabilityPhrases[phraseIndex % phraseCount] : "";
+
+  // Admins can switch the assistant off; render nothing at all in that case.
+  if (configDisabled) return null;
+
   return (
     <div className={styles.widget} aria-live="polite">
       {isOpen ? (
@@ -410,9 +467,9 @@ export function Chatbot() {
 
               {!hasUserChatted ? (
                 <div className={styles.quickPrompts}>
-                  {QUICK_PROMPTS.map((q, i) => (
+                  {quickPrompts.map((q, i) => (
                     <button
-                      key={q.label}
+                      key={`${q.label}-${i}`}
                       type="button"
                       className={styles.quickChip}
                       style={{ animationDelay: `${0.1 + i * 0.06}s` }}
@@ -481,16 +538,18 @@ export function Chatbot() {
         </>
       ) : (
         <div className={styles.launcher}>
-          <button
-            className={styles.tooltipBubble}
-            onClick={toggle}
-            aria-label={`Open chat. Tip: ${CAPABILITY_PHRASES[phraseIndex]}`}
-          >
-            <span key={phraseIndex} className={styles.tooltipPhrase}>
-              {CAPABILITY_PHRASES[phraseIndex]}
-            </span>
-            <span className={styles.tooltipTail} aria-hidden="true" />
-          </button>
+          {currentPhrase ? (
+            <button
+              className={styles.tooltipBubble}
+              onClick={toggle}
+              aria-label={`Open chat. Tip: ${currentPhrase}`}
+            >
+              <span key={phraseIndex} className={styles.tooltipPhrase}>
+                {currentPhrase}
+              </span>
+              <span className={styles.tooltipTail} aria-hidden="true" />
+            </button>
+          ) : null}
           <button
             className={styles.fab}
             onClick={toggle}

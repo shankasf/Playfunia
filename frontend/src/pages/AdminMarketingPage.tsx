@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { useAuth } from '../context/AuthContext';
@@ -7,9 +7,11 @@ import {
   fetchMarketingStats,
   fetchLivePromos,
   previewMarketingAudience,
+  syncEmailSuppressions,
   draftMarketingMessage,
   sendMarketingCampaign,
   fetchMarketingCampaigns,
+  uploadMarketingImage,
   type MarketingStats,
   type LivePromo,
   type MarketingChannel,
@@ -28,6 +30,79 @@ function promoLabel(p: LivePromo): string {
   return discount ? `${p.code} · ${discount}` : p.code;
 }
 
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+function isHttpUrl(value: string): boolean {
+  return /^https?:\/\/\S+$/i.test(value);
+}
+
+/** Only http(s) and mailto links are ever rendered; anything else stays plain text. */
+function safeHref(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+// [label](https://url)  |  bare https://… or www.…  |  email address
+const LINK_PATTERN =
+  /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|((?:https?:\/\/|www\.)[^\s<>"]+)|([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/gi;
+
+/** Mirrors the email's auto-linking: turns one line of text into text + <a> nodes. */
+function linkifyLine(line: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  let last = 0;
+  let n = 0;
+  const link = (href: string | null, label: string) => {
+    if (!href) {
+      nodes.push(label);
+      return;
+    }
+    nodes.push(
+      <a key={`${keyPrefix}-${n++}`} href={href} target="_blank" rel="noopener noreferrer">{label}</a>,
+    );
+  };
+  for (const m of Array.from(line.matchAll(LINK_PATTERN))) {
+    const start = m.index ?? 0;
+    if (start > last) nodes.push(line.slice(last, start));
+    last = start + m[0].length;
+    if (m[1] && m[2]) {
+      link(safeHref(m[2]), m[1]);
+    } else if (m[3]) {
+      // Sentence punctuation right after a bare URL is not part of the link.
+      const url = m[3].replace(/[.,!?;:'")\]]+$/, '');
+      const trailing = m[3].slice(url.length);
+      link(safeHref(/^www\./i.test(url) ? `https://${url}` : url), url);
+      if (trailing) nodes.push(trailing);
+    } else if (m[4]) {
+      link(safeHref(`mailto:${m[4]}`), m[4]);
+    }
+  }
+  if (last < line.length) nodes.push(line.slice(last));
+  return nodes;
+}
+
+/** Paragraphs split on blank lines; single newlines become line breaks. */
+function renderEmailBody(body: string): ReactNode[] {
+  return body
+    .split(/\n\s*\n/)
+    .map((para) => para.trim())
+    .filter(Boolean)
+    .map((para, pi) => (
+      <p key={pi}>
+        {para.split('\n').map((line, li) => (
+          <span key={li}>
+            {li > 0 && <br />}
+            {linkifyLine(line, `${pi}-${li}`)}
+          </span>
+        ))}
+      </p>
+    ));
+}
+
 export function AdminMarketingPage() {
   const { user } = useAuth();
 
@@ -44,6 +119,11 @@ export function AdminMarketingPage() {
   const [subject, setSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   const [smsBody, setSmsBody] = useState('');
+  const [emailImageUrl, setEmailImageUrl] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [imageBroken, setImageBroken] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [drafting, setDrafting] = useState(false);
 
   const [preview, setPreview] = useState<AudiencePreview | null>(null);
@@ -52,6 +132,7 @@ export function AdminMarketingPage() {
   const [testEmail, setTestEmail] = useState(user?.email ?? '');
   const [testPhone, setTestPhone] = useState('');
   const [sending, setSending] = useState(false);
+  const [syncingBounces, setSyncingBounces] = useState(false);
   const [banner, setBanner] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'campaign' | 'history'>('campaign');
 
@@ -104,7 +185,8 @@ export function AdminMarketingPage() {
       try {
         const p = await previewMarketingAudience({ months: Array.from(selectedMonths), channel });
         setPreview(p);
-        setSelectedKeys(new Set(p.recipients.map((r) => r.key)));
+        // Contacts whose only channel is an undeliverable email start deselected.
+        setSelectedKeys(new Set(p.recipients.filter((r) => !(r.invalidEmail && !r.viaSms)).map((r) => r.key)));
         setRecipientPage(0);
       } catch {
         setPreview(null);
@@ -171,6 +253,41 @@ export function AdminMarketingPage() {
 
   const contentValid = (!wantEmail || (subject.trim() && emailBody.trim())) && (!wantSms || smsBody.trim());
 
+  // Optional email image: must be a full http(s) URL if present (email only).
+  const imageUrl = emailImageUrl.trim();
+  const imageUrlValid = !imageUrl || isHttpUrl(imageUrl);
+  const imageBlocksSend = wantEmail && (!imageUrlValid || imageUploading);
+  const canSend = Boolean(contentValid) && !imageBlocksSend;
+
+  const setImageUrl = (value: string) => {
+    setEmailImageUrl(value);
+    setImageError(null);
+    setImageBroken(false);
+  };
+
+  const handleImageFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!file) return;
+    if (!IMAGE_TYPES.includes(file.type)) {
+      setImageError('That file type isn\u2019t supported. Please choose a JPG, PNG, WebP or GIF image.');
+      return;
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setImageError(`That image is ${(file.size / (1024 * 1024)).toFixed(1)} MB. Please choose one under 5 MB.`);
+      return;
+    }
+    setImageUploading(true);
+    setImageError(null);
+    try {
+      setImageUrl(await uploadMarketingImage(file));
+    } catch (err) {
+      setImageError(err instanceof Error && err.message ? err.message : 'Image upload failed. Please try again.');
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
   const doSend = async (isTest: boolean) => {
     setSending(true);
     setBanner(null);
@@ -180,6 +297,7 @@ export function AdminMarketingPage() {
         subject: wantEmail ? subject : undefined,
         emailBody: wantEmail ? emailBody : undefined,
         smsBody: wantSms ? smsBody : undefined,
+        emailImageUrl: wantEmail && imageUrl ? imageUrl : undefined,
         promoCodes: Array.from(selectedPromos),
         months: Array.from(selectedMonths),
         isTest,
@@ -187,15 +305,37 @@ export function AdminMarketingPage() {
         testPhone: testPhone || undefined,
         selectedKeys: isTest ? undefined : Array.from(selectedKeys),
       });
+      const skippedNote = result.skipped > 0
+        ? ` ${result.skipped} skipped as undeliverable (${result.skippedDetails.slice(0, 5).map((s) => `${s.email}: ${s.reason}`).join('; ')}${result.skippedDetails.length > 5 ? '; …' : ''}).`
+        : '';
       setBanner({
         type: result.failed > 0 ? 'err' : 'ok',
-        text: `${isTest ? 'Test' : 'Campaign'} sent — ${result.sent} delivered, ${result.failed} failed${isTest ? '' : ` to ${result.audienceCount} recipients`}.`,
+        text: `${isTest ? 'Test' : 'Campaign'} sent — ${result.sent} delivered, ${result.failed} failed${isTest ? '' : ` to ${result.audienceCount} recipients`}.${skippedNote}`,
       });
       if (!isTest) void fetchMarketingCampaigns().then(setCampaigns);
     } catch (e) {
       setBanner({ type: 'err', text: e instanceof Error ? e.message : 'Send failed.' });
     } finally {
       setSending(false);
+    }
+  };
+
+  // Refresh the local mirror of the SES hard-bounce/complaint list, then
+  // rebuild the audience so newly suppressed addresses show as invalid.
+  const handleSyncBounces = async () => {
+    setSyncingBounces(true);
+    try {
+      const r = await syncEmailSuppressions();
+      setBanner({ type: 'ok', text: `Bounce list synced from AWS SES — ${r.total} suppressed address(es) on file.` });
+      if (hasSegment) {
+        const p = await previewMarketingAudience({ months: Array.from(selectedMonths), channel });
+        setPreview(p);
+        setSelectedKeys((prev) => new Set(p.recipients.filter((x) => prev.has(x.key) && !(x.invalidEmail && !x.viaSms)).map((x) => x.key)));
+      }
+    } catch (e) {
+      setBanner({ type: 'err', text: e instanceof Error ? e.message : 'Bounce list sync failed.' });
+    } finally {
+      setSyncingBounces(false);
     }
   };
 
@@ -354,7 +494,68 @@ export function AdminMarketingPage() {
               <label className={styles.field}>
                 <span>Email body</span>
                 <textarea className={styles.textarea} rows={8} value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
+                <small className={styles.fieldHint}>
+                  Links are clickable automatically — paste the full URL (https://…), or write <code>[Book now](https://…)</code> for a labelled link.
+                </small>
               </label>
+
+              <div className={styles.field}>
+                <span>Email image <span className={styles.subtle}>(optional · shown at the top of the email)</span></span>
+                <div className={styles.imageRow}>
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept={IMAGE_TYPES.join(',')}
+                    className={styles.fileInput}
+                    onChange={handleImageFile}
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                  <button type="button" className={styles.ghostBtn} onClick={() => imageInputRef.current?.click()} disabled={imageUploading}>
+                    {imageUploading ? 'Uploading…' : imageUrl ? 'Replace image' : 'Upload image'}
+                  </button>
+                  <span className={styles.subtle}>or</span>
+                  <input
+                    className={styles.input}
+                    type="url"
+                    inputMode="url"
+                    placeholder="Paste an image URL (https://…)"
+                    aria-label="Email image URL"
+                    value={emailImageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    disabled={imageUploading}
+                  />
+                </div>
+                <small className={styles.fieldHint}>JPG, PNG, WebP or GIF, up to 5 MB — e.g. a photo of the party room.</small>
+                {imageError && <p className={styles.fieldError} role="alert">{imageError}</p>}
+                {imageUrl && !imageUrlValid && (
+                  <p className={styles.fieldError}>The image URL must start with http:// or https://.</p>
+                )}
+                {imageUrl && imageUrlValid && (
+                  <div className={styles.imageThumbRow}>
+                    {imageBroken ? (
+                      <span className={styles.imageThumbMissing}>Couldn’t load this image — check the URL.</span>
+                    ) : (
+                      <img className={styles.imageThumb} src={imageUrl} alt="Email attachment preview" onError={() => setImageBroken(true)} />
+                    )}
+                    <button type="button" className={`${styles.linkBtn} ${styles.inlineLinkBtn}`} onClick={() => setImageUrl('')}>Remove image</button>
+                  </div>
+                )}
+              </div>
+
+              {(subject.trim() || emailBody.trim() || (imageUrl && imageUrlValid)) && (
+                <div className={styles.emailPreview}>
+                  <span className={styles.emailPreviewLabel}>Email preview <span className={styles.subtle}>(approximate)</span></span>
+                  {subject.trim() && <div className={styles.emailPreviewSubject}><span>Subject:</span> {subject}</div>}
+                  <div className={styles.emailPreviewCard}>
+                    <div className={styles.emailPreviewBrand}>Playfunia</div>
+                    {imageUrl && imageUrlValid && !imageBroken && (
+                      <img className={styles.emailPreviewImage} src={imageUrl} alt="" onError={() => setImageBroken(true)} />
+                    )}
+                    <div className={styles.emailPreviewBody}>{renderEmailBody(emailBody)}</div>
+                  </div>
+                </div>
+              )}
             </>
           )}
           {wantSms && (
@@ -373,6 +574,16 @@ export function AdminMarketingPage() {
               {wantEmail && <span><strong>{emailCount}</strong> email</span>}
               {wantSms && <span><strong>{smsCount}</strong> SMS</span>}
               <span className={styles.audienceUnique}><strong>{uniqueCount}</strong> selected of {recipients.length} opted-in</span>
+              {wantEmail && (preview?.invalidEmailCount ?? 0) > 0 && (
+                <span className={styles.invalidNote} title="Malformed, typo'd, dead-domain or previously bounced addresses are skipped at send time so they never hard-bounce.">
+                  ⚠ <strong>{preview?.invalidEmailCount}</strong> invalid email{preview?.invalidEmailCount === 1 ? '' : 's'} will be skipped
+                </span>
+              )}
+              {wantEmail && (
+                <button type="button" className={styles.linkBtn} onClick={handleSyncBounces} disabled={syncingBounces} title="Pull the latest hard bounces & complaints from AWS SES">
+                  {syncingBounces ? 'Syncing bounce list…' : 'Sync bounce list'}
+                </button>
+              )}
             </div>
             {!hasSegment && <p className={styles.sample}>Select at least one birthday month above to build an audience.</p>}
             {hasSegment && recipients.length === 0 && (
@@ -411,7 +622,10 @@ export function AdminMarketingPage() {
                             <input type="checkbox" checked={checked} onChange={() => toggleRecipient(r.key)} onClick={(e) => e.stopPropagation()} aria-label={`Select ${r.name}`} />
                           </td>
                           <td data-label="Name">{r.name}</td>
-                          <td data-label="Email">{r.email || '—'}</td>
+                          <td data-label="Email">
+                            {r.email || '—'}
+                            {r.invalidEmail && <span className={styles.invalidBadge} title="This address will be skipped at send time">⚠ {r.invalidEmail}</span>}
+                          </td>
                           <td data-label="Phone">{r.phone || '—'}</td>
                           <td data-label="Reach">{[r.viaEmail ? '✉' : '', r.viaSms ? '✆' : ''].filter(Boolean).join(' ') || '—'}</td>
                         </tr>
@@ -434,15 +648,19 @@ export function AdminMarketingPage() {
             <div className={styles.testInputs}>
               {wantEmail && <input className={styles.input} placeholder="Test email" value={testEmail} onChange={(e) => setTestEmail(e.target.value)} />}
               {wantSms && <input className={styles.input} placeholder="Test phone (+1…)" value={testPhone} onChange={(e) => setTestPhone(e.target.value)} />}
-              <button type="button" className={styles.ghostBtn} onClick={handleSendTest} disabled={sending || !contentValid}>
+              <button type="button" className={styles.ghostBtn} onClick={handleSendTest} disabled={sending || !canSend}>
                 {sending ? 'Sending…' : 'Send test'}
               </button>
             </div>
-            <button type="button" className={styles.primaryBtn} onClick={handleSendBulk} disabled={sending || !contentValid || uniqueCount === 0}>
+            <button type="button" className={styles.primaryBtn} onClick={handleSendBulk} disabled={sending || !canSend || uniqueCount === 0}>
               {sending ? 'Sending…' : `Send to ${uniqueCount} recipient(s)`}
             </button>
           </div>
           {!contentValid && <p className={styles.warn}>Fill in the {wantEmail ? 'subject + email body' : ''}{wantEmail && wantSms ? ' and ' : ''}{wantSms ? 'SMS body' : ''} before sending.</p>}
+          {wantEmail && imageUploading && <p className={styles.warn}>Wait for the email image to finish uploading before sending.</p>}
+          {wantEmail && !imageUploading && !imageUrlValid && (
+            <p className={styles.warn}>Fix or remove the email image URL (it must start with http:// or https://) before sending.</p>
+          )}
         </section>
         </>
         )}
@@ -457,17 +675,34 @@ export function AdminMarketingPage() {
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead>
-                  <tr><th>Date</th><th>Channel</th><th>Subject / SMS</th><th>Audience</th><th>Sent</th><th>Failed</th><th>Status</th></tr>
+                  <tr><th>Date</th><th>Channel</th><th>Subject / SMS</th><th>Audience</th><th>Sent</th><th>Failed</th><th>Skipped</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                   {campaigns.map((c) => (
                     <tr key={c.campaign_id}>
                       <td data-label="Date">{c.created_at ? formatDate(c.created_at) : '—'}{c.is_test ? ' (test)' : ''}</td>
                       <td data-label="Channel">{c.channel}</td>
-                      <td className={styles.subjectCell} data-label="Subject / SMS">{c.subject || c.sms_body || '—'}</td>
+                      <td className={styles.subjectCell} data-label="Subject / SMS">
+                        <span>
+                          {c.email_image_url && isHttpUrl(c.email_image_url) && (
+                            <a
+                              className={styles.imageMark}
+                              href={c.email_image_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="This email included an image — open it"
+                              aria-label="View the image sent with this email"
+                            >
+                              🖼
+                            </a>
+                          )}
+                          {c.subject || c.sms_body || '—'}
+                        </span>
+                      </td>
                       <td data-label="Audience">{c.audience_count}</td>
                       <td className={styles.ok} data-label="Sent">{c.sent_count}</td>
                       <td className={c.failed_count > 0 ? styles.bad : undefined} data-label="Failed">{c.failed_count}</td>
+                      <td className={(c.skipped_count ?? 0) > 0 ? styles.warnCell : undefined} data-label="Skipped" title="Undeliverable addresses refused by pre-send validation">{c.skipped_count ?? 0}</td>
                       <td data-label="Status"><span className={styles.statusBadge} data-status={c.status}>{c.status}</span></td>
                     </tr>
                   ))}

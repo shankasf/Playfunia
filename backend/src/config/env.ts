@@ -42,6 +42,11 @@ const envSchema = z
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().optional(),
     SMTP_FROM_NAME: z.string().default('Playfunia'),
+    // AWS API credentials (SES v2 API: suppression list / email validation).
+    // Distinct from the SMTP_USER/SMTP_PASS pair, which are SES SMTP credentials.
+    AWS_ACCESS_KEY_ID: z.string().optional(),
+    AWS_SECRET_ACCESS_KEY: z.string().optional(),
+    AWS_REGION: z.string().default('us-east-1'),
     // Twilio SMS Configuration
     // Authentication accepts either:
     //   (a) account-level: TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN, or
@@ -111,6 +116,10 @@ export const appConfig = {
   smtpPass: env.SMTP_PASS,
   smtpFrom: env.SMTP_FROM,
   smtpFromName: env.SMTP_FROM_NAME,
+  // AWS SES API (email validation / suppression list)
+  awsAccessKeyId: env.AWS_ACCESS_KEY_ID,
+  awsSecretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  awsRegion: env.AWS_REGION,
   // Twilio SMS Configuration
   twilioAccountSid: env.TWILIO_ACCOUNT_SID,
   twilioAuthToken: env.TWILIO_AUTH_TOKEN,

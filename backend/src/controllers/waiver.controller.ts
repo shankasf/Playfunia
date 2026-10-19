@@ -12,6 +12,7 @@ import {
 import { signWaiverSchema } from '../schemas/waiver.schema';
 import { AppError } from '../utils/app-error';
 import { asyncHandler } from '../utils/async-handler';
+import { assertDeliverableEmail } from '../services/email-validation.service';
 
 export const signWaiverHandler = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   if (!req.user) {
@@ -22,6 +23,9 @@ export const signWaiverHandler = asyncHandler(async (req: AuthenticatedRequest, 
     ...req.body,
     guardianId: req.user.id,
   });
+  // Reject undeliverable addresses (typos, dead domains, prior hard bounces)
+  // so the waiver confirmation never bounces.
+  await assertDeliverableEmail(payload.guardianEmail, 'Guardian email');
 
   // Capture client IP for the signed waiver record
   const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim()

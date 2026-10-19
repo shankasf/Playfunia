@@ -242,6 +242,8 @@ export function AdminDashboardPage() {
   const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('all');
   const [ticketNameFilter, setTicketNameFilter] = useState<string>('');
   const [ticketDateFilter, setTicketDateFilter] = useState<string>('');
+  const [ticketPage, setTicketPage] = useState<number>(1);
+  const [ticketPageSize, setTicketPageSize] = useState<number>(10);
 
   // Promotions state
   const [promoState, setPromoState] = useState<{ status: LoadState; data: AdminProductPromotion[] }>({ status: 'idle', data: [] });
@@ -509,6 +511,18 @@ export function AdminDashboardPage() {
       return true;
     });
   }, [ticketState.data, ticketStatusFilter, ticketNameFilter, ticketDateFilter]);
+
+  // Reset to the first page whenever the ticket filters or page size change.
+  useEffect(() => {
+    setTicketPage(1);
+  }, [ticketStatusFilter, ticketNameFilter, ticketDateFilter, ticketPageSize]);
+
+  const ticketTotalPages = Math.max(1, Math.ceil(filteredTickets.length / ticketPageSize));
+  const ticketCurrentPage = Math.min(ticketPage, ticketTotalPages);
+  const pagedTickets = useMemo(() => {
+    const start = (ticketCurrentPage - 1) * ticketPageSize;
+    return filteredTickets.slice(start, start + ticketPageSize);
+  }, [filteredTickets, ticketCurrentPage, ticketPageSize]);
 
   const handleSelectBooking = (booking: AdminBooking) => {
     setSelectedBookingId(booking.id);
@@ -1130,6 +1144,16 @@ export function AdminDashboardPage() {
             )}
           </Link>
         )}
+        {isAdmin && (
+          <Link to="/admin/chatbot" style={{ textDecoration: 'none', display: 'contents' }}>
+            {renderSummaryCard(
+              'Website assistant',
+              'Chat',
+              'Settings & knowledge',
+              'Greeting, answers, files'
+            )}
+          </Link>
+        )}
       </section>
 
       <div className={styles.layout}>
@@ -1244,7 +1268,75 @@ export function AdminDashboardPage() {
               </button>
             </div>
             {ticketMessage && <p className={styles.feedback}>{ticketMessage}</p>}
-            {renderTicketLog({ ...ticketState, data: filteredTickets }, handleDeleteTicket, isAdmin)}
+            {renderTicketLog({ ...ticketState, data: pagedTickets }, handleDeleteTicket, isAdmin)}
+            {ticketState.status !== 'loading' && filteredTickets.length > 0 && (
+              <div className={styles.pager}>
+                <span className={styles.pagerSummary}>
+                  Showing {(ticketCurrentPage - 1) * ticketPageSize + 1}–
+                  {Math.min(ticketCurrentPage * ticketPageSize, filteredTickets.length)} of {filteredTickets.length}
+                </span>
+                <div className={styles.pagerControls}>
+                  <button
+                    type="button"
+                    className={styles.pagerBtn}
+                    onClick={() => setTicketPage(1)}
+                    disabled={ticketCurrentPage === 1}
+                    aria-label="First page"
+                  >
+                    «
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.pagerBtn}
+                    onClick={() => setTicketPage((p) => Math.max(1, p - 1))}
+                    disabled={ticketCurrentPage === 1}
+                  >
+                    Prev
+                  </button>
+                  {getPageNumbers(ticketCurrentPage, ticketTotalPages).map((item, idx) =>
+                    item === '…' ? (
+                      <span key={`gap-${idx}`} className={styles.pagerGap}>…</span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        className={item === ticketCurrentPage ? `${styles.pagerBtn} ${styles.pagerBtnActive}` : styles.pagerBtn}
+                        onClick={() => setTicketPage(item)}
+                        aria-current={item === ticketCurrentPage ? 'page' : undefined}
+                      >
+                        {item}
+                      </button>
+                    )
+                  )}
+                  <button
+                    type="button"
+                    className={styles.pagerBtn}
+                    onClick={() => setTicketPage((p) => Math.min(ticketTotalPages, p + 1))}
+                    disabled={ticketCurrentPage === ticketTotalPages}
+                  >
+                    Next
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.pagerBtn}
+                    onClick={() => setTicketPage(ticketTotalPages)}
+                    disabled={ticketCurrentPage === ticketTotalPages}
+                    aria-label="Last page"
+                  >
+                    »
+                  </button>
+                </div>
+                <label className={styles.pagerSize}>
+                  <span>Per page</span>
+                  <select value={ticketPageSize} onChange={(e) => setTicketPageSize(Number(e.target.value))}>
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </label>
+              </div>
+            )}
           </section>
         </div>
 
@@ -4062,6 +4154,19 @@ function renderWaiverList(
       )}
     </>
   );
+}
+
+/** Compact page list: always first/last, a window around the current page, '…' for gaps. */
+function getPageNumbers(current: number, total: number): Array<number | '…'> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages: Array<number | '…'> = [1];
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  if (start > 2) pages.push('…');
+  for (let p = start; p <= end; p++) pages.push(p);
+  if (end < total - 1) pages.push('…');
+  pages.push(total);
+  return pages;
 }
 
 function renderTicketLog(

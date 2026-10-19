@@ -5,10 +5,12 @@ This file is intentionally thin:
   * forwards /chat requests to the head agent (agent.run), which routes
     between the structured-data tools and the semantic search tool.
 
-The semantic knowledge base now lives in pgvector (see semantic.py and
-migrations/00{1,2}_*.sql). It is populated out-of-band by
-scripts/backfill_pgvector.py — the service no longer ingests on startup, so
-boot is fast and the running container needs no write access to the DB.
+The semantic knowledge base lives in pgvector (see semantic.py and
+migrations/00{1,2}_*.sql) and is managed from the admin panel (/admin/chatbot ->
+Knowledge Base), which uploads/edits documents and writes their embeddings via
+the Node backend. This service only reads, so boot is fast and the running
+container needs no write access to the DB. Runtime settings (model, prompt,
+KB on/off, ...) come from the same panel via settings.py.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from agent import run as run_head_agent
+from settings import get_settings, settings_debug
 
 
 app = FastAPI(title="Playfunia Chatbot API")
@@ -58,6 +61,10 @@ class ChatResponse(BaseModel):
 
 @app.post("/chat", response_model=ChatResponse)
 async def create_chat_completion(payload: ChatRequest) -> ChatResponse:
+    # Admin kill-switch (chatbot_settings.enabled). The production widget posts
+    # here directly, bypassing the Node proxy, so the gate must live here too.
+    if not get_settings().get("enabled", True):
+        raise HTTPException(status_code=503, detail="Chat is currently unavailable.")
     if not payload.messages:
         raise HTTPException(status_code=400, detail="At least one message is required.")
 
@@ -89,6 +96,12 @@ async def chat_debug(payload: ChatRequest):
     if not history:
         raise HTTPException(status_code=400, detail="No user message found.")
     return await run_head_agent(history)
+
+
+@app.get("/settings/debug")
+async def settings_debug_endpoint():
+    """Effective admin settings as the agent sees them (+ provenance / cache age)."""
+    return settings_debug()
 
 
 @app.get("/health")
