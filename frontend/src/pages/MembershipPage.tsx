@@ -204,7 +204,9 @@ export function MembershipPage() {
               />
             </div>
             <p className={styles.helper}>
-              Auto-renew ensures your play pass never lapses. You can disable renewals anytime from your account portal.
+              {autoRenew
+                ? "By enabling auto-renew, you authorize Playfunia to save this card and charge it the then-current plan price plus tax at the end of each term until you cancel. You can turn auto-renew off anytime from your account portal."
+                : "Auto-renew ensures your play pass never lapses. You can disable renewals anytime from your account portal."}
             </p>
 
             {selectedPlan ? (

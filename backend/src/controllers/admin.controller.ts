@@ -444,7 +444,7 @@ function transformMembership(
   const status = (m.status as string) ?? 'active';
   let remainingDays: number | null = null;
   if (endDateStr && status === 'active') {
-    const endDt = DateTime.fromISO(endDateStr).setZone('America/New_York');
+    const endDt = DateTime.fromISO(endDateStr, { zone: 'America/New_York' });
     const nowDt = DateTime.now().setZone('America/New_York').startOf('day');
     remainingDays = Math.max(0, Math.ceil(endDt.diff(nowDt, 'days').days));
   }
@@ -550,10 +550,29 @@ export const getMembershipHandler = asyncHandler(async (req, res) => {
   return res.status(200).json({ membership: shaped });
 });
 
+export const getCustomerChildrenByEmailHandler = asyncHandler(async (req, res) => {
+  const email = typeof req.query.email === 'string' ? req.query.email : '';
+  if (!email.trim()) throw new AppError('email is required', 400);
+  const children = await AdminService.getCustomerChildrenByEmail(email);
+  return res.status(200).json({ children });
+});
+
+export const setMembershipChildrenHandler = asyncHandler(async (req, res) => {
+  const membershipId = parseInt(req.params.id ?? '', 10);
+  if (isNaN(membershipId)) throw new AppError('Invalid membership ID', 400);
+  const { childIds } = req.body ?? {};
+  if (!Array.isArray(childIds) || !childIds.every((id: unknown) => Number.isInteger(Number(id)))) {
+    throw new AppError('childIds must be an array of child IDs', 400);
+  }
+  const children = await AdminService.setMembershipChildren(membershipId, childIds.map(Number));
+  publishAdminEvent('membership.updated', { membershipId });
+  return res.status(200).json({ children });
+});
+
 export const createMembershipHandler = asyncHandler(async (req, res) => {
   // Check if this is a manual membership creation (has guestName field)
   if (req.body.guestName) {
-    const { guestName, guestEmail, guestPhone, childName, password, planId, tier, durationMonths, monthlyPrice, total, paymentMethod, paymentStatus, notes } = req.body;
+    const { guestName, guestEmail, guestPhone, childName, childIds, password, planId, tier, durationMonths, monthlyPrice, total, paymentMethod, paymentStatus, notes, autoRenew } = req.body;
     if (!planId || !tier) throw new AppError('Plan and tier are required', 400);
     if (!guestEmail) throw new AppError('Email is required to create a user account', 400);
     if (!password || password.length < 6) throw new AppError('Password is required (min 6 characters)', 400);
@@ -572,6 +591,8 @@ export const createMembershipHandler = asyncHandler(async (req, res) => {
       paymentMethod: paymentMethod || 'cash',
       paymentStatus: paymentStatus || 'paid',
       notes: notes || undefined,
+      autoRenew: autoRenew === true,
+      childIds: Array.isArray(childIds) ? childIds.map(Number).filter(Number.isInteger) : undefined,
     });
 
     publishAdminEvent('membership.created', { membershipId: result.membershipId, displayId: result.displayId, manual: true });
@@ -696,7 +717,7 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
   let endTime = '';
 
   if (b.scheduled_start) {
-    const start = DateTime.fromISO(b.scheduled_start as string).setZone('America/New_York');
+    const start = DateTime.fromISO(b.scheduled_start as string, { zone: 'America/New_York' });
     eventDate = start.toFormat('yyyy-MM-dd');
     startTime = start.toFormat('HH:mm');
   }
@@ -706,7 +727,7 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
     endTime = (b.end_time as string).slice(0, 5);
   } else if (b.scheduled_end) {
     // Fallback for older bookings: scheduled_end includes 30-min cleaning buffer
-    const end = DateTime.fromISO(b.scheduled_end as string).setZone('America/New_York').minus({ minutes: 30 });
+    const end = DateTime.fromISO(b.scheduled_end as string, { zone: 'America/New_York' }).minus({ minutes: 30 });
     endTime = end.toFormat('HH:mm');
   }
 

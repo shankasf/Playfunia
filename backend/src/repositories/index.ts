@@ -487,6 +487,8 @@ export const MembershipRepository = {
     referral_normalized?: string;
     referral_status?: string;
     matched_staff_user_id?: number;
+    renewal_months?: number;
+    square_card_id?: string;
   }) {
     const { data, error } = await supabase
       .from('memberships')

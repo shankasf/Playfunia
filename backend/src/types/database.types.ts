@@ -96,6 +96,7 @@ export interface Database {
           address: string | null;
           notes: string | null;
           is_guest: boolean | null;
+          square_customer_id: string | null;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -107,6 +108,7 @@ export interface Database {
           address?: string | null;
           notes?: string | null;
           is_guest?: boolean | null;
+          square_customer_id?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -118,6 +120,7 @@ export interface Database {
           address?: string | null;
           notes?: string | null;
           is_guest?: boolean | null;
+          square_customer_id?: string | null;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -661,6 +664,8 @@ export interface Database {
           referral_normalized: string | null;
           referral_status: string | null;
           matched_staff_user_id: number | null;
+          square_card_id: string | null;
+          renewal_months: number;
           created_at: string | null;
           updated_at: string | null;
         };
@@ -684,6 +689,8 @@ export interface Database {
           referral_normalized?: string | null;
           referral_status?: string | null;
           matched_staff_user_id?: number | null;
+          square_card_id?: string | null;
+          renewal_months?: number;
           created_at?: string | null;
           updated_at?: string | null;
         };
@@ -707,6 +714,8 @@ export interface Database {
           referral_normalized?: string | null;
           referral_status?: string | null;
           matched_staff_user_id?: number | null;
+          square_card_id?: string | null;
+          renewal_months?: number;
           created_at?: string | null;
           updated_at?: string | null;
         };

@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { PrimaryButton } from '../components/common/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
 import { formatDate, formatDateTime, formatTime, getAgeET, getCurrentDateET } from '../lib/dateUtils';
+import { MembershipChildPicker } from '../components/admin/MembershipChildPicker';
 import { fetchPartyPackages, type PartyPackageDto } from '../api/bookings';
 import {
   AdminBooking,
@@ -24,6 +25,7 @@ import {
   issueAdminTickets,
   AdminIssueTicketPayload,
   createAdminMembership,
+  setAdminMembershipChildren,
   AdminCreateMembershipPayload,
   createAdminEventSource,
   createAdminPromotion,
@@ -108,6 +110,9 @@ type WaiverFormState = {
   marketingEmailOptIn: boolean;
   children: Array<{ name: string; birthDate: string }>;
 };
+
+/** Children covered by each plan offered in the admin Create Membership form (plan_id -> max_children) */
+const CREATE_PLAN_MAX_CHILDREN: Record<number, number> = { 12: 1, 13: 2, 14: 3 };
 
 export function AdminDashboardPage() {
   const { user, token, isTeamMember, isAdmin, isLoading: authLoading, logout } = useAuth();
@@ -200,7 +205,10 @@ export function AdminDashboardPage() {
     total: 0,
     paymentMethod: 'cash',
     paymentStatus: 'paid',
+    autoRenew: false,
   });
+  const [editMembershipChildIds, setEditMembershipChildIds] = useState<number[]>([]);
+  const [editMembershipChildrenSaving, setEditMembershipChildrenSaving] = useState(false);
 
   const [selectedWaiverId, setSelectedWaiverId] = useState<string | null>(null);
   const [waiverForm, setWaiverForm] = useState<WaiverFormState>(emptyWaiverForm());
@@ -722,7 +730,7 @@ export function AdminDashboardPage() {
       setMembershipCreateForm({
         guestName: '', guestEmail: '', guestPhone: '', childName: '', password: '',
         planId: 0, tier: '', durationMonths: 1, monthlyPrice: 0, total: 0,
-        paymentMethod: 'cash', paymentStatus: 'paid',
+        paymentMethod: 'cash', paymentStatus: 'paid', autoRenew: false, childIds: [],
       });
       await refreshAll({ silent: true });
     } catch (error) {
@@ -859,6 +867,7 @@ export function AdminDashboardPage() {
       : tierName === 'gold' ? 'adventurer'
       : tierName === 'platinum' ? 'champion'
       : 'mini';
+    setEditMembershipChildIds((member.children ?? []).map(c => c.id));
     setMembershipForm({
       tier: tierCode,
       autoRenew: member.membership.autoRenew,
@@ -866,6 +875,20 @@ export function AdminDashboardPage() {
       status: 'active',
     });
     setMembershipMessage(null);
+  };
+
+  const handleSaveMembershipChildren = async () => {
+    if (!selectedMembershipId) return;
+    setEditMembershipChildrenSaving(true);
+    try {
+      await setAdminMembershipChildren(selectedMembershipId, editMembershipChildIds);
+      setMembershipMessage('Covered children updated.');
+      await refreshAll({ silent: true });
+    } catch (error) {
+      setMembershipMessage(error instanceof Error ? error.message : 'Unable to update covered children.');
+    } finally {
+      setEditMembershipChildrenSaving(false);
+    }
   };
 
   const handleMembershipUpdate = async () => {
@@ -2758,6 +2781,30 @@ export function AdminDashboardPage() {
                   Auto-renew
                 </label>
               </div>
+              {(() => {
+                const member = membershipState.data.find(m => m.membership?.membershipId === selectedMembershipId);
+                if (!member?.email) return null;
+                return (
+                  <div style={{ marginTop: '1rem' }}>
+                    <strong style={{ display: 'block', marginBottom: '0.25rem' }}>Children covered</strong>
+                    <MembershipChildPicker
+                      email={member.email}
+                      maxChildren={member.membership?.maxChildren ?? 1}
+                      selected={editMembershipChildIds}
+                      onChange={setEditMembershipChildIds}
+                    />
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      style={{ marginTop: '0.5rem' }}
+                      onClick={handleSaveMembershipChildren}
+                      disabled={editMembershipChildrenSaving}
+                    >
+                      {editMembershipChildrenSaving ? 'Saving...' : 'Save covered children'}
+                    </button>
+                  </div>
+                );
+              })()}
               {membershipMessage && <p className={styles.modalFeedback}>{membershipMessage}</p>}
             </div>
             <div className={styles.modalFooter}>
@@ -3127,10 +3174,6 @@ export function AdminDashboardPage() {
                   <input type="text" value={membershipCreateForm.password ?? ''} onChange={(e) => setMembershipCreateForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 6 characters" />
                 </div>
                 <div className={styles.formRow}>
-                  <label>Child Name</label>
-                  <input type="text" value={membershipCreateForm.childName ?? ''} onChange={(e) => setMembershipCreateForm(f => ({ ...f, childName: e.target.value }))} placeholder="Child's name" />
-                </div>
-                <div className={styles.formRow}>
                   <label>Membership Plan *</label>
                   <select
                     value={membershipCreateForm.planId || ''}
@@ -3142,7 +3185,7 @@ export function AdminDashboardPage() {
                       };
                       const sel = plans[e.target.value];
                       if (sel) {
-                        setMembershipCreateForm(f => ({ ...f, planId: sel.id, tier: sel.tier, monthlyPrice: sel.price, total: sel.price * f.durationMonths }));
+                        setMembershipCreateForm(f => ({ ...f, planId: sel.id, tier: sel.tier, monthlyPrice: sel.price, total: sel.price * f.durationMonths, childIds: (f.childIds ?? []).slice(0, Math.max(0, (CREATE_PLAN_MAX_CHILDREN[sel.id] ?? 1) - (f.childName?.trim() ? 1 : 0))) }));
                       } else {
                         setMembershipCreateForm(f => ({ ...f, planId: 0, tier: '', monthlyPrice: 0, total: 0 }));
                       }
@@ -3153,6 +3196,23 @@ export function AdminDashboardPage() {
                     <option value="13">Super Plan — $440/mo (2 children)</option>
                     <option value="14">Mega Plan — $630/mo (3 children)</option>
                   </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label>Children covered</label>
+                  <MembershipChildPicker
+                    email={membershipCreateForm.guestEmail ?? ''}
+                    maxChildren={CREATE_PLAN_MAX_CHILDREN[membershipCreateForm.planId] ?? 1}
+                    reservedSlots={membershipCreateForm.childName?.trim() ? 1 : 0}
+                    selected={membershipCreateForm.childIds ?? []}
+                    onChange={(childIds) => setMembershipCreateForm(f => ({ ...f, childIds }))}
+                  />
+                  <input
+                    type="text"
+                    value={membershipCreateForm.childName ?? ''}
+                    onChange={(e) => setMembershipCreateForm(f => ({ ...f, childName: e.target.value }))}
+                    placeholder="Add a new child (name)"
+                    disabled={!membershipCreateForm.childName && (membershipCreateForm.childIds?.length ?? 0) >= (CREATE_PLAN_MAX_CHILDREN[membershipCreateForm.planId] ?? 1)}
+                  />
                 </div>
                 <div className={styles.formRow}>
                   <label>Duration (months)</label>
@@ -3177,6 +3237,20 @@ export function AdminDashboardPage() {
                     <option value="paid">Paid</option>
                     <option value="awaiting_full_payment">Awaiting Payment</option>
                   </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label className={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={membershipCreateForm.autoRenew ?? false}
+                      onChange={(e) => setMembershipCreateForm(f => ({ ...f, autoRenew: e.target.checked }))}
+                    />
+                    Auto-renew
+                  </label>
+                  <small style={{ color: '#6b7280' }}>
+                    No card is saved for staff-created memberships, so the member gets renewal reminders instead of an automatic charge.
+                    To auto-charge, the member can buy or renew online.
+                  </small>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>

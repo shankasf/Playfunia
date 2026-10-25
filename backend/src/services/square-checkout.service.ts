@@ -35,6 +35,8 @@ import {
   calculateTaxCents,
 } from '../utils/currency';
 import { withRetry } from '../utils/retry';
+import { createItemizedSquareOrder, squareLineName } from './square-order.service';
+import { storeCardForAutoRenew } from './membership-billing.service';
 import { tryEvaluateCoupon, type CouponEvaluation } from './coupon.service';
 
 // Valid payment statuses (Fix #4 - accept PENDING for ACH, Afterpay, etc.)
@@ -91,6 +93,29 @@ function buildSquarePaymentNote(items: SquareCheckoutItemInput[]): string {
   const note = `${description} | Playfunia`;
   // Square note max 500 chars
   return note.length > 500 ? note.slice(0, 497) + '...' : note;
+}
+
+/**
+ * Create an itemized Square order for a checkout summary so Square reports show
+ * what was sold. Returns null (charge without an order) if itemization fails.
+ */
+async function createCheckoutSquareOrder(
+  summary: SquareCheckoutSummary,
+  referenceId: string,
+  idempotencyKey: string,
+): Promise<string | null> {
+  return createItemizedSquareOrder({
+    lines: summary.lines.map(line => ({
+      name: squareLineName(line.type, line.label),
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+    })),
+    discounts: summary.discounts.map(d => ({ name: d.label, amount: d.amount })),
+    taxRate: getTaxRateSync(),
+    expectedTotal: summary.total,
+    referenceId,
+    idempotencyKey: `${idempotencyKey}_order`,
+  });
 }
 
 /**
@@ -735,11 +760,14 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
       const square = getSquareClient();
       const locationId = getSquareLocationId();
 
+      const squareOrderId = await createCheckoutSquareOrder(summary, `order_${order.order_id}`, idempotencyKey);
+
       const paymentRequest: CreatePaymentRequest = {
         sourceId: input.sourceId,
         idempotencyKey,
         amountMoney: toSquareMoney(summary.total),
         locationId,
+        ...(squareOrderId ? { orderId: squareOrderId } : {}),
         referenceId: `order_${order.order_id}`,
         note: buildSquarePaymentNote(input.items),
         // Enable autocomplete to capture payment immediately
@@ -1114,6 +1142,18 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
   if (input.checkoutSessionId) {
     completeCheckoutSession(input.checkoutSessionId, order.order_id).catch(err =>
       logger.error({ error: err, checkoutSessionId: input.checkoutSessionId, orderId: order.order_id }, 'Failed to complete checkout session')
+    );
+  }
+
+  // Save the card on file for memberships bought with auto-renew on, so the
+  // renewal job can charge it at the end of the term (non-blocking).
+  const autoRenewMembershipIds = membershipResults
+    .filter(r => (r.membership as { autoRenew?: boolean }).autoRenew)
+    .map(r => parseInt((r.membership as { membershipId: string }).membershipId, 10))
+    .filter(id => !isNaN(id));
+  if (autoRenewMembershipIds.length > 0) {
+    storeCardForAutoRenew({ paymentId, membershipIds: autoRenewMembershipIds }).catch(err =>
+      logger.error({ err, orderId: order.order_id }, 'Failed to store card for auto-renew')
     );
   }
 
@@ -1903,11 +1943,14 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
       const square = getSquareClient();
       const locationId = getSquareLocationId();
 
+      const squareOrderId = await createCheckoutSquareOrder(summary, `guest_order_${order.order_id}`, idempotencyKey);
+
       const paymentRequest: CreatePaymentRequest = {
         sourceId: input.sourceId,
         idempotencyKey,
         amountMoney: toSquareMoney(summary.total),
         locationId,
+        ...(squareOrderId ? { orderId: squareOrderId } : {}),
         referenceId: `guest_order_${order.order_id}`,
         note: buildSquarePaymentNote(input.items),
         buyerEmailAddress: input.guestEmail,

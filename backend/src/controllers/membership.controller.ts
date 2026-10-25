@@ -12,6 +12,7 @@ import {
   lookupMembershipForCheckIn,
 } from '../services/membership.service';
 import { uploadChildPhoto } from '../services/child-photo.service';
+import { disableStoredCard } from '../services/membership-billing.service';
 import { MembershipRepository, ChildRepository, UserRepository } from '../repositories';
 import {
   purchaseMembershipSchema,
@@ -112,9 +113,18 @@ export const toggleAutoRenewHandler = asyncHandler(
     }
 
     const membershipIdNum = parseInt(details.membershipId, 10);
-    await MembershipRepository.update(membershipIdNum, { auto_renew: autoRenew });
+    const membership = await MembershipRepository.findById(membershipIdNum);
 
-    return res.status(200).json({ success: true, autoRenew });
+    // Turning auto-renew off revokes the card-on-file authorization
+    if (!autoRenew && membership?.square_card_id) {
+      await disableStoredCard(membership.square_card_id);
+      await MembershipRepository.update(membershipIdNum, { auto_renew: false, square_card_id: null });
+    } else {
+      await MembershipRepository.update(membershipIdNum, { auto_renew: autoRenew });
+    }
+
+    const cardOnFile = autoRenew && Boolean(membership?.square_card_id);
+    return res.status(200).json({ success: true, autoRenew, cardOnFile });
   },
 );
 

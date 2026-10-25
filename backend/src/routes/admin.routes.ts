@@ -47,6 +47,8 @@ import {
   listMembershipPlansHandler,
   getMembershipPlanHandler,
   createMembershipPlanHandler,
+  setMembershipChildrenHandler,
+  getCustomerChildrenByEmailHandler,
   updateMembershipPlanHandler,
   deleteMembershipPlanHandler,
   
@@ -346,6 +348,8 @@ const STAFF_ALLOWED: ReadonlyArray<{ method: string; pattern: RegExp }> = [
   { method: 'PATCH', pattern: /^\/memberships\/[^/]+$/ },
   { method: 'POST', pattern: /^\/memberships\/validate$/ },
   { method: 'POST', pattern: /^\/memberships\/[^/]+\/visit$/ },
+  { method: 'PATCH', pattern: /^\/memberships\/[^/]+\/children$/ },
+  { method: 'GET', pattern: /^\/membership-children$/ },
 
   // Waivers / check-in info — view + edit the waiver intake form (no delete, no export)
   { method: 'GET', pattern: /^\/waiver-submissions$/ },
@@ -452,6 +456,8 @@ adminRouter.post('/memberships', createMembershipHandler);
 adminRouter.patch('/memberships/:id', updateMembershipHandler);
 adminRouter.delete('/memberships/:id', deleteMembershipHandler);
 adminRouter.post('/memberships/:membershipId/visit', recordMembershipVisitHandler);
+adminRouter.patch('/memberships/:id/children', setMembershipChildrenHandler);
+adminRouter.get('/membership-children', getCustomerChildrenByEmailHandler);
 adminRouter.get('/staff', listStaffMembersHandler);
 adminRouter.get('/staff/:userId/referral-stats', getStaffReferralStatsHandler);
 
