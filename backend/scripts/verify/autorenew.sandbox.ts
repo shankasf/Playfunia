@@ -171,6 +171,10 @@ async function payWithNonce(amount: number, orderId?: string, nonce = 'cnon:card
   return r.payment!;
 }
 
+// Unique ids per run: Square remembers idempotency keys (renew_<membershipId>_<date>_<n>) across runs
+const RUN = Date.now() % 1_000_000 * 10;
+const M = (n: number) => RUN + n;
+
 function seedMember(id: number, endDate: string) {
   db.customers!.push({ customer_id: id, full_name: `Sandbox Tester${id}`, email: `sandbox+${id}@example.com`, square_customer_id: null });
   db.memberships!.push({
@@ -236,10 +240,10 @@ function seedMember(id: number, endDate: string) {
   });
 
   // --- Auto-renew -----------------------------------------------------------
-  seedMember(1, todayET);
+  seedMember(M(1), todayET);
   await test('purchase: card from completed payment is stored on file', async () => {
     const payment = await payWithNonce(270);
-    const cardId = await billing.storeCardForAutoRenew({ paymentId: payment.id, membershipIds: [1] });
+    const cardId = await billing.storeCardForAutoRenew({ paymentId: payment.id, membershipIds: [M(1)] });
     assert.ok(cardId, 'card should be stored');
     assert.equal(db.memberships![0]!.square_card_id, cardId);
     assert.ok(db.customers![0]!.square_customer_id, 'Square customer should be created');
@@ -257,7 +261,7 @@ function seedMember(id: number, endDate: string) {
     assert.equal(m.end_date, expectedEnd);
     assert.equal(m.visits_used_this_period, 0);
     assert.equal(m.grace_period_end, null);
-    const renewal = db.membership_renewals!.find(x => x.membership_id === 1)!;
+    const renewal = db.membership_renewals!.find(x => x.membership_id === M(1))!;
     assert.equal(renewal.status, 'succeeded');
     assert.equal(renewal.amount_usd, 270);
     const { payment } = await square.payments.get({ paymentId: renewal.square_payment_id });
@@ -276,33 +280,33 @@ function seedMember(id: number, endDate: string) {
     db.memberships![0]!.end_date = todayET; // pretend the extension write was lost
     const r = await processMembershipRenewals();
     assert.equal(r.renewed, 0);
-    assert.equal(db.membership_renewals!.filter(x => x.membership_id === 1).length, 1);
+    assert.equal(db.membership_renewals!.filter(x => x.membership_id === M(1)).length, 1);
     assert.equal(db.payments!.length, 1);
   });
 
-  seedMember(2, todayET);
+  seedMember(M(2), todayET);
   await test('idempotency: two processes racing on one period charge once', async () => {
     const payment = await payWithNonce(270);
-    await billing.storeCardForAutoRenew({ paymentId: payment.id, membershipIds: [2] });
-    const m = { ...db.memberships!.find(x => x.membership_id === 2)!, customers: db.customers!.find(c => c.customer_id === 2) };
+    await billing.storeCardForAutoRenew({ paymentId: payment.id, membershipIds: [M(2)] });
+    const m = { ...db.memberships!.find(x => x.membership_id === M(2))!, customers: db.customers!.find(c => c.customer_id === M(2)) };
     const outcomes = await Promise.all([billing.chargeMembershipRenewal(m, todayET), billing.chargeMembershipRenewal(m, todayET)]);
     assert.deepEqual(outcomes.sort(), ['renewed', 'skipped']);
-    assert.equal(db.payments!.filter(p => db.orders!.find(o => o.order_id === p.order_id)?.customer_id === 2).length, 1);
+    assert.equal(db.payments!.filter(p => db.orders!.find(o => o.order_id === p.order_id)?.customer_id === M(2)).length, 1);
   });
 
-  seedMember(3, todayET);
+  seedMember(M(3), todayET);
   await test('decline: failed charge is recorded, member emailed once, not extended', async () => {
     const payment = await payWithNonce(270);
-    const cardId = await billing.storeCardForAutoRenew({ paymentId: payment.id, membershipIds: [3] });
+    const cardId = await billing.storeCardForAutoRenew({ paymentId: payment.id, membershipIds: [M(3)] });
     await square.cards.disable({ cardId }); // make the stored card unusable
     emails.length = 0;
-    const m = () => ({ ...db.memberships!.find(x => x.membership_id === 3)!, customers: db.customers!.find(c => c.customer_id === 3) });
+    const m = () => ({ ...db.memberships!.find(x => x.membership_id === M(3))!, customers: db.customers!.find(c => c.customer_id === M(3)) });
     assert.equal(await billing.chargeMembershipRenewal(m(), todayET), 'declined');
-    const renewal = db.membership_renewals!.find(x => x.membership_id === 3)!;
+    const renewal = db.membership_renewals!.find(x => x.membership_id === M(3))!;
     assert.equal(renewal.status, 'failed');
     assert.equal(renewal.attempts, 1);
     assert.ok(renewal.error_message);
-    assert.equal(db.memberships!.find(x => x.membership_id === 3)!.end_date, todayET);
+    assert.equal(db.memberships!.find(x => x.membership_id === M(3))!.end_date, todayET);
     assert.equal(db.orders!.find(o => o.order_id === renewal.order_id)!.status, 'Failed');
     assert.equal(emails.filter(e => e.data.paymentFailed).length, 1);
 
@@ -310,28 +314,28 @@ function seedMember(id: number, endDate: string) {
     assert.equal(await billing.chargeMembershipRenewal(m(), todayET), 'skipped');
     // Next day: retried as attempt 2, no second email
     assert.equal(await billing.chargeMembershipRenewal(m(), tomorrowET), 'declined');
-    assert.equal(db.membership_renewals!.find(x => x.membership_id === 3)!.attempts, 2);
+    assert.equal(db.membership_renewals!.find(x => x.membership_id === M(3))!.attempts, 2);
     assert.equal(emails.filter(e => e.data.paymentFailed).length, 1);
   });
 
   await test('decline: renewal job does not send a duplicate expires-today email', async () => {
     emails.length = 0;
     await processMembershipRenewals();
-    const sentTo3 = emails.filter(e => e.data.email === 'sandbox+3@example.com' && e.data.daysRemaining === 0);
+    const sentTo3 = emails.filter(e => e.data.email === `sandbox+${M(3)}@example.com` && e.data.daysRemaining === 0);
     assert.equal(sentTo3.length, 0, JSON.stringify(sentTo3));
-    assert.ok(db.memberships!.find(x => x.membership_id === 3)!.grace_period_end, 'grace period set so member can still check in');
+    assert.ok(db.memberships!.find(x => x.membership_id === M(3))!.grace_period_end, 'grace period set so member can still check in');
   });
 
-  seedMember(4, todayET);
+  seedMember(M(4), todayET);
   await test('no card on file: auto-renew membership is not charged', async () => {
     const r = await billing.processAutoRenewCharges(todayET);
     assert.equal(r.renewed + r.declined, 0);
-    assert.equal(db.membership_renewals!.filter(x => x.membership_id === 4).length, 0);
+    assert.equal(db.membership_renewals!.filter(x => x.membership_id === M(4)).length, 0);
   });
 
   await test('feature flag off: nothing is charged', async () => {
-    seedMember(5, todayET);
-    db.memberships!.find(x => x.membership_id === 5)!.square_card_id = db.memberships!.find(x => x.membership_id === 2)!.square_card_id;
+    seedMember(M(5), todayET);
+    db.memberships!.find(x => x.membership_id === M(5))!.square_card_id = db.memberships!.find(x => x.membership_id === M(2))!.square_card_id;
     appConfig.membershipAutochargeEnabled = false;
     try {
       const r = await billing.processAutoRenewCharges(todayET);
@@ -340,7 +344,7 @@ function seedMember(id: number, endDate: string) {
   });
 
   await test('turning auto-renew off disables the stored card in Square', async () => {
-    const cardId = db.memberships!.find(x => x.membership_id === 1)!.square_card_id;
+    const cardId = db.memberships!.find(x => x.membership_id === M(1))!.square_card_id;
     await billing.disableStoredCard(cardId);
     const { card } = await square.cards.get({ cardId });
     assert.equal(card!.enabled, false);
