@@ -369,6 +369,8 @@ export type AdminCreateMembershipPayload = {
   paymentStatus: string;
   notes?: string;
   autoRenew?: boolean;
+  /** Existing children on the account that the membership covers */
+  childIds?: number[];
 };
 
 export async function createAdminMembership(payload: AdminCreateMembershipPayload) {
@@ -434,6 +436,31 @@ export async function updateAdminMembership(membershipId: string, payload: Admin
     payload
   );
   return response.membership;
+}
+
+export type AdminAccountChild = {
+  id: number;
+  firstName: string;
+  lastName: string | null;
+  birthDate: string | null;
+  hasPhoto: boolean;
+};
+
+/** Children on file for the account with this email */
+export async function fetchAccountChildrenByEmail(email: string) {
+  const response = await apiGet<{ children: AdminAccountChild[] }>(
+    `/admin/membership-children?email=${encodeURIComponent(email)}`
+  );
+  return response.children;
+}
+
+/** Set which children a membership covers (backend caps at the plan's max) */
+export async function setAdminMembershipChildren(membershipId: string, childIds: number[]) {
+  const response = await apiPatch<{ children: Array<{ id: number; firstName: string; lastName: string | null }> }, { childIds: number[] }>(
+    `/admin/memberships/${membershipId}/children`,
+    { childIds }
+  );
+  return response.children;
 }
 
 export async function deleteAdminMembership(membershipId: string) {

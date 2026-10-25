@@ -10,6 +10,7 @@ import { publishAdminEvent } from './admin-events.service';
 import { sendMembershipConfirmation, sendQueuedMembershipConfirmation } from './email.service';
 import { sendMembershipConfirmationSms, sendQueuedMembershipConfirmationSms } from './sms.service';
 import { createReceiptRecord, generateMembershipReceiptPDF } from './receipt.service';
+import { addCoveredChild, getCoveredChildren, getCoveredChildrenForMany } from './membership-children.service';
 import { getTaxRate as getCentralizedTaxRate, getTaxRateSync as getCentralizedTaxRateSync, getSingleAdmissionPrice, getExtraAdultAdmissionPrice } from './pricing-config.service';
 
 import type {
@@ -57,6 +58,10 @@ function getTaxRatePercentSync(): number {
 // Helper to get plan info by tier
 export async function getPlanByTier(tier: string) {
   const plans = await MembershipPlanRepository.findAll(true);
+  return planForTier(plans, tier);
+}
+
+export function planForTier<P extends { name: string }>(plans: P[], tier: string): P | null {
   const planNames = REVERSE_TIER_MAP[tier] ?? [];
   return plans.find(p => planNames.includes(p.name)) ?? null;
 }
@@ -292,6 +297,15 @@ export async function purchaseMembership(
     matched_staff_user_id: matchedStaffUserId,
   });
 
+  // Link the child picked at checkout as covered by this membership
+  if (options?.childId) {
+    try {
+      await addCoveredChild(membership, options.childId, plan.max_children ?? 1);
+    } catch (linkError) {
+      console.error('[MembershipService] Failed to link child to membership:', linkError);
+    }
+  }
+
   // Increment promo redemptions if a promo was applied
   if (promo) {
     try {
@@ -512,33 +526,12 @@ export async function listMembershipStatuses() {
   const memberships = await MembershipRepository.findActive();
   const plans = await MembershipPlanRepository.findAll(true);
 
-  // Fetch all children for the customers attached to these memberships in a single
-  // pass so the staff check-in view can render names + verification photos.
-  const customerIds = Array.from(
-    new Set(memberships.map(m => m.customer_id).filter((id): id is number => typeof id === 'number')),
-  );
-  const childrenByCustomer = new Map<number, Array<{
-    id: number;
-    firstName: string;
-    lastName: string | null;
-    birthDate: string | null;
-    photoUrl: string | null;
-  }>>();
-  await Promise.all(
-    customerIds.map(async cid => {
-      const list = await ChildRepository.findByCustomerId(cid);
-      childrenByCustomer.set(
-        cid,
-        list.map(c => ({
-          id: c.child_id,
-          firstName: c.first_name,
-          lastName: c.last_name ?? null,
-          birthDate: c.birth_date ?? null,
-          photoUrl: c.photo_url ?? null,
-        })),
-      );
-    }),
-  );
+  // Children covered by each membership (capped at the plan's max_children) so
+  // the staff check-in view can render names + verification photos.
+  const coveredByMembership = await getCoveredChildrenForMany(memberships.map(m => {
+    const plan = plans.find(p => (REVERSE_TIER_MAP[m.tier] ?? []).includes(p.name));
+    return { membership_id: m.membership_id, customer_id: m.customer_id, maxChildren: plan?.max_children ?? 1 };
+  }));
 
   return memberships.map(m => {
     const customer = (m as unknown as { customers?: { full_name?: string; email?: string; phone?: string } }).customers;
@@ -565,7 +558,7 @@ export async function listMembershipStatuses() {
       customerName: customer?.full_name,
       customerEmail: customer?.email,
       customerPhone: customer?.phone ?? null,
-      children: childrenByCustomer.get(m.customer_id) ?? [],
+      children: coveredByMembership.get(m.membership_id) ?? [],
       membership: {
         tier: m.tier,
         tierName: plan?.name ?? m.tier,
@@ -799,9 +792,7 @@ export async function lookupMembershipForCheckIn(displayId: string) {
 
   const plan = await getPlanByTier(membership.tier);
   const customer = (membership as unknown as { customers?: { full_name?: string; email?: string; phone?: string } }).customers;
-  const children = membership.customer_id
-    ? await ChildRepository.findByCustomerId(membership.customer_id)
-    : [];
+  const children = await getCoveredChildren(membership, plan?.max_children ?? 1);
 
   let remainingDays: number | null = null;
   if (membership.end_date && membership.status === 'active') {
@@ -838,11 +829,8 @@ export async function lookupMembershipForCheckIn(displayId: string) {
     // links rather than the previously public object URLs.
     children: await Promise.all(
       children.map(async c => ({
-        id: c.child_id,
-        firstName: c.first_name,
-        lastName: c.last_name ?? null,
-        birthDate: c.birth_date ?? null,
-        photoUrl: await signStorageUrl('child-photos', c.photo_url),
+        ...c,
+        photoUrl: await signStorageUrl('child-photos', c.photoUrl),
       })),
     ),
   };
@@ -874,10 +862,10 @@ export async function getMembershipDetails(userId: string) {
     remainingDays = Math.max(0, Math.ceil(endDt.diff(nowDt, 'days').days));
   }
 
-  // Get total visit count and children for this customer
+  // Get total visit count and the children this membership covers
   const [totalVisits, children] = await Promise.all([
     MembershipVisitRepository.countByMembershipId(membership.membership_id),
-    ChildRepository.findByCustomerId(user.customer_id),
+    getCoveredChildren(membership, plan?.max_children ?? 1),
   ]);
 
   // Format dates in NY timezone
@@ -912,12 +900,6 @@ export async function getMembershipDetails(userId: string) {
     benefits: plan?.benefits ?? [],
     referralName: membership.referral_name ?? null,
     referralStatus: membership.referral_status ?? null,
-    children: children.map(c => ({
-      id: c.child_id,
-      firstName: c.first_name,
-      lastName: c.last_name,
-      birthDate: c.birth_date,
-      photoUrl: c.photo_url,
-    })),
+    children,
   };
 }

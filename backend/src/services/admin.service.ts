@@ -51,6 +51,8 @@ import { supabase, supabaseAny } from '../config/supabase';
 import { sendJobApplicationStatusChange, sendBookingConfirmation, isEmailConfigured } from './email.service';
 import { createReceiptRecord, generateBookingReceiptPDF } from './receipt.service';
 import { getTaxRate } from './pricing-config.service';
+import { getPlanByTier, planForTier } from './membership.service';
+import { getCoveredChildren, getCoveredChildrenForMany, setCoveredChildren } from './membership-children.service';
 import { logger } from '../utils/logger';
 import { AppError } from '../utils/app-error';
 
@@ -573,30 +575,24 @@ export async function listMemberships(options?: { status?: string | undefined; l
   if (error) throw error;
   const memberships = data ?? [];
 
-  // Batch-fetch children for all membership customers
-  const customerIds = [...new Set(
-    memberships.map((m: Record<string, unknown>) => m.customer_id as number).filter(Boolean),
-  )];
-  const childrenMap = new Map<number, Array<Record<string, unknown>>>();
-  if (customerIds.length > 0) {
-    const { data: children } = await supabaseAny
-      .from('children')
-      .select('child_id, customer_id, first_name, last_name, photo_url')
-      .in('customer_id', customerIds);
-    if (children) {
-      for (const child of children as Array<Record<string, unknown>>) {
-        const custId = child.customer_id as number;
-        const list = childrenMap.get(custId) ?? [];
-        list.push(child);
-        childrenMap.set(custId, list);
-      }
-    }
-  }
+  // Children covered by each membership, capped at the plan's max_children
+  const plans = await MembershipPlanRepository.findAll(false);
+  const covered = await getCoveredChildrenForMany(memberships.map((m: Record<string, unknown>) => ({
+    membership_id: m.membership_id as number,
+    customer_id: (m.customer_id as number | null) ?? null,
+    maxChildren: planForTier(plans, m.tier as string)?.max_children ?? 1,
+  })));
 
   // Attach children to each membership record
   return memberships.map((m: Record<string, unknown>) => ({
     ...m,
-    _children: childrenMap.get(m.customer_id as number) ?? [],
+    _children: (covered.get(m.membership_id as number) ?? []).map(c => ({
+      child_id: c.id,
+      customer_id: m.customer_id,
+      first_name: c.firstName,
+      last_name: c.lastName,
+      photo_url: c.photoUrl,
+    })),
   }));
 }
 
@@ -1222,10 +1218,19 @@ export async function createMembershipManually(data: {
   /** Staff-created memberships have no card on file, so this only flags intent:
    *  the member gets renewal reminders rather than an automatic charge. */
   autoRenew?: boolean;
+  /** Existing children (on this customer's account) the membership covers */
+  childIds?: number[];
 }) {
   // Get plan details
   const plan = await MembershipPlanRepository.findById(data.planId);
   if (!plan) throw new AppError('Membership plan not found', 404);
+
+  const maxChildren = plan.max_children ?? 1;
+  const childIds = Array.from(new Set(data.childIds ?? []));
+  const requestedChildren = childIds.length + (data.childName ? 1 : 0);
+  if (requestedChildren > maxChildren) {
+    throw new AppError(`${plan.name} covers ${maxChildren} child${maxChildren === 1 ? '' : 'ren'}; ${requestedChildren} were selected.`, 400);
+  }
 
   const normalizedEmail = data.guestEmail.trim().toLowerCase();
   const nameParts = data.guestName.trim().split(/\s+/);
@@ -1293,11 +1298,13 @@ export async function createMembershipManually(data: {
   }
 
   // Create child if name provided
+  let newChildId: number | null = null;
   if (data.childName) {
-    await supabaseAny.from('children').insert({
+    const { data: newChild } = await supabaseAny.from('children').insert({
       customer_id: customer.customer_id,
       first_name: data.childName,
-    });
+    }).select('child_id').single();
+    newChildId = newChild?.child_id ?? null;
   }
 
   // Calculate dates
@@ -1319,6 +1326,12 @@ export async function createMembershipManually(data: {
   const membershipId = (membership as any).membership_id;
   const displayId = (membership as any).display_id ?? '';
   const isPaid = data.paymentStatus === 'paid';
+
+  // Link the children this membership covers (validated against the customer + plan capacity)
+  const coveredIds = newChildId ? [...childIds, newChildId] : childIds;
+  if (coveredIds.length > 0) {
+    await setCoveredChildren({ membership_id: membershipId, customer_id: customer.customer_id }, coveredIds, maxChildren);
+  }
 
   // Generate receipt and send email
   let receiptNumber: string | undefined;
@@ -2342,4 +2355,34 @@ export async function updatePromoOffer(offerId: number, updates: Partial<PromoOf
 export async function deletePromoOffer(offerId: number) {
   // Soft delete — just deactivate
   return PromoOfferRepository.update(offerId, { is_active: false });
+}
+
+/**
+ * Children on file for the account with this email, so staff can pick which
+ * ones a new membership covers.
+ */
+export async function getCustomerChildrenByEmail(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await UserRepository.findByEmail(normalizedEmail);
+  const customerId = user?.customer_id ?? (await CustomerRepository.findByEmail(normalizedEmail))?.customer_id;
+  if (!customerId) return [];
+  const children = await ChildRepository.findByCustomerId(customerId);
+  return children.map(c => ({
+    id: c.child_id,
+    firstName: c.first_name,
+    lastName: c.last_name ?? null,
+    birthDate: c.birth_date ?? null,
+    hasPhoto: Boolean(c.photo_url),
+  }));
+}
+
+/**
+ * Set which children a membership covers (at most the plan's max_children).
+ */
+export async function setMembershipChildren(membershipId: number, childIds: number[]) {
+  const membership = await MembershipRepository.findById(membershipId);
+  if (!membership) throw new AppError('Membership not found', 404);
+  const plan = await getPlanByTier(membership.tier);
+  await setCoveredChildren(membership, childIds, plan?.max_children ?? 1);
+  return getCoveredChildren(membership, plan?.max_children ?? 1);
 }

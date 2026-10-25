@@ -550,10 +550,29 @@ export const getMembershipHandler = asyncHandler(async (req, res) => {
   return res.status(200).json({ membership: shaped });
 });
 
+export const getCustomerChildrenByEmailHandler = asyncHandler(async (req, res) => {
+  const email = typeof req.query.email === 'string' ? req.query.email : '';
+  if (!email.trim()) throw new AppError('email is required', 400);
+  const children = await AdminService.getCustomerChildrenByEmail(email);
+  return res.status(200).json({ children });
+});
+
+export const setMembershipChildrenHandler = asyncHandler(async (req, res) => {
+  const membershipId = parseInt(req.params.id ?? '', 10);
+  if (isNaN(membershipId)) throw new AppError('Invalid membership ID', 400);
+  const { childIds } = req.body ?? {};
+  if (!Array.isArray(childIds) || !childIds.every((id: unknown) => Number.isInteger(Number(id)))) {
+    throw new AppError('childIds must be an array of child IDs', 400);
+  }
+  const children = await AdminService.setMembershipChildren(membershipId, childIds.map(Number));
+  publishAdminEvent('membership.updated', { membershipId });
+  return res.status(200).json({ children });
+});
+
 export const createMembershipHandler = asyncHandler(async (req, res) => {
   // Check if this is a manual membership creation (has guestName field)
   if (req.body.guestName) {
-    const { guestName, guestEmail, guestPhone, childName, password, planId, tier, durationMonths, monthlyPrice, total, paymentMethod, paymentStatus, notes, autoRenew } = req.body;
+    const { guestName, guestEmail, guestPhone, childName, childIds, password, planId, tier, durationMonths, monthlyPrice, total, paymentMethod, paymentStatus, notes, autoRenew } = req.body;
     if (!planId || !tier) throw new AppError('Plan and tier are required', 400);
     if (!guestEmail) throw new AppError('Email is required to create a user account', 400);
     if (!password || password.length < 6) throw new AppError('Password is required (min 6 characters)', 400);
@@ -573,6 +592,7 @@ export const createMembershipHandler = asyncHandler(async (req, res) => {
       paymentStatus: paymentStatus || 'paid',
       notes: notes || undefined,
       autoRenew: autoRenew === true,
+      childIds: Array.isArray(childIds) ? childIds.map(Number).filter(Number.isInteger) : undefined,
     });
 
     publishAdminEvent('membership.created', { membershipId: result.membershipId, displayId: result.displayId, manual: true });
