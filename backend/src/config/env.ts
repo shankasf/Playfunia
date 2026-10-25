@@ -47,6 +47,8 @@ const envSchema = z
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_REGION: z.string().default('us-east-1'),
+    SES_EMAIL_VALIDATION_ENABLED: z.enum(['true', 'false']).default('true'),
+    SES_EMAIL_VALIDATION_THRESHOLD: z.enum(['HIGH', 'MEDIUM']).default('MEDIUM'),
     // Twilio SMS Configuration
     // Authentication accepts either:
     //   (a) account-level: TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN, or
@@ -120,6 +122,8 @@ export const appConfig = {
   awsAccessKeyId: env.AWS_ACCESS_KEY_ID,
   awsSecretAccessKey: env.AWS_SECRET_ACCESS_KEY,
   awsRegion: env.AWS_REGION,
+  sesEmailValidationEnabled: env.SES_EMAIL_VALIDATION_ENABLED === 'true',
+  sesEmailValidationThreshold: env.SES_EMAIL_VALIDATION_THRESHOLD,
   // Twilio SMS Configuration
   twilioAccountSid: env.TWILIO_ACCOUNT_SID,
   twilioAuthToken: env.TWILIO_AUTH_TOKEN,

@@ -1,9 +1,11 @@
 import nodemailer from 'nodemailer';
+import addressparser from 'nodemailer/lib/addressparser';
 import { randomInt } from 'crypto';
 import { DateTime } from 'luxon';
 import { appConfig } from '../config/env';
 import { logger } from '../utils/logger';
 import { SCREENING_QUESTIONS } from '../schemas/careers.schema';
+import { normalizeEmail, validateEmailAddress } from './email-validation.service';
 
 // Admin emails for receiving copies of all notifications (from env config)
 const ADMIN_EMAILS = appConfig.adminEmails;
@@ -231,6 +233,22 @@ interface EmailAttachment {
   contentType?: string;
 }
 
+async function validatedRecipients(raw: string, seen: Set<string>): Promise<addressparser.Address[]> {
+  const recipients: addressparser.Address[] = [];
+  for (const recipient of addressparser(raw, { flatten: true })) {
+    const email = normalizeEmail(recipient.address);
+    if (seen.has(email)) continue;
+    seen.add(email);
+    const result = await validateEmailAddress(email);
+    if (!result.ok) {
+      logger.warn({ email, reason: result.reason }, '[Email] skipped undeliverable recipient');
+      continue;
+    }
+    recipients.push({ name: recipient.name, address: result.email });
+  }
+  return recipients;
+}
+
 // Send email helper
 async function sendEmail(options: {
   to: string;
@@ -249,10 +267,17 @@ async function sendEmail(options: {
   }
 
   try {
+    const seen = new Set<string>();
+    const to = await validatedRecipients(options.to, seen);
+    if (to.length === 0) {
+      logger.warn({ subject: options.subject }, '[Email] not sent: no deliverable primary recipients');
+      return false;
+    }
+    const bcc = options.bcc ? await validatedRecipients(options.bcc, seen) : [];
     await transport.sendMail({
       from: `"${appConfig.smtpFromName}" <${appConfig.smtpFrom || appConfig.smtpUser}>`,
-      to: options.to,
-      bcc: options.bcc,
+      to,
+      bcc,
       replyTo: options.replyTo,
       subject: options.subject,
       html: options.html,

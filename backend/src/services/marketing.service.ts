@@ -441,7 +441,8 @@ export async function sendCampaign(input: SendInput) {
   let skipped = 0;
   const skippedDetails: Array<{ email: string; reason: string }> = [];
 
-  // Pre-send validation (syntax, typo domains, DNS MX, SES suppression list).
+  // Pre-send validation (syntax, typo domains, DNS MX, SES suppression list,
+  // and SES Email Validation delivery confidence).
   // Anything that fails is recorded as 'skipped' instead of being handed to
   // SES, where it would hard-bounce and hurt the sender reputation.
   const emailChecks = emailTargets.length > 0

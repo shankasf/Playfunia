@@ -6,21 +6,23 @@
  *   2. uses a well-known typo of a major mail provider (gamil.com, hotmal.com…),
  *   3. has a domain with no MX (or fallback A/AAAA) record in DNS, or
  *   4. is on the AWS SES account-level suppression list (it already hard-bounced
- *      or complained), mirrored locally in `email_suppressions`.
+ *      or complained), mirrored locally in `email_suppressions`, or
+ *   5. falls below the SES Email Validation delivery confidence threshold.
  *
  * Checks 3 and 4 depend on the network. They FAIL OPEN: a DNS timeout or an
- * SES API error never blocks a customer; only a definitive negative answer does.
+ * suppression API error never blocks a customer. Email Validation failures are
+ * temporary failures: do not send unchecked mail or label the address invalid.
  *
  * Two entry points:
  *   - validateEmailAddress / assertDeliverableEmail — single address, used at
  *     form-submit time (waiver, contact, careers, register, bookings, checkout).
  *   - validateEmailsBulk — many addresses, used by the marketing sender. It
- *     uses the local suppression mirror (refreshed from SES when stale) instead
- *     of one SES call per recipient.
+ *     uses the local suppression mirror plus cached per-address SES validation.
  */
 import dns from 'node:dns';
 
 import {
+  GetEmailAddressInsightsCommand,
   GetSuppressedDestinationCommand,
   ListSuppressedDestinationsCommand,
   SESv2Client,
@@ -31,7 +33,7 @@ import { supabaseAny } from '../config/supabase';
 import { AppError } from '../utils/app-error';
 import { logger } from '../utils/logger';
 
-export type EmailRejectReason = 'syntax' | 'typo_domain' | 'no_mx' | 'suppressed';
+export type EmailRejectReason = 'syntax' | 'typo_domain' | 'no_mx' | 'suppressed' | 'low_confidence' | 'validation_unavailable';
 
 export type EmailValidation =
   | { ok: true; email: string }
@@ -196,6 +198,55 @@ async function sesIsSuppressed(email: string): Promise<boolean | null> {
   return suppressed;
 }
 
+// Cache successful API verdicts, including LOW, to avoid charging again at form
+// submission, campaign preview, and send time. Never cache an API failure.
+const INSIGHTS_TTL_MS = 24 * 60 * 60 * 1000;
+const INSIGHTS_CACHE_LIMIT = 10_000;
+type Confidence = 'HIGH' | 'MEDIUM' | 'LOW';
+const insightsCache = new Map<string, { verdict: Confidence; expires: number }>();
+const insightsInFlight = new Map<string, Promise<EmailValidation>>();
+
+function confidenceResult(email: string, verdict: Confidence): EmailValidation {
+  if (verdict === 'LOW' || (appConfig.sesEmailValidationThreshold === 'HIGH' && verdict !== 'HIGH')) {
+    return reject(email, 'low_confidence', 'Email address could not be verified as deliverable. Please check it or use a different email address.');
+  }
+  return { ok: true, email };
+}
+
+async function validateSesMailbox(email: string): Promise<EmailValidation> {
+  if (!appConfig.sesEmailValidationEnabled) return { ok: true, email };
+  const cached = insightsCache.get(email);
+  if (cached && cached.expires > Date.now()) return confidenceResult(email, cached.verdict);
+  const pending = insightsInFlight.get(email);
+  if (pending) return pending;
+
+  const lookup = (async (): Promise<EmailValidation> => {
+    try {
+      const ses = getSes();
+      if (!ses) throw new Error('AWS API credentials are not configured');
+      const response = await ses.send(new GetEmailAddressInsightsCommand({ EmailAddress: email }), {
+        abortSignal: AbortSignal.timeout(8000),
+      });
+      const verdict = response.MailboxValidation?.IsValid?.ConfidenceVerdict;
+      if (verdict !== 'HIGH' && verdict !== 'MEDIUM' && verdict !== 'LOW') {
+        throw new Error('SES returned no recognized mailbox validity verdict');
+      }
+      if (insightsCache.size >= INSIGHTS_CACHE_LIMIT) insightsCache.delete(insightsCache.keys().next().value!);
+      insightsCache.set(email, { verdict, expires: Date.now() + INSIGHTS_TTL_MS });
+      return confidenceResult(email, verdict);
+    } catch (err) {
+      logger.warn({ err }, '[EmailValidation] SES Email Validation unavailable; deferring send');
+      return reject(email, 'validation_unavailable', 'Email verification is temporarily unavailable. Please try again shortly.');
+    }
+  })();
+  insightsInFlight.set(email, lookup);
+  try {
+    return await lookup;
+  } finally {
+    insightsInFlight.delete(email);
+  }
+}
+
 const SUPPRESSION_SYNC_STALE_MS = 60 * 60 * 1000;
 let lastSuppressionSync = 0;
 let syncInFlight: Promise<SuppressionSyncResult> | null = null;
@@ -272,12 +323,21 @@ async function ensureSuppressionListFresh(): Promise<void> {
 }
 
 export async function getSuppressedEmailSet(): Promise<Set<string>> {
-  const { data, error } = await supabaseAny.from('email_suppressions').select('email');
-  if (error) {
-    logger.warn({ error }, '[EmailValidation] could not read email_suppressions');
-    return new Set();
+  const suppressed = new Set<string>();
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabaseAny
+      .from('email_suppressions')
+      .select('email')
+      .order('email', { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) {
+      logger.warn({ error }, '[EmailValidation] could not read email_suppressions');
+      return suppressed;
+    }
+    for (const row of data ?? []) suppressed.add(normalizeEmail(row.email));
+    if (!data || data.length < pageSize) return suppressed;
   }
-  return new Set((data ?? []).map((r: { email: string }) => r.email));
 }
 
 export async function listSuppressions(limit = 500) {
@@ -321,12 +381,22 @@ function staticCheck(email: string): StaticCheck {
 
 /**
  * Full validation of one address: syntax → typo domain → DNS MX → SES
- * suppression list (live lookup). Network checks fail open.
+ * suppression list (live lookup) → SES Email Validation.
  */
 export async function validateEmailAddress(raw: unknown): Promise<EmailValidation> {
   const email = normalizeEmail(raw);
   const s = staticCheck(email);
   if (!s.ok) return s;
+
+  const { data: suppression, error } = await supabaseAny
+    .from('email_suppressions')
+    .select('email')
+    .eq('email', email)
+    .maybeSingle();
+  if (error) logger.warn({ error }, '[EmailValidation] could not check local email suppression');
+  if (suppression) {
+    return reject(email, 'suppressed', 'Email address is invalid: this address is on the email suppression list. Please use a different email address.');
+  }
 
   if ((await domainHasMailServer(s.domain)) === 'none') {
     return reject(email, 'no_mx', `Email address is invalid: "${s.domain}" cannot receive email. Please check the spelling of the domain.`);
@@ -336,7 +406,7 @@ export async function validateEmailAddress(raw: unknown): Promise<EmailValidatio
     return reject(email, 'suppressed', 'Email address is invalid: messages to this address have bounced before. Please use a different email address.');
   }
 
-  return { ok: true, email };
+  return validateSesMailbox(email);
 }
 
 /**
@@ -348,26 +418,28 @@ export async function assertDeliverableEmail(raw: unknown, fieldLabel = 'Email')
   if (!result.ok) {
     logger.info({ email: result.email, reason: result.reason }, '[EmailValidation] rejected form email');
     const msg = fieldLabel === 'Email' ? result.message : result.message.replace(/^Email address/, `${fieldLabel} address`);
-    throw new AppError(msg, 400);
+    throw new AppError(msg, result.reason === 'validation_unavailable' ? 503 : 400);
   }
   return result.email;
 }
 
 /**
  * Validate many addresses for a bulk send. Uses the local suppression mirror
- * (refreshed from SES if older than an hour) and per-domain DNS caching, so a
- * 1000-recipient audience costs a handful of DNS lookups and zero SES calls.
+ * (refreshed from SES if older than an hour), per-domain DNS caching and
+ * per-address SES Email Validation caching. New addresses require an API call.
  */
 export async function validateEmailsBulk(rawEmails: Iterable<string>): Promise<Map<string, EmailValidation>> {
   await ensureSuppressionListFresh();
   const suppressed = await getSuppressedEmailSet();
 
   const results = new Map<string, EmailValidation>();
+  const seen = new Set<string>();
   const pendingDomains = new Map<string, string[]>();
 
   for (const raw of rawEmails) {
     const email = normalizeEmail(raw);
-    if (!email || results.has(email)) continue;
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
     const s = staticCheck(email);
     if (!s.ok) { results.set(email, s); continue; }
     if (suppressed.has(email)) {
@@ -400,6 +472,17 @@ export async function validateEmailsBulk(rawEmails: Iterable<string>): Promise<M
     }),
   );
 
+  // Bound API concurrency independently of domain grouping; a campaign may
+  // contain thousands of addresses at the same provider.
+  const candidates = [...results.values()].filter((result) => result.ok);
+  let mailboxIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, async () => {
+    while (mailboxIndex < candidates.length) {
+      const candidate = candidates[mailboxIndex++]!;
+      results.set(candidate.email, await validateSesMailbox(candidate.email));
+    }
+  }));
+
   return results;
 }
 
@@ -410,5 +493,7 @@ export function describeRejectReason(reason: EmailRejectReason): string {
     case 'typo_domain': return 'Typo in domain';
     case 'no_mx': return 'Domain cannot receive mail';
     case 'suppressed': return 'Previously bounced';
+    case 'low_confidence': return 'Low delivery confidence';
+    case 'validation_unavailable': return 'Email verification temporarily unavailable';
   }
 }
