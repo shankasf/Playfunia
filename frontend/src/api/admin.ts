@@ -368,6 +368,7 @@ export type AdminCreateMembershipPayload = {
   paymentMethod: string;
   paymentStatus: string;
   notes?: string;
+  autoRenew?: boolean;
 };
 
 export async function createAdminMembership(payload: AdminCreateMembershipPayload) {

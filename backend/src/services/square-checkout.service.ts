@@ -36,6 +36,7 @@ import {
 } from '../utils/currency';
 import { withRetry } from '../utils/retry';
 import { createItemizedSquareOrder, squareLineName } from './square-order.service';
+import { storeCardForAutoRenew } from './membership-billing.service';
 import { tryEvaluateCoupon, type CouponEvaluation } from './coupon.service';
 
 // Valid payment statuses (Fix #4 - accept PENDING for ACH, Afterpay, etc.)
@@ -1141,6 +1142,18 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
   if (input.checkoutSessionId) {
     completeCheckoutSession(input.checkoutSessionId, order.order_id).catch(err =>
       logger.error({ error: err, checkoutSessionId: input.checkoutSessionId, orderId: order.order_id }, 'Failed to complete checkout session')
+    );
+  }
+
+  // Save the card on file for memberships bought with auto-renew on, so the
+  // renewal job can charge it at the end of the term (non-blocking).
+  const autoRenewMembershipIds = membershipResults
+    .filter(r => (r.membership as { autoRenew?: boolean }).autoRenew)
+    .map(r => parseInt((r.membership as { membershipId: string }).membershipId, 10))
+    .filter(id => !isNaN(id));
+  if (autoRenewMembershipIds.length > 0) {
+    storeCardForAutoRenew({ paymentId, membershipIds: autoRenewMembershipIds }).catch(err =>
+      logger.error({ err, orderId: order.order_id }, 'Failed to store card for auto-renew')
     );
   }
 

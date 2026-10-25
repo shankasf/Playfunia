@@ -1219,6 +1219,9 @@ export async function createMembershipManually(data: {
   paymentMethod: string;
   paymentStatus: string;
   notes?: string;
+  /** Staff-created memberships have no card on file, so this only flags intent:
+   *  the member gets renewal reminders rather than an automatic charge. */
+  autoRenew?: boolean;
 }) {
   // Get plan details
   const plan = await MembershipPlanRepository.findById(data.planId);
@@ -1309,7 +1312,8 @@ export async function createMembershipManually(data: {
     end_date: endDate,
     visits_per_month: plan.visits_per_month ?? undefined,
     status: 'active',
-    auto_renew: false,
+    auto_renew: data.autoRenew ?? false,
+    renewal_months: data.durationMonths,
   });
 
   const membershipId = (membership as any).membership_id;
@@ -1381,7 +1385,7 @@ export async function createMembershipManually(data: {
         guestPassesPerMonth: plan.guest_passes_per_month,
         discountPercent: plan.discount_percent ? Number(plan.discount_percent) : null,
         benefits: plan.benefits,
-        autoRenew: false,
+        autoRenew: data.autoRenew ?? false,
         monthlyPrice: data.monthlyPrice,
         durationMonths: data.durationMonths,
         total: data.total,

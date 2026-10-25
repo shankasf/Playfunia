@@ -2079,6 +2079,10 @@ interface MembershipExpirationReminderData {
   daysRemaining: number;
   autoRenew: boolean;
   displayId?: string;
+  /** Card on file will be charged automatically at the end of the term */
+  cardOnFile?: boolean;
+  /** The auto-renew charge on the card on file was declined */
+  paymentFailed?: boolean;
 }
 
 export async function sendMembershipExpirationReminder(data: MembershipExpirationReminderData): Promise<boolean> {
@@ -2092,9 +2096,18 @@ export async function sendMembershipExpirationReminder(data: MembershipExpiratio
     : data.daysRemaining === 1 ? 'expires tomorrow'
     : `expires in ${data.daysRemaining} days`;
 
-  const renewalNote = data.autoRenew
+  const renewalNote = data.paymentFailed
+    ? `<p style="color: #dc2626; font-size: 14px;">We couldn't charge your card on file to renew your membership. We'll try again over the next 2 days, or you can renew online now to keep your benefits.</p>`
+    : data.autoRenew && data.cardOnFile
+    ? `<p style="color: #059669; font-size: 14px;">Auto-renew is <strong>enabled</strong>. We'll charge your card on file on ${data.expirationDate} to renew — no action needed. You can turn auto-renew off anytime from your account.</p>`
+    : data.autoRenew
     ? `<p style="color: #059669; font-size: 14px;">Auto-renew is <strong>enabled</strong>. Visit Playfunia to renew your membership and continue enjoying benefits.</p>`
     : `<p style="color: #dc2626; font-size: 14px;">Auto-renew is <strong>disabled</strong>. Renew your membership to keep your benefits!</p>`;
+  const renewalText = data.paymentFailed
+    ? "We couldn't charge your card on file to renew. Visit playfunia.com/memberships to renew."
+    : data.autoRenew && data.cardOnFile
+    ? `Auto-renew is enabled; we'll charge your card on file on ${data.expirationDate}.`
+    : data.autoRenew ? 'Auto-renew is enabled.' : 'Auto-renew is disabled. Visit playfunia.com/memberships to renew.';
 
   return sendEmail({
     to: data.email,
@@ -2131,7 +2144,7 @@ export async function sendMembershipExpirationReminder(data: MembershipExpiratio
         </div>
       </div>
     `,
-    text: `Hi ${data.customerName}! Your Playfunia ${data.tierName} membership ${urgencyText}. Expiration date: ${data.expirationDate}. ${data.autoRenew ? 'Auto-renew is enabled.' : 'Auto-renew is disabled. Visit playfunia.com/memberships to renew.'} Playfunia - Where fun happens!`,
+    text: `Hi ${data.customerName}! Your Playfunia ${data.tierName} membership ${urgencyText}. Expiration date: ${data.expirationDate}. ${renewalText} Playfunia - Where fun happens!`,
   });
 }
 

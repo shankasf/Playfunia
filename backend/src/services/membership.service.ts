@@ -55,7 +55,7 @@ function getTaxRatePercentSync(): number {
 }
 
 // Helper to get plan info by tier
-async function getPlanByTier(tier: string) {
+export async function getPlanByTier(tier: string) {
   const plans = await MembershipPlanRepository.findAll(true);
   const planNames = REVERSE_TIER_MAP[tier] ?? [];
   return plans.find(p => planNames.includes(p.name)) ?? null;
@@ -283,6 +283,7 @@ export async function purchaseMembership(
     visits_per_month: plan.visits_per_month ?? undefined,
     status: isQueued ? 'pending' : 'active',
     auto_renew: autoRenew,
+    renewal_months: input.durationMonths,
     refund_policy_accepted: input.refundPolicyAccepted ?? false,
     refund_policy_accepted_at: input.refundPolicyAcceptedAt ?? undefined,
     referral_name: referralName,
@@ -899,6 +900,7 @@ export async function getMembershipDetails(userId: string) {
     endDateRaw: membership.end_date,
     remainingDays,
     autoRenew: membership.auto_renew ?? false,
+    cardOnFile: Boolean(membership.square_card_id),
     visitsPerMonth,
     visitsUsed,
     visitsRemaining,

@@ -83,6 +83,8 @@ export type MyMembershipDto = {
   endDateRaw: string | null;
   remainingDays: number | null;
   autoRenew: boolean;
+  /** A card is saved in Square and will be charged at renewal */
+  cardOnFile?: boolean;
   visitsPerMonth: number | null;
   visitsUsed: number;
   visitsRemaining: number | null;
@@ -109,7 +111,7 @@ export async function fetchMyMembership() {
 }
 
 export async function toggleAutoRenew(autoRenew: boolean) {
-  return apiPatch<{ success: boolean; autoRenew: boolean }, { autoRenew: boolean }>(
+  return apiPatch<{ success: boolean; autoRenew: boolean; cardOnFile?: boolean }, { autoRenew: boolean }>(
     '/memberships/my/auto-renew',
     { autoRenew },
   );

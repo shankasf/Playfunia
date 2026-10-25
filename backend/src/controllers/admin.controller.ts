@@ -553,7 +553,7 @@ export const getMembershipHandler = asyncHandler(async (req, res) => {
 export const createMembershipHandler = asyncHandler(async (req, res) => {
   // Check if this is a manual membership creation (has guestName field)
   if (req.body.guestName) {
-    const { guestName, guestEmail, guestPhone, childName, password, planId, tier, durationMonths, monthlyPrice, total, paymentMethod, paymentStatus, notes } = req.body;
+    const { guestName, guestEmail, guestPhone, childName, password, planId, tier, durationMonths, monthlyPrice, total, paymentMethod, paymentStatus, notes, autoRenew } = req.body;
     if (!planId || !tier) throw new AppError('Plan and tier are required', 400);
     if (!guestEmail) throw new AppError('Email is required to create a user account', 400);
     if (!password || password.length < 6) throw new AppError('Password is required (min 6 characters)', 400);
@@ -572,6 +572,7 @@ export const createMembershipHandler = asyncHandler(async (req, res) => {
       paymentMethod: paymentMethod || 'cash',
       paymentStatus: paymentStatus || 'paid',
       notes: notes || undefined,
+      autoRenew: autoRenew === true,
     });
 
     publishAdminEvent('membership.created', { membershipId: result.membershipId, displayId: result.displayId, manual: true });

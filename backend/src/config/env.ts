@@ -23,6 +23,8 @@ const envSchema = z
     SQUARE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
     SQUARE_APPLICATION_ID: z.string().optional(),
     SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1).optional(),
+    // Charge stored cards for auto-renew memberships (off until deliberately enabled)
+    MEMBERSHIP_AUTOCHARGE_ENABLED: z.enum(['true', 'false']).default('false'),
     // Stripe removed - using Square for all payments
     FRONTEND_URL: z.string().default('http://localhost:3000'),
     CORS_ORIGIN: z.string().optional(),
@@ -99,6 +101,7 @@ export const appConfig = {
   squareEnvironment: env.SQUARE_ENVIRONMENT,
   squareApplicationId: env.SQUARE_APPLICATION_ID,
   squareWebhookSignatureKey: env.SQUARE_WEBHOOK_SIGNATURE_KEY,
+  membershipAutochargeEnabled: env.MEMBERSHIP_AUTOCHARGE_ENABLED === 'true',
   // Stripe removed - using Square for all payments
   frontendUrl: env.FRONTEND_URL,
   corsOrigin: env.CORS_ORIGIN ?? env.FRONTEND_URL,

@@ -200,6 +200,7 @@ export function AdminDashboardPage() {
     total: 0,
     paymentMethod: 'cash',
     paymentStatus: 'paid',
+    autoRenew: false,
   });
 
   const [selectedWaiverId, setSelectedWaiverId] = useState<string | null>(null);
@@ -722,7 +723,7 @@ export function AdminDashboardPage() {
       setMembershipCreateForm({
         guestName: '', guestEmail: '', guestPhone: '', childName: '', password: '',
         planId: 0, tier: '', durationMonths: 1, monthlyPrice: 0, total: 0,
-        paymentMethod: 'cash', paymentStatus: 'paid',
+        paymentMethod: 'cash', paymentStatus: 'paid', autoRenew: false,
       });
       await refreshAll({ silent: true });
     } catch (error) {
@@ -3177,6 +3178,20 @@ export function AdminDashboardPage() {
                     <option value="paid">Paid</option>
                     <option value="awaiting_full_payment">Awaiting Payment</option>
                   </select>
+                </div>
+                <div className={styles.formRow}>
+                  <label className={styles.checkboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={membershipCreateForm.autoRenew ?? false}
+                      onChange={(e) => setMembershipCreateForm(f => ({ ...f, autoRenew: e.target.checked }))}
+                    />
+                    Auto-renew
+                  </label>
+                  <small style={{ color: '#6b7280' }}>
+                    No card is saved for staff-created memberships, so the member gets renewal reminders instead of an automatic charge.
+                    To auto-charge, the member can buy or renew online.
+                  </small>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>

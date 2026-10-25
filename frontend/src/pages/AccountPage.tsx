@@ -288,8 +288,8 @@ export function AccountPage() {
     setAutoRenewToggling(true);
     try {
       const newValue = !myMembership.autoRenew;
-      await toggleAutoRenew(newValue);
-      setMyMembership(prev => prev ? { ...prev, autoRenew: newValue } : null);
+      const result = await toggleAutoRenew(newValue);
+      setMyMembership(prev => prev ? { ...prev, autoRenew: newValue, cardOnFile: result.cardOnFile ?? false } : null);
     } catch (err) {
       console.error('Failed to toggle auto-renew:', err);
       alert('Failed to update auto-renew setting. Please try again.');
@@ -707,6 +707,11 @@ export function AccountPage() {
                         </button>
                       </span>
                     </div>
+                    {myMembership?.autoRenew && !myMembership.cardOnFile && (
+                      <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', color: '#6b7280' }}>
+                        No card is saved for automatic renewal, so we'll email you a reminder before your membership ends.
+                      </p>
+                    )}
                     {/* Child info from membership details */}
                     {/* Child info from membership details */}
                     {(() => {

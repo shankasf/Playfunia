@@ -11,6 +11,9 @@
  * - Marks memberships as expired after grace period
  * - Activates queued (pending) memberships when current one expires
  *
+ * Auto-renew memberships with a card on file are charged first (see
+ * membership-billing.service.ts).
+ *
  * Runs once daily via setInterval (24-hour interval).
  * Idempotency: appends date to reminder_type (e.g., three_days_2026-04-15).
  */
@@ -20,7 +23,9 @@ import { MembershipRepository, MembershipPlanRepository } from '../repositories'
 import { supabase, supabaseAny } from '../config/supabase';
 import { sendMembershipExpirationReminder, sendMembershipExpiredNotice } from './email.service';
 import { sendMembershipExpiryReminderSms } from './sms.service';
+import { appConfig } from '../config/env';
 import { logger } from '../utils/logger';
+import { processAutoRenewCharges } from './membership-billing.service';
 
 const BUSINESS_TZ = 'America/New_York';
 
@@ -40,6 +45,11 @@ const REVERSE_TIER_MAP: Record<string, string[]> = {
   'promo_2kids': ['Promo - 2 Kids + 2 Adults'],
   'promo_3kids': ['Promo - 3 Kids + 3 Adults'],
 };
+
+/** True when the renewal job will charge this membership's card at end of term */
+function willAutoCharge(m: { auto_renew?: boolean | null; square_card_id?: string | null }): boolean {
+  return appConfig.membershipAutochargeEnabled && Boolean(m.auto_renew && m.square_card_id);
+}
 
 function getTodayET(): string {
   return DateTime.now().setZone(BUSINESS_TZ).toISODate()!;
@@ -89,11 +99,13 @@ async function recordReminder(membershipId: number, reminderKey: string, method:
  */
 export async function processMembershipRenewals(): Promise<{
   reminders: number;
+  renewed: number;
+  declined: number;
   expired: number;
   activated: number;
   errors: number;
 }> {
-  const result = { reminders: 0, expired: 0, activated: 0, errors: 0 };
+  const result = { reminders: 0, renewed: 0, declined: 0, expired: 0, activated: 0, errors: 0 };
 
   if (isProcessing) {
     logger.warn('Membership renewals already processing, skipping');
@@ -106,6 +118,19 @@ export async function processMembershipRenewals(): Promise<{
     const today = getTodayET();
     const threeDaysFromNow = addDaysToDate(today, 3);
     const oneDayFromNow = addDaysToDate(today, 1);
+
+    // 0. Charge stored cards for auto-renew memberships ending today (and retry
+    //    recent declines). Renewed memberships get a new end_date, so the
+    //    expiration steps below no longer pick them up.
+    try {
+      const charges = await processAutoRenewCharges(today);
+      result.renewed = charges.renewed;
+      result.declined = charges.declined;
+      result.errors += charges.errors;
+    } catch (err) {
+      result.errors++;
+      logger.error({ err }, 'Auto-renew charge processing failed');
+    }
 
     // 1. Send 3-day reminders
     const threeDayExpiring = await MembershipRepository.findExpiringBetween(threeDaysFromNow, threeDaysFromNow);
@@ -127,6 +152,7 @@ export async function processMembershipRenewals(): Promise<{
           expirationDate: endDateET,
           daysRemaining: 3,
           autoRenew: m.auto_renew ?? false,
+          cardOnFile: willAutoCharge(m),
           displayId: m.display_id ?? undefined,
         });
 
@@ -170,6 +196,7 @@ export async function processMembershipRenewals(): Promise<{
           expirationDate: endDateET,
           daysRemaining: 1,
           autoRenew: m.auto_renew ?? false,
+          cardOnFile: willAutoCharge(m),
           displayId: m.display_id ?? undefined,
         });
 
@@ -205,7 +232,9 @@ export async function processMembershipRenewals(): Promise<{
           });
 
           const key = `expiration_day_${today}`;
-          if (!(await reminderAlreadySent(m.membership_id, key))) {
+          // Card-on-file members still expiring today had their charge declined;
+          // the billing service already emailed them about it.
+          if (!willAutoCharge(m) && !(await reminderAlreadySent(m.membership_id, key))) {
             const customer = (m as unknown as { customers?: { full_name?: string; email?: string } }).customers;
             if (customer?.email) {
               const tierName = await getPlanNameForTier(m.tier);
