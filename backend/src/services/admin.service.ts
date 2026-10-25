@@ -1298,6 +1298,14 @@ export async function createMembershipManually(data: {
   }
 
   // Create child if name provided
+  // Validate picked children before creating anything, so a bad pick can't leave a half-created membership
+  if (childIds.length > 0) {
+    const picked = await ChildRepository.findByIds(childIds);
+    if (picked.length !== childIds.length || picked.some(c => c.customer_id !== customer.customer_id)) {
+      throw new AppError('Selected child does not belong to this customer\'s account.', 403);
+    }
+  }
+
   let newChildId: number | null = null;
   if (data.childName) {
     const { data: newChild } = await supabaseAny.from('children').insert({

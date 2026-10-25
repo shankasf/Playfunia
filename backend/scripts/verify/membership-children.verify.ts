@@ -17,7 +17,7 @@ let links: Array<{ membership_id: number; child_id: number }> = [];
 
 const fakeSupabase = {
   from(table: string) {
-    assert.equal(table, 'membership_children');
+    assert.ok(table === 'membership_children' || table === 'children', table);
     const filters: Array<(r: any) => boolean> = [];
     let op = 'select';
     let payload: any;
@@ -30,7 +30,8 @@ const fakeSupabase = {
       then(res: any) {
         if (op === 'insert') { links.push(...payload); return Promise.resolve({ error: null }).then(res); }
         if (op === 'delete') { links = links.filter(r => !filters.every(f => f(r))); return Promise.resolve({ error: null }).then(res); }
-        return Promise.resolve({ data: links.filter(r => filters.every(f => f(r))), error: null }).then(res);
+        const rows = table === 'children' ? children : links;
+        return Promise.resolve({ data: rows.filter((r: any) => filters.every(f => f(r))), error: null }).then(res);
       },
     };
     return b;

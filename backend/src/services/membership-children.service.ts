@@ -78,16 +78,24 @@ export async function getCoveredChildren(membership: { membership_id: number; cu
   return pickCovered(children, linked.get(membership.membership_id) ?? new Set(), maxChildren);
 }
 
-/** Batch version for rosters: one children query per customer, one link query total. */
+/** Batch version for rosters: one children query and one link query in total. */
 export async function getCoveredChildrenForMany(
   memberships: Array<{ membership_id: number; customer_id: number | null; maxChildren: number }>,
 ): Promise<Map<number, CoveredChild[]>> {
   const customerIds = Array.from(new Set(memberships.map(m => m.customer_id).filter((id): id is number => typeof id === 'number')));
-  const [childrenLists, linked] = await Promise.all([
-    Promise.all(customerIds.map(cid => ChildRepository.findByCustomerId(cid))),
+  const [childrenResult, linked] = await Promise.all([
+    customerIds.length > 0
+      ? supabaseAny.from('children').select('*').in('customer_id', customerIds)
+      : Promise.resolve({ data: [], error: null }),
     getLinkedChildIds(memberships.map(m => m.membership_id)),
   ]);
-  const childrenByCustomer = new Map(customerIds.map((cid, i) => [cid, childrenLists[i] ?? []]));
+  if (childrenResult.error) throw childrenResult.error;
+  const childrenByCustomer = new Map<number, ChildRow[]>();
+  for (const child of (childrenResult.data ?? []) as Array<ChildRow & { customer_id: number }>) {
+    const list = childrenByCustomer.get(child.customer_id) ?? [];
+    list.push(child);
+    childrenByCustomer.set(child.customer_id, list);
+  }
 
   const result = new Map<number, CoveredChild[]>();
   for (const m of memberships) {

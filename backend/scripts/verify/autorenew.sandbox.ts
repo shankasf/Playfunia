@@ -326,6 +326,29 @@ function seedMember(id: number, endDate: string) {
     assert.ok(db.memberships!.find(x => x.membership_id === M(3))!.grace_period_end, 'grace period set so member can still check in');
   });
 
+  seedMember(M(6), todayET);
+  await test('queued next term (bought before end date): renewal does not charge', async () => {
+    const payment = await payWithNonce(270);
+    await billing.storeCardForAutoRenew({ paymentId: payment.id, membershipIds: [M(6)] });
+    db.memberships!.push({ membership_id: M(6) + 100_000, customer_id: M(6), tier: 'mini', status: 'pending', start_date: tomorrowET, end_date: null, auto_renew: true });
+    const paymentsBefore = db.payments!.length;
+    const m = { ...db.memberships!.find(x => x.membership_id === M(6))!, customers: db.customers!.find(c => c.customer_id === M(6)) };
+    assert.equal(await billing.chargeMembershipRenewal(m, todayET), 'skipped');
+    assert.equal(db.payments!.length, paymentsBefore);
+    assert.equal(db.membership_renewals!.find(x => x.membership_id === M(6))!.status, 'skipped');
+    assert.equal(db.orders!.filter(o => o.customer_id === M(6)).length, 0, 'no order created');
+  });
+
+  await test('declined, then member renews online: retry does not charge', async () => {
+    // Member 3 was declined today; they buy the next term manually (queued)
+    db.memberships!.push({ membership_id: M(3) + 100_000, customer_id: M(3), tier: 'mini', status: 'pending', start_date: tomorrowET, end_date: null, auto_renew: true });
+    const m = { ...db.memberships!.find(x => x.membership_id === M(3))!, customers: db.customers!.find(c => c.customer_id === M(3)) };
+    const attemptsBefore = db.membership_renewals!.find(x => x.membership_id === M(3))!.attempts;
+    const dayAfter = DateTime.fromISO(tomorrowET, { zone: 'America/New_York' }).plus({ days: 1 }).toISODate()!;
+    assert.equal(await billing.chargeMembershipRenewal(m, dayAfter), 'skipped');
+    assert.equal(db.membership_renewals!.find(x => x.membership_id === M(3))!.attempts, attemptsBefore, 'no new attempt');
+  });
+
   seedMember(M(4), todayET);
   await test('no card on file: auto-renew membership is not charged', async () => {
     const r = await billing.processAutoRenewCharges(todayET);

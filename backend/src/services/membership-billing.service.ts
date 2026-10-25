@@ -132,6 +132,18 @@ export async function disableStoredCard(cardId: string): Promise<void> {
   }
 }
 
+async function hasQueuedSuccessor(m: MembershipWithCustomer): Promise<boolean> {
+  const { data, error } = await supabaseAny
+    .from('memberships')
+    .select('membership_id')
+    .eq('customer_id', m.customer_id)
+    .eq('tier', m.tier)
+    .eq('status', 'pending')
+    .limit(1);
+  if (error) throw error;
+  return (data ?? []).length > 0;
+}
+
 /**
  * Claim the right to charge one billing period. Returns the attempt number, or
  * null if this period is already renewed, in progress, out of retries, or was
@@ -185,13 +197,36 @@ export async function chargeMembershipRenewal(m: MembershipWithCustomer, today: 
   if (!m.end_date || !m.square_card_id) return 'skipped';
   const periodEnd = m.end_date;
 
+  // The member already bought the next term themselves (it's queued as a
+  // pending membership that starts after this one) — charging would bill twice.
+  if (await hasQueuedSuccessor(m)) {
+    const { error } = await supabaseAny
+      .from('membership_renewals')
+      .insert({ membership_id: m.membership_id, period_end: periodEnd, status: 'skipped', attempts: 0, last_attempt_on: today, error_message: 'Next term already purchased (queued membership)' });
+    if (error && error.code !== '23505') throw error;
+    logger.info({ membershipId: m.membership_id }, 'Auto-renew skipped — next term already purchased');
+    return 'skipped';
+  }
+
   const attempt = await claimRenewalAttempt(m.membership_id, periodEnd, today);
   if (attempt === null) return 'skipped';
 
   const plan = await getPlanByTier(m.tier);
   if (!plan) {
+    // e.g. the plan was deactivated: we can't price a renewal, so tell the member
     await finishRenewal(m.membership_id, periodEnd, { status: 'failed', attempts: MAX_RENEWAL_ATTEMPTS, error_message: `No active plan for tier ${m.tier}` });
     logger.error({ membershipId: m.membership_id, tier: m.tier }, 'Auto-renew skipped — plan not found');
+    if (m.customers?.email) {
+      await sendMembershipExpirationReminder({
+        email: m.customers.email,
+        customerName: m.customers.full_name?.split(' ')[0] ?? 'Member',
+        tierName: m.tier,
+        expirationDate: DateTime.fromISO(periodEnd, { zone: BUSINESS_TZ }).toLocaleString(DateTime.DATE_FULL),
+        daysRemaining: 0,
+        autoRenew: false,
+        displayId: m.display_id ?? undefined,
+      }).catch(err => logger.warn({ err, membershipId: m.membership_id }, 'Renewal failure email failed'));
+    }
     return 'declined';
   }
 
