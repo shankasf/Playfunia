@@ -221,7 +221,7 @@ export async function purchaseMembership(
 
   if (existingMembership && existingMembership.end_date) {
     // User already has an active membership of this tier - queue the new one
-    const existingEndDate = DateTime.fromISO(existingMembership.end_date).setZone('America/New_York');
+    const existingEndDate = DateTime.fromISO(existingMembership.end_date, { zone: 'America/New_York' });
     // Start the new membership the day after the existing one ends
     startedAt = existingEndDate.plus({ days: 1 });
     isQueued = true;
@@ -552,7 +552,7 @@ export async function listMembershipStatuses() {
     // Calculate remaining days
     let remainingDays: number | null = null;
     if (m.end_date && m.status === 'active') {
-      const endDt = DateTime.fromISO(m.end_date).setZone('America/New_York');
+      const endDt = DateTime.fromISO(m.end_date, { zone: 'America/New_York' });
       const nowDt = DateTime.now().setZone('America/New_York').startOf('day');
       remainingDays = Math.max(0, Math.ceil(endDt.diff(nowDt, 'days').days));
     }
@@ -686,7 +686,7 @@ export async function recordMembershipVisitByMembershipId(
 
   // Check if membership is expired (end_date passed and no grace period)
   if (membership.end_date) {
-    const endDt = DateTime.fromISO(membership.end_date).setZone('America/New_York').endOf('day');
+    const endDt = DateTime.fromISO(membership.end_date, { zone: 'America/New_York' }).endOf('day');
     const now = DateTime.now().setZone('America/New_York');
     if (now > endDt && !membership.grace_period_end) {
       throw new AppError('Membership has expired', 400);
@@ -804,7 +804,7 @@ export async function lookupMembershipForCheckIn(displayId: string) {
 
   let remainingDays: number | null = null;
   if (membership.end_date && membership.status === 'active') {
-    const endDt = DateTime.fromISO(membership.end_date).setZone('America/New_York');
+    const endDt = DateTime.fromISO(membership.end_date, { zone: 'America/New_York' });
     const nowDt = DateTime.now().setZone('America/New_York').startOf('day');
     remainingDays = Math.max(0, Math.ceil(endDt.diff(nowDt, 'days').days));
   }
@@ -868,7 +868,7 @@ export async function getMembershipDetails(userId: string) {
   // Calculate remaining days in NY timezone
   let remainingDays: number | null = null;
   if (membership.end_date && membership.status === 'active') {
-    const endDt = DateTime.fromISO(membership.end_date).setZone('America/New_York');
+    const endDt = DateTime.fromISO(membership.end_date, { zone: 'America/New_York' });
     const nowDt = DateTime.now().setZone('America/New_York').startOf('day');
     remainingDays = Math.max(0, Math.ceil(endDt.diff(nowDt, 'days').days));
   }
@@ -881,10 +881,10 @@ export async function getMembershipDetails(userId: string) {
 
   // Format dates in NY timezone
   const startDateET = membership.start_date
-    ? DateTime.fromISO(membership.start_date).setZone('America/New_York').toLocaleString(DateTime.DATE_FULL)
+    ? DateTime.fromISO(membership.start_date, { zone: 'America/New_York' }).toLocaleString(DateTime.DATE_FULL)
     : null;
   const endDateET = membership.end_date
-    ? DateTime.fromISO(membership.end_date).setZone('America/New_York').toLocaleString(DateTime.DATE_FULL)
+    ? DateTime.fromISO(membership.end_date, { zone: 'America/New_York' }).toLocaleString(DateTime.DATE_FULL)
     : null;
 
   return {

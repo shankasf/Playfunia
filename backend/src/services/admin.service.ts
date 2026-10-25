@@ -200,7 +200,7 @@ export async function getAdminDashboardSummary() {
     let eventDate = '';
     let startTime = '';
     if (b.scheduled_start) {
-      const dt = DateTime.fromISO(b.scheduled_start as string).setZone('America/New_York');
+      const dt = DateTime.fromISO(b.scheduled_start as string, { zone: 'America/New_York' });
       eventDate = dt.toFormat('yyyy-MM-dd');
       startTime = dt.toFormat('HH:mm');
     }

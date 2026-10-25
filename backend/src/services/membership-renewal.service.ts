@@ -117,7 +117,7 @@ export async function processMembershipRenewals(): Promise<{
         if (!customer?.email) continue;
 
         const tierName = await getPlanNameForTier(m.tier);
-        const endDateET = DateTime.fromISO(m.end_date!).setZone(BUSINESS_TZ).toLocaleString(DateTime.DATE_FULL);
+        const endDateET = DateTime.fromISO(m.end_date!, { zone: BUSINESS_TZ }).toLocaleString(DateTime.DATE_FULL);
         const customerName = customer.full_name?.split(' ')[0] ?? 'Member';
 
         await sendMembershipExpirationReminder({
@@ -160,7 +160,7 @@ export async function processMembershipRenewals(): Promise<{
         if (!customer?.email) continue;
 
         const tierName = await getPlanNameForTier(m.tier);
-        const endDateET = DateTime.fromISO(m.end_date!).setZone(BUSINESS_TZ).toLocaleString(DateTime.DATE_FULL);
+        const endDateET = DateTime.fromISO(m.end_date!, { zone: BUSINESS_TZ }).toLocaleString(DateTime.DATE_FULL);
         const customerName = customer.full_name?.split(' ')[0] ?? 'Member';
 
         await sendMembershipExpirationReminder({
@@ -209,7 +209,7 @@ export async function processMembershipRenewals(): Promise<{
             const customer = (m as unknown as { customers?: { full_name?: string; email?: string } }).customers;
             if (customer?.email) {
               const tierName = await getPlanNameForTier(m.tier);
-              const endDateET = DateTime.fromISO(m.end_date!).setZone(BUSINESS_TZ).toLocaleString(DateTime.DATE_FULL);
+              const endDateET = DateTime.fromISO(m.end_date!, { zone: BUSINESS_TZ }).toLocaleString(DateTime.DATE_FULL);
 
               await sendMembershipExpirationReminder({
                 email: customer.email,

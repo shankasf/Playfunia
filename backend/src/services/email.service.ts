@@ -1774,7 +1774,7 @@ export async function sendJobApplicationConfirmation(data: JobApplicationConfirm
   const safeTitle = escapeHtml(data.jobTitle);
   const safeDept = escapeHtml(data.department);
 
-  const appliedDate = DateTime.fromISO(data.applicationDate).setZone(BUSINESS_TIMEZONE);
+  const appliedDate = DateTime.fromISO(data.applicationDate, { zone: BUSINESS_TIMEZONE });
   const formattedDate = appliedDate.toFormat('MMMM d, yyyy');
 
   return sendEmail({
@@ -2004,7 +2004,7 @@ export async function sendWaiverConfirmation(data: WaiverConfirmationEmailData):
     (adultNames.length > 0 ? `\nAdditional adults (${adultNames.length}): ${adultNames.join(', ')}` : '');
 
   // Format signedAt in Eastern Time
-  const signedDate = DateTime.fromISO(data.signedAt).setZone(BUSINESS_TIMEZONE);
+  const signedDate = DateTime.fromISO(data.signedAt, { zone: BUSINESS_TIMEZONE });
   const formattedDate = signedDate.toFormat('MM/dd/yyyy h:mm a') + ' ET';
 
   // Build attachments array if PDF is available

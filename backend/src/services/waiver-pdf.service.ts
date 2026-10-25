@@ -565,11 +565,11 @@ export async function generateWaiverPdf(data: WaiverPdfData): Promise<Buffer> {
 }
 
 function formatDateET(iso: string): string {
-  return DateTime.fromISO(iso).setZone('America/New_York').toFormat('MMMM d, yyyy');
+  return DateTime.fromISO(iso, { zone: 'America/New_York' }).toFormat('MMMM d, yyyy');
 }
 
 function formatDateTimeET(iso: string): string {
-  return DateTime.fromISO(iso).setZone('America/New_York').toFormat('MM/dd/yyyy h:mm:ss a') + ' ET';
+  return DateTime.fromISO(iso, { zone: 'America/New_York' }).toFormat('MM/dd/yyyy h:mm:ss a') + ' ET';
 }
 
 function formatDobDisplay(dob: string): string {

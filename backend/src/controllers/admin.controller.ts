@@ -444,7 +444,7 @@ function transformMembership(
   const status = (m.status as string) ?? 'active';
   let remainingDays: number | null = null;
   if (endDateStr && status === 'active') {
-    const endDt = DateTime.fromISO(endDateStr).setZone('America/New_York');
+    const endDt = DateTime.fromISO(endDateStr, { zone: 'America/New_York' });
     const nowDt = DateTime.now().setZone('America/New_York').startOf('day');
     remainingDays = Math.max(0, Math.ceil(endDt.diff(nowDt, 'days').days));
   }
@@ -696,7 +696,7 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
   let endTime = '';
 
   if (b.scheduled_start) {
-    const start = DateTime.fromISO(b.scheduled_start as string).setZone('America/New_York');
+    const start = DateTime.fromISO(b.scheduled_start as string, { zone: 'America/New_York' });
     eventDate = start.toFormat('yyyy-MM-dd');
     startTime = start.toFormat('HH:mm');
   }
@@ -706,7 +706,7 @@ function transformBooking(b: Record<string, unknown>): Record<string, unknown> {
     endTime = (b.end_time as string).slice(0, 5);
   } else if (b.scheduled_end) {
     // Fallback for older bookings: scheduled_end includes 30-min cleaning buffer
-    const end = DateTime.fromISO(b.scheduled_end as string).setZone('America/New_York').minus({ minutes: 30 });
+    const end = DateTime.fromISO(b.scheduled_end as string, { zone: 'America/New_York' }).minus({ minutes: 30 });
     endTime = end.toFormat('HH:mm');
   }
 
