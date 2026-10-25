@@ -30,6 +30,7 @@ import {
   roundCurrency,
 } from '../utils/currency';
 import { withRetry } from '../utils/retry';
+import { createItemizedSquareOrder, squareLineName } from './square-order.service';
 import { PAYMENT_STATUS } from '../utils/payment-statuses';
 
 // Valid payment statuses (Fix #4 - accept PENDING for ACH, Afterpay, etc.)
@@ -559,22 +560,37 @@ export async function createSquarePayment(
 
   // Process card payment via Square
   if (cardPaymentAmount > 0) {
+    let packageName: string | null = null;
+    if (booking.package_id) {
+      try {
+        const pkg = await PartyPackageRepository.findById(booking.package_id);
+        packageName = pkg?.name ?? null;
+      } catch { /* use default */ }
+    }
+    const pkgName = packageName ? `${packageName} Party Booking` : 'Party Booking';
+
+    // Itemize in Square so reports show the package rather than "Custom Amount".
+    // The amount charged here is already tax-inclusive, so no tax line is added.
+    const squareOrderId = await createItemizedSquareOrder({
+      lines: [{
+        name: `${packageName ? squareLineName('booking', packageName) : 'Party Booking'} - Deposit`,
+        quantity: 1,
+        unitPrice: cardPaymentAmount,
+        note: `Ref: ${booking.reference ?? booking.booking_id}`,
+      }],
+      expectedTotal: cardPaymentAmount,
+      referenceId: `booking_${booking.booking_id}`,
+      idempotencyKey: `${idempotencyKey}_order`,
+    });
+
     const paymentRequest: CreatePaymentRequest = {
       sourceId,
       idempotencyKey,
       amountMoney: toSquareMoney(cardPaymentAmount),
       locationId,
+      ...(squareOrderId ? { orderId: squareOrderId } : {}),
       referenceId: `booking_${booking.booking_id}`,
-      note: await (async () => {
-        let pkgName = 'Party Booking';
-        if (booking.package_id) {
-          try {
-            const pkg = await PartyPackageRepository.findById(booking.package_id);
-            if (pkg?.name) pkgName = `${pkg.name} Party Booking`;
-          } catch { /* use default */ }
-        }
-        return `${pkgName} (Ref: ${booking.reference ?? booking.booking_id}) | Playfunia`;
-      })(),
+      note: `${pkgName} (Ref: ${booking.reference ?? booking.booking_id}) | Playfunia`,
     };
 
     // Log payment initiation
