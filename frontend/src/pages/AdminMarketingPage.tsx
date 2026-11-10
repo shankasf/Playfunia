@@ -111,8 +111,9 @@ export function AdminMarketingPage() {
   const [promos, setPromos] = useState<LivePromo[]>([]);
   const [campaigns, setCampaigns] = useState<MarketingCampaign[]>([]);
 
+  const [allContacts, setAllContacts] = useState(true);
   const [selectedMonths, setSelectedMonths] = useState<Set<number>>(new Set());
-  const [channel, setChannel] = useState<MarketingChannel>('email');
+  const [channel, setChannel] = useState<MarketingChannel>('sms');
   const [selectedPromos, setSelectedPromos] = useState<Set<string>>(new Set());
 
   const [intent, setIntent] = useState('');
@@ -139,9 +140,8 @@ export function AdminMarketingPage() {
   const wantEmail = channel === 'email' || channel === 'both';
   const wantSms = channel === 'sms' || channel === 'both';
 
-  // Audience only counts when a segment is explicitly selected; otherwise 0
-  // (we never silently default a bulk send to the entire opted-in list).
-  const hasSegment = selectedMonths.size > 0;
+  // The admin explicitly chooses all subscribers or a birthday segment.
+  const hasSegment = allContacts || selectedMonths.size > 0;
   const recipients = useMemo<AudienceRecipient[]>(
     () => (hasSegment ? preview?.recipients ?? [] : []),
     [hasSegment, preview],
@@ -181,20 +181,25 @@ export function AdminMarketingPage() {
   // Live audience preview whenever months/channel change (debounced).
   // Recompute the audience and default every recipient to selected.
   useEffect(() => {
+    let cancelled = false;
+    setPreview(null);
+    setSelectedKeys(new Set());
     const t = window.setTimeout(async () => {
       try {
-        const p = await previewMarketingAudience({ months: Array.from(selectedMonths), channel });
+        const p = await previewMarketingAudience({ months: allContacts ? [] : Array.from(selectedMonths), channel });
+        if (cancelled) return;
         setPreview(p);
         // Contacts whose only channel is an undeliverable email start deselected.
         setSelectedKeys(new Set(p.recipients.filter((r) => !(r.invalidEmail && !r.viaSms)).map((r) => r.key)));
         setRecipientPage(0);
       } catch {
+        if (cancelled) return;
         setPreview(null);
         setSelectedKeys(new Set());
       }
     }, 300);
-    return () => window.clearTimeout(t);
-  }, [selectedMonths, channel]);
+    return () => { cancelled = true; window.clearTimeout(t); };
+  }, [selectedMonths, channel, allContacts]);
 
   const toggleMonth = (m: number) => {
     setSelectedMonths((prev) => {
@@ -237,7 +242,7 @@ export function AdminMarketingPage() {
       const promoObjs = promos
         .filter((p) => selectedPromos.has(p.code))
         .map((p) => ({ code: p.code, description: p.description }));
-      const draft = await draftMarketingMessage({ intent, promoCodes: promoObjs, months: Array.from(selectedMonths), channel });
+      const draft = await draftMarketingMessage({ intent, promoCodes: promoObjs, months: allContacts ? [] : Array.from(selectedMonths), channel });
       if (wantEmail) {
         setSubject(draft.subject);
         setEmailBody(draft.emailBody);
@@ -299,8 +304,9 @@ export function AdminMarketingPage() {
         smsBody: wantSms ? smsBody : undefined,
         emailImageUrl: wantEmail && imageUrl ? imageUrl : undefined,
         promoCodes: Array.from(selectedPromos),
-        months: Array.from(selectedMonths),
+        months: allContacts ? [] : Array.from(selectedMonths),
         isTest,
+        allContacts,
         testEmail: testEmail || undefined,
         testPhone: testPhone || undefined,
         selectedKeys: isTest ? undefined : Array.from(selectedKeys),
@@ -328,7 +334,7 @@ export function AdminMarketingPage() {
       const r = await syncEmailSuppressions();
       setBanner({ type: 'ok', text: `Bounce list synced from AWS SES — ${r.total} suppressed address(es) on file.` });
       if (hasSegment) {
-        const p = await previewMarketingAudience({ months: Array.from(selectedMonths), channel });
+        const p = await previewMarketingAudience({ months: allContacts ? [] : Array.from(selectedMonths), channel });
         setPreview(p);
         setSelectedKeys((prev) => new Set(p.recipients.filter((x) => prev.has(x.key) && !(x.invalidEmail && !x.viaSms)).map((x) => x.key)));
       }
@@ -342,14 +348,14 @@ export function AdminMarketingPage() {
   const handleSendBulk = () => {
     const n = uniqueCount;
     if (!hasSegment) {
-      setBanner({ type: 'err', text: 'Select at least one birthday month before sending.' });
+      setBanner({ type: 'err', text: 'Choose all marketing subscribers or at least one birthday month before sending.' });
       return;
     }
     if (n === 0) {
       setBanner({ type: 'err', text: 'No opted-in recipients match this audience.' });
       return;
     }
-    const seg = `birthdays in ${selectedMonthLabels.join(', ')}`;
+    const seg = allContacts ? 'all marketing subscribers' : `birthdays in ${selectedMonthLabels.join(', ')}`;
     const ok = window.confirm(
       `This will send a ${channel.toUpperCase()} message to ${n} ${n === 1 ? 'person' : 'people'} (${seg}). Are you sure you want to send now? This cannot be undone.`,
     );
@@ -419,10 +425,16 @@ export function AdminMarketingPage() {
 
         {activeTab === 'campaign' && (
         <>
-        {/* Step 1: Birthday segment */}
+        {/* Step 1: Audience */}
         <section className={styles.panel}>
-          <h2 className={styles.panelTitle}>1 · Birthday segment</h2>
-          <p className={styles.panelHint}>Pick one or more months to target families with a child's birthday then. You must select at least one month — bulk send stays disabled until you do. Counts show opted-in reach.</p>
+          <h2 className={styles.panelTitle}>1 · Audience</h2>
+          <p className={styles.panelHint}>Choose all marketing subscribers or families with a child's birthday in selected months. SMS goes only to customers who explicitly opted in to marketing texts.</p>
+          <div className={styles.segmented}>
+            <button type="button" aria-pressed={allContacts} className={`${styles.segBtn} ${allContacts ? styles.segBtnActive : ''}`} onClick={() => setAllContacts(true)}>All marketing subscribers</button>
+            <button type="button" aria-pressed={!allContacts} className={`${styles.segBtn} ${!allContacts ? styles.segBtnActive : ''}`} onClick={() => setAllContacts(false)}>Birthday months</button>
+          </div>
+          {!allContacts && (<>
+
           <div className={styles.monthGrid}>
             {(stats?.months ?? []).map((m) => {
               const active = selectedMonths.has(m.month);
@@ -438,6 +450,7 @@ export function AdminMarketingPage() {
           {selectedMonths.size > 0 && (
             <button type="button" className={styles.linkBtn} onClick={() => setSelectedMonths(new Set())}>Clear month selection</button>
           )}
+          </>)}
         </section>
 
         {/* Step 2: Channel */}
@@ -585,7 +598,7 @@ export function AdminMarketingPage() {
                 </button>
               )}
             </div>
-            {!hasSegment && <p className={styles.sample}>Select at least one birthday month above to build an audience.</p>}
+            {!hasSegment && <p className={styles.sample}>Choose all marketing subscribers or at least one birthday month above to build an audience.</p>}
             {hasSegment && recipients.length === 0 && (
               <p className={styles.sample}>No opted-in recipients match this segment / channel.</p>
             )}

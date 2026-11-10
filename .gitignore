@@ -36,3 +36,8 @@ chatbot_service/chroma/
 *.mp4
 !frontend/public/videos/optimized/**/*.mp4
 WhatsApp Video*
+
+# server-local files (added 2026-11-09)
+.env.*
+!.env.example
+/image.png

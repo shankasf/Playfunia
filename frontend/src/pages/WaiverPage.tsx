@@ -74,6 +74,9 @@ export function WaiverPage() {
   const [loginInput, setLoginInput] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  // SMS consent boxes shown on the lookup screen; carried into the waiver form / quick re-sign
+  const [lookupTransactionalConsent, setLookupTransactionalConsent] = useState(false);
+  const [lookupMarketingConsent, setLookupMarketingConsent] = useState(false);
 
   // Returning user state
   const [isReturningUser, setIsReturningUser] = useState(false);
@@ -259,8 +262,10 @@ export function WaiverPage() {
         guardianDob: latestWaiver.guardianDateOfBirth,
         relationshipToChildren: latestWaiver.relationshipToChildren,
         signature: latestWaiver.signature,
-        acceptedPolicies: latestWaiver.acceptedPolicies,
-        marketingOptIn: latestWaiver.marketingOptIn,
+        acceptedPolicies: lookupMarketingConsent && !latestWaiver.acceptedPolicies.includes('marketing_sms_consent_v1')
+          ? [...latestWaiver.acceptedPolicies, 'marketing_sms_consent_v1']
+          : latestWaiver.acceptedPolicies,
+        marketingOptIn: latestWaiver.marketingOptIn || lookupTransactionalConsent,
         children: (latestWaiver.children ?? []).map(toQuickResignMinor),
         teens: (latestWaiver.teens ?? []).map(toQuickResignMinor),
         // Additional adults are never carried over: each must sign again in person
@@ -380,9 +385,9 @@ export function WaiverPage() {
         <p className={styles.termsText}>By signing this Agreement on behalf of a minor, I agree to indemnify and hold harmless Playfunia and Releasees for any claims arising from the child's participation.</p>
 
         <h3 className={styles.termsSectionHeading}>9. Marketing Communications Consent</h3>
-        <p className={styles.termsText}>By signing this waiver, I agree to receive occasional marketing communications via text message or email from Playfunia regarding promotions, offers, and events.</p>
-        <p className={styles.termsText}>Message and data rates may apply.</p>
-        <p className={styles.termsText}>I may unsubscribe at any time by replying STOP or using the unsubscribe link.</p>
+        <p className={styles.termsText}>By signing this waiver, I agree to receive occasional marketing emails from Playfunia regarding promotions, offers, and events.</p>
+        <p className={styles.termsText}>I may unsubscribe at any time using the unsubscribe link.</p>
+        <p className={styles.termsText}>Marketing text messages are sent only if I separately tick the marketing text message box.</p>
         <p className={styles.termsText}>Consent to marketing communications <strong>is not a condition of participation</strong>.</p>
 
         <h3 className={styles.termsSectionHeading}>10. Governing Law and Venue</h3>
@@ -519,7 +524,8 @@ export function WaiverPage() {
                 initialGuardianPhone={latestWaiver?.guardianPhone ?? user.phone}
                 initialGuardianDob={latestWaiver?.guardianDateOfBirth ?? undefined}
                 initialRelationship={latestWaiver?.relationshipToChildren ?? undefined}
-                initialMarketingOptIn={latestWaiver?.marketingOptIn ?? undefined}
+                initialMarketingOptIn={(latestWaiver?.marketingOptIn ?? undefined) || lookupTransactionalConsent}
+                initialMarketingSmsConsent={lookupMarketingConsent}
                 initialSignature={latestWaiver?.signature ?? guardianName}
                 initialChildren={initialChildren}
                 initialTeens={initialTeens}
@@ -784,7 +790,8 @@ export function WaiverPage() {
                 initialGuardianPhone={waiverUser?.phone ?? ''}
                 initialGuardianDob={waiverUser?.guardianDateOfBirth ?? undefined}
                 initialRelationship={waiverUser?.relationshipToMinor ?? undefined}
-                initialMarketingOptIn={false}
+                initialMarketingOptIn={(false) || lookupTransactionalConsent}
+                initialMarketingSmsConsent={lookupMarketingConsent}
                 initialSignature={''}
                 initialChildren={waiverUser?.children?.map((child, index) => ({
                   id: child.childId?.toString() ?? child.id ?? `child-${index}`,
@@ -810,7 +817,8 @@ export function WaiverPage() {
                 initialGuardianPhone={latestWaiver?.guardianPhone ?? waiverUser?.phone ?? ''}
                 initialGuardianDob={latestWaiver?.guardianDateOfBirth ?? waiverUser?.guardianDateOfBirth ?? undefined}
                 initialRelationship={latestWaiver?.relationshipToChildren ?? waiverUser?.relationshipToMinor ?? undefined}
-                initialMarketingOptIn={latestWaiver?.marketingOptIn ?? false}
+                initialMarketingOptIn={(latestWaiver?.marketingOptIn ?? false) || lookupTransactionalConsent}
+                initialMarketingSmsConsent={lookupMarketingConsent}
                 initialSignature={latestWaiver?.signature ?? ''}
                 initialChildren={waiverUser?.children?.map((child, index) => ({
                   id: child.childId?.toString() ?? child.id ?? `child-${index}`,
@@ -833,7 +841,8 @@ export function WaiverPage() {
               initialGuardianPhone={waiverUser?.phone ?? ''}
               initialGuardianDob={waiverUser?.guardianDateOfBirth ?? undefined}
               initialRelationship={waiverUser?.relationshipToMinor ?? undefined}
-              initialMarketingOptIn={false}
+              initialMarketingOptIn={(false) || lookupTransactionalConsent}
+              initialMarketingSmsConsent={lookupMarketingConsent}
               initialSignature={''}
               initialChildren={waiverUser?.children?.map((child, index) => ({
                 id: child.childId?.toString() ?? child.id ?? `child-${index}`,
@@ -932,6 +941,33 @@ export function WaiverPage() {
             />
             {loginError && <p className={styles.loginError}>{loginError}</p>}
             {waiverAuthError && <p className={styles.loginError}>{waiverAuthError}</p>}
+            <div className={styles.lookupConsent}>
+              <label className={styles.consentLabel}>
+                <input
+                  type="checkbox"
+                  checked={lookupTransactionalConsent}
+                  onChange={(e) => setLookupTransactionalConsent(e.target.checked)}
+                  disabled={loginLoading}
+                />
+                <span className={styles.consentText}>
+                  By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., waiver confirmations, booking reminders, ticket codes, and membership alerts). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply HELP for help, STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
+                </span>
+              </label>
+              {!isTeamMember && (
+                <label className={styles.consentLabel}>
+                  <input
+                    type="checkbox"
+                    checked={lookupMarketingConsent}
+                    onChange={(e) => setLookupMarketingConsent(e.target.checked)}
+                    disabled={loginLoading}
+                  />
+                  <span className={styles.consentText}>
+                    Optional: Yes, send me marketing text messages from Playfunia about promotions, offers, and events, sent using automated technology to the phone number provided. Consent is not a condition of purchase or participation. Msg &amp; data rates may apply. Up to 4 marketing msgs per month. Reply HELP for help, STOP to unsubscribe. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/sms-terms" target="_blank" rel="noopener noreferrer">SMS Terms</a>.
+                  </span>
+                </label>
+              )}
+              <p className={styles.consentNote}>Both boxes are optional and start unticked. You can review them again on the waiver form before you sign.</p>
+            </div>
             <PrimaryButton type="submit" disabled={loginLoading}>
               {loginLoading ? 'Checking…' : 'Continue'}
             </PrimaryButton>

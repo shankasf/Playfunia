@@ -6,7 +6,7 @@ export function PrivacyPage() {
       <div className={styles.header}>
         <h1>Privacy Policy</h1>
         <p className={styles.meta}>
-          <strong>Effective Date:</strong> January 31, 2026 | <strong>Last Updated:</strong> January 31, 2026
+          <strong>Effective Date:</strong> January 31, 2026 | <strong>Last Updated:</strong> November 1, 2026
         </p>
       </div>
 
@@ -96,14 +96,14 @@ export function PrivacyPage() {
           <li><strong>Booking Confirmations:</strong> Confirmation of your reservation details</li>
           <li><strong>Reminders:</strong> Notifications before your scheduled visit/party</li>
           <li><strong>Updates:</strong> Important information about your booking or facility changes</li>
-          <li><strong>Promotional Messages:</strong> Occasional special offers, discounts, and news (frequency may vary, typically 2-4 messages per month)</li>
+          <li><strong>Promotional Messages:</strong> Occasional special offers, discounts, and news, only if you separately opt in to marketing texts (up to 4 messages per month)</li>
         </ul>
 
         <h3>Message Frequency</h3>
         <p>Message frequency varies depending on your bookings and promotions. You may receive:</p>
         <ul>
           <li>Transactional messages (confirmations, reminders) as needed for your bookings</li>
-          <li>Marketing messages approximately 2-4 times per month</li>
+          <li>Marketing messages up to 4 times per month, if you separately opted in</li>
         </ul>
 
         <h3>SMS Costs</h3>
@@ -112,11 +112,12 @@ export function PrivacyPage() {
         <h3>How to Opt In</h3>
         <p>You can opt in to receive SMS messages by:</p>
         <ul>
-          <li>Checking the SMS consent box when booking online at https://playfunia.com</li>
-          <li>Providing your phone number and verbal consent when booking in person at our facility</li>
+          <li>Checking the SMS consent box when booking online at https://playfunia.com (transactional messages)</li>
+          <li>Checking the separate, optional marketing text message box on the waiver form (marketing messages). <a href="/sms-opt-in">See how to opt in</a></li>
+          <li>Providing your phone number and verbal consent when booking in person at our facility (booking messages only)</li>
           <li>Texting "START" to our SMS number (if we offer keyword opt-in)</li>
         </ul>
-        <p>When you opt in, you explicitly agree to receive automated text messages from PlayFunia about bookings, reminders, and promotional offers.</p>
+        <p>When you opt in, you explicitly agree to receive automated text messages from PlayFunia of the type described by the box you checked. Promotional offers are sent only if you checked the marketing text message box.</p>
 
         <h3>How to Opt Out (Unsubscribe)</h3>
         <p>You can stop receiving text messages at any time by:</p>
@@ -148,6 +149,7 @@ export function PrivacyPage() {
           <li>Your IP address at the time of opt-in (for web opt-ins)</li>
         </ul>
         <p>We retain this consent information as proof of your agreement to receive messages and for compliance purposes.</p>
+        <p><strong>No mobile information will be shared with third parties or affiliates for marketing or promotional purposes.</strong> Text messaging originator opt-in data and consent will not be shared with any third parties. Information may be shared with subcontractors that support our services, such as messaging providers.</p>
 
         <h3>Supported Mobile Carriers</h3>
         <p>Our SMS program is supported by all major U.S. mobile carriers including AT&T, T-Mobile, Verizon, Sprint, and others. If you experience issues receiving messages, please contact your mobile carrier or reach out to us for assistance.</p>
@@ -297,7 +299,7 @@ export function PrivacyPage() {
         <h2>13. Contact Us</h2>
         <p>If you have any questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us:</p>
         <div className={styles.contactInfo}>
-          <p><strong>PlayFunia</strong></p>
+          <p><strong>PlayFunia</strong> (operated by Real International LLC)</p>
           <p>Email: info@playfunia.com</p>
           <p>Phone: +1 (201) 539-5928</p>
           <p>Address: 1 Crossgates Mall Rd, Unit N202, Albany, NY 12203</p>

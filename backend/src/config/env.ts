@@ -64,8 +64,15 @@ const envSchema = z
     TWILIO_PHONE_NUMBER: z.string().optional(),
     // Messaging Service SID for A2P 10DLC campaign routing.
     // When set, sends use messagingServiceSid instead of `from` so traffic
-    // is attributed to the registered campaign (CTU2FPY / brand BN4f2aa329…).
+    // is attributed to the registered customer campaign.
     TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
+    // Optional dedicated service for employee operational messages.
+    TWILIO_STAFF_MESSAGING_SERVICE_SID: z.string().optional(),
+    // Bulk marketing SMS and automated birthday offers stay off unless this is
+    // exactly 'true'. Enable only once the sending campaign covers marketing.
+    MARKETING_SMS_ENABLED: z.string().optional(),
+    // Separate switch: enabling bulk campaigns must not start automatic offers.
+    MARKETING_BIRTHDAY_SMS_ENABLED: z.string().optional(),
     // Admin notification emails (comma-separated)
     ADMIN_EMAILS: z.string().optional(),
     // Waiver-specific admin notification emails (comma-separated, overrides ADMIN_EMAILS for waivers)
@@ -134,6 +141,9 @@ export const appConfig = {
   twilioApiKeySecret: env.TWILIO_API_KEY_SECRET,
   twilioPhoneNumber: env.TWILIO_PHONE_NUMBER,
   twilioMessagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
+  twilioStaffMessagingServiceSid: env.TWILIO_STAFF_MESSAGING_SERVICE_SID,
+  marketingSmsEnabled: env.MARKETING_SMS_ENABLED === 'true',
+  marketingBirthdaySmsEnabled: env.MARKETING_BIRTHDAY_SMS_ENABLED === 'true',
   // Admin notification emails
   adminEmails: env.ADMIN_EMAILS ?? 'info@playfunia.com',
   // Waiver-specific admin emails (falls back to adminEmails if not set)

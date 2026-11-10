@@ -98,6 +98,7 @@ export async function draftMarketingMessage(payload: {
 }
 
 export type SendCampaignPayload = {
+  allContacts?: boolean;
   channel: MarketingChannel;
   subject?: string;
   emailBody?: string;

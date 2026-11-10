@@ -160,3 +160,18 @@ export async function deleteAllEventPhotos(eventId: number): Promise<void> {
     }
   }
 }
+
+/** Upload a product image (Admin -> Products) to the public event-images bucket. */
+export async function uploadProductImage(file: UploadedFile): Promise<string> {
+  await ensureEventImagesBucket();
+  const storagePath = buildStoragePath('products', file.originalname);
+  const { error: uploadError } = await supabaseAny.storage
+    .from(BUCKET_NAME)
+    .upload(storagePath, file.buffer, { contentType: file.mimetype, upsert: false });
+  if (uploadError) {
+    logger.error({ error: uploadError }, 'Failed to upload product image');
+    throw uploadError;
+  }
+  const { data: urlData } = supabaseAny.storage.from(BUCKET_NAME).getPublicUrl(storagePath);
+  return urlData.publicUrl;
+}

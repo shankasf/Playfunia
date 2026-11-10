@@ -12,6 +12,7 @@ import {
 import { AppError } from '../utils/app-error';
 import { publishAdminEvent } from './admin-events.service';
 import { queueWaiverConfirmation, queueBirthdayOfferSms } from './notification-queue.service';
+import { appConfig } from '../config/env';
 import { generateWaiverPdf, type WaiverPdfData } from './waiver-pdf.service';
 import { sendWaiverConfirmation } from './email.service';
 import { uploadSignatureImage } from './signature-upload.service';
@@ -149,12 +150,14 @@ function queueWaiverNotifications(params: {
       };
       await queueWaiverConfirmation(undefined, smsData, waiverId);
 
-      // Queue Playfunia Birthday Offer marketing SMS — sent on every waiver
-      // sign for both new and returning customers, per business rules.
-      await queueBirthdayOfferSms(
-        { phone: guardianPhone, guardianName },
-        { type: 'waiver', id: waiverId },
-      );
+      // Queue Playfunia Birthday Offer marketing SMS — sent on waiver signs for
+      // new and returning customers who gave the separate marketing SMS consent.
+      if (appConfig.marketingSmsEnabled && appConfig.marketingBirthdaySmsEnabled && acceptedPolicies.includes('marketing_sms_consent_v1')) {
+        await queueBirthdayOfferSms(
+          { phone: guardianPhone, guardianName },
+          { type: 'waiver', id: waiverId },
+        );
+      }
     }
   })().catch((err) => {
     logger.error({ err, waiverId }, 'Failed to send waiver confirmation notifications');
@@ -173,10 +176,18 @@ function hasWaiverDataChanged(
     guardian_date_of_birth?: string;
     relationship_to_children?: string;
     additional_adults?: unknown;
+    accepted_policies?: string[] | null;
+    marketing_opt_in?: boolean | null;
   },
   existingChildren: Array<{ childId?: number; name: string; birth_date: string; gender?: string }>,
   input: SignWaiverInput
 ): boolean {
+  // New consent (e.g. marketing SMS ticked on the lookup screen) must be stored,
+  // so a quick re-sign that adds a policy is never treated as "unchanged".
+  const existingPolicies = new Set(latestWaiver.accepted_policies ?? []);
+  if ((input.acceptedPolicies ?? []).some((policy) => !existingPolicies.has(policy))) return true;
+  if (input.marketingOptIn && !latestWaiver.marketing_opt_in) return true;
+
   // Additional adults sign for themselves on every visit, so a waiver that had
   // (or now has) any is never "unchanged" - re-stamping the old submission would
   // make those adults look signed today without them touching the tablet.

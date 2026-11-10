@@ -6,6 +6,7 @@ export const reserveTicketsSchema = z.object({
   type: z.enum(["general", "event"]),
   eventId: z.string().min(1).optional(),
   quantity: z.number().int().min(1).max(100),
+  ticketTypeId: z.number().int().positive().optional(),
   price: z.number().min(0.50, 'Minimum price is $0.50').max(1000),
   metadata: z.record(z.string().max(100), z.unknown()).optional(),
 });

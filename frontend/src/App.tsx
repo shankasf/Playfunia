@@ -28,6 +28,7 @@ const AdminEventsPage = lazy(() => import("./pages/AdminEventsPanel").then(m => 
 const AdminTeamPage = lazy(() => import("./pages/AdminTeamPage").then(m => ({ default: m.AdminTeamPage })));
 const AdminMarketingPage = lazy(() => import("./pages/AdminMarketingPage").then(m => ({ default: m.AdminMarketingPage })));
 const AdminChatbotPage = lazy(() => import("./pages/AdminChatbotPage").then(m => ({ default: m.AdminChatbotPage })));
+const AdminProductsPage = lazy(() => import("./pages/AdminProductsPage").then(m => ({ default: m.AdminProductsPage })));
 const AuthCallbackPage = lazy(() => import("./pages/AuthCallbackPage").then(m => ({ default: m.AuthCallbackPage })));
 const ResetPasswordPage = lazy(() => import("./pages/ResetPasswordPage").then(m => ({ default: m.ResetPasswordPage })));
 const CartPage = lazy(() => import("./pages/CartPage").then(m => ({ default: m.CartPage })));
@@ -36,6 +37,7 @@ const GuestPolicyPage = lazy(() => import("./pages/GuestPolicyPage").then(m => (
 const RefundPolicyPage = lazy(() => import("./pages/RefundPolicyPage").then(m => ({ default: m.RefundPolicyPage })));
 const WaiverPolicyPage = lazy(() => import("./pages/WaiverPolicyPage").then(m => ({ default: m.WaiverPolicyPage })));
 const SmsTermsPage = lazy(() => import("./pages/SmsTermsPage").then(m => ({ default: m.SmsTermsPage })));
+const SmsOptInPage = lazy(() => import("./pages/SmsOptInPage").then(m => ({ default: m.SmsOptInPage })));
 const CareersPage = lazy(() => import("./pages/CareersPage").then(m => ({ default: m.CareersPage })));
 const CareerApplyPage = lazy(() => import("./pages/CareerApplyPage").then(m => ({ default: m.CareerApplyPage })));
 
@@ -219,6 +221,16 @@ function App() {
           }
         />
         <Route
+          path="admin/products"
+          element={
+            <AdminOnlyRoute>
+              <Suspense fallback={<PageLoader />}>
+                <AdminProductsPage />
+              </Suspense>
+            </AdminOnlyRoute>
+          }
+        />
+        <Route
           path="admin/chatbot"
           element={
             <AdminOnlyRoute>
@@ -297,6 +309,14 @@ function App() {
           element={
             <Suspense fallback={<PageLoader />}>
               <CareerApplyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="sms-opt-in"
+          element={
+            <Suspense fallback={<PageLoader />}>
+              <SmsOptInPage />
             </Suspense>
           }
         />

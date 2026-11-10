@@ -1403,7 +1403,7 @@ export function AccountPage() {
                     onChange={(e) => setSmsConsent(e.target.checked)}
                   />
                   <span className={styles.smsConsentText}>
-                    By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., booking confirmations, ticket codes, membership alerts, waiver confirmations, and reminders). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to unsubscribe at any time. <Link to="/privacy" target="_blank">Privacy Policy</Link> &amp; <Link to="/waiver-policy" target="_blank">Terms</Link>.
+                    By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., booking confirmations, ticket codes, membership alerts, waiver confirmations, and reminders). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply HELP for help, STOP to unsubscribe at any time. <Link to="/privacy" target="_blank">Privacy Policy</Link> &amp; <Link to="/waiver-policy" target="_blank">Terms</Link>.
                   </span>
                 </label>
               )}

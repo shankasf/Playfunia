@@ -78,6 +78,7 @@ export async function reserveTickets(input: ReserveTicketsInput) {
     order_id: order.order_id,
     item_type: 'Ticket',
     event_id: eventId && !isNaN(eventId) ? eventId : undefined,
+    ticket_type_id: input.ticketTypeId,
     name_override: input.type,
     quantity: input.quantity,
     unit_price_usd: input.price,
@@ -101,7 +102,7 @@ export async function reserveTickets(input: ReserveTicketsInput) {
     try {
       ticketPurchase = await TicketPurchaseRepository.create({
         customer_id: customerId,
-        ticket_type_id: undefined,
+        ticket_type_id: input.ticketTypeId,
         event_id: input.type === 'event' && input.eventId ? parseInt(input.eventId, 10) : undefined,
         ticket_type: input.type || 'general',
         quantity: input.quantity,

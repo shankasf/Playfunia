@@ -5,13 +5,13 @@ export function SmsTermsPage() {
     <section className={styles.page}>
       <div className={styles.header}>
         <h1>SMS Terms &amp; Conditions</h1>
-        <p>Last updated: April 17, 2026</p>
+        <p>Last updated: November 1, 2026</p>
       </div>
 
       <div className={styles.content}>
         <h2>Program Description</h2>
         <p>
-          The <strong>Playfunia</strong> SMS program (operated by Playfunia at Crossgates Mall, Albany, NY) sends transactional and operational text messages to customers and employees who have opted in. By providing your mobile phone number and agreeing to receive messages, you consent to receive SMS text messages from Playfunia. Customer messages may include: party booking confirmations with reference numbers, ticket purchase codes for facility entry, waiver signing confirmations, membership activation and expiry alerts, and booking reminders. Employee messages may include: work schedule assignments, task assignment alerts, and clock-in/out reminders. We do <strong>not</strong> send marketing or promotional content through this program.
+          The <strong>Playfunia</strong> SMS program (operated by Real International LLC, doing business as Playfunia, at Crossgates Mall, Albany, NY) sends transactional text messages to customers who have opted in, and marketing text messages to customers who separately opt in to marketing. By providing your mobile phone number and agreeing to receive messages, you consent to receive SMS text messages from Playfunia. Customer messages may include: party booking confirmations with reference numbers, ticket purchase codes for facility entry, waiver signing confirmations, membership activation and expiry alerts, and booking reminders. Marketing messages may include promotions, party offers, and event announcements, and are sent up to 4 times per month only to customers who tick the optional marketing text message box on the waiver at playfunia.com.
         </p>
         <p>
           <strong>Sample messages:</strong>
@@ -19,17 +19,16 @@ export function SmsTermsPage() {
         <ul>
           <li>"Playfunia: Your party booking #PF12345 for Sat 4/25 at 2:00 PM is confirmed. Reply HELP for help, STOP to cancel."</li>
           <li>"Playfunia: Your ticket entry code is 87321. Show this at the door. Reply HELP for help, STOP to cancel."</li>
-          <li>"Playfunia: Reminder — your shift starts tomorrow at 9:00 AM. Reply HELP for help, STOP to cancel."</li>
         </ul>
 
         <h2>How to Opt In</h2>
         <p>
-          You opt in to receive messages by submitting your mobile number during a booking, ticket purchase, waiver signing, membership sign-up, or employee onboarding on <a href="https://playfunia.com">playfunia.com</a>, or by providing your number directly to a Playfunia representative. Consent to receive SMS messages is not a condition of any purchase.
+          You opt in to receive transactional messages by entering your mobile number and ticking the separate, unticked checkbox when you create an account, check out, book a party, or sign a waiver on <a href="https://playfunia.com">playfunia.com</a>. The checkbox reads &quot;By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., booking confirmations, ticket codes, membership alerts, waiver confirmations, and reminders). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply HELP for help, STOP to unsubscribe at any time.&quot; You may also give verbal consent when booking in person at our facility, for booking messages only. Marketing text messages require a separate, optional opt-in (<a href="/sms-opt-in">see how to opt in</a>): an unticked box on the waiver form reading &quot;Optional: Yes, send me marketing text messages from Playfunia about promotions, offers, and events, sent using automated technology to the phone number provided. Consent is not a condition of purchase or participation. Msg &amp; data rates may apply. Up to 4 marketing msgs per month. Reply HELP for help, STOP to unsubscribe.&quot; Consent to receive SMS messages is not a condition of any purchase.
         </p>
 
         <h2>Message Frequency</h2>
         <p>
-          Message frequency varies based on your activity and account events (typically up to 10 messages per month for customers, and up to 30 messages per month for employees during active work periods). You should expect messages only when triggered by your actions (e.g., booking a party, buying tickets, signing a waiver) or by automated system events related to your account or employment.
+          Message frequency varies based on your activity and account events (typically up to 10 messages per month). You should expect messages only when triggered by your actions (e.g., booking a party, buying tickets, signing a waiver) or by automated system events related to your account.
         </p>
 
         <h2>Message and Data Rates</h2>
@@ -69,7 +68,7 @@ export function SmsTermsPage() {
         <ul>
           <li>Email: <a href="mailto:info@playfunia.com">info@playfunia.com</a></li>
           <li>Website: <a href="https://playfunia.com/contact">playfunia.com/contact</a></li>
-          <li>Address: Playfunia, Crossgates Mall, Albany, NY</li>
+          <li>Address: Playfunia (Real International LLC), Crossgates Mall, Albany, NY</li>
         </ul>
       </div>
     </section>

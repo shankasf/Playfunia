@@ -85,7 +85,7 @@ const SECTIONS: Array<{ heading: string; body: string }> = [
   },
   {
     heading: '9. Marketing Communications Consent',
-    body: 'By signing this waiver, I agree to receive occasional marketing communications via text message or email from Playfunia regarding promotions, offers, and events. Message and data rates may apply. I may unsubscribe at any time by replying STOP or using the unsubscribe link. Consent is not a condition of participation.',
+    body: 'By signing this waiver, I agree to receive occasional marketing emails from Playfunia regarding promotions, offers, and events. I may unsubscribe at any time using the unsubscribe link. Marketing text messages are sent only if I separately tick the marketing text message box. Consent to marketing communications is not a condition of participation.',
   },
   {
     heading: '10. Governing Law and Venue',

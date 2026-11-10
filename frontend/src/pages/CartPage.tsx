@@ -1047,7 +1047,7 @@ export function CartPage() {
                       onChange={(e) => setSmsConsent(e.target.checked)}
                     />
                     <span className={styles.smsConsentText}>
-                      By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., booking confirmations, ticket codes, membership alerts, and reminders). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
+                      By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., booking confirmations, ticket codes, membership alerts, and reminders). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply HELP for help, STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
                     </span>
                   </label>
                 </div>
@@ -1108,7 +1108,7 @@ export function CartPage() {
                       onChange={(e) => setSmsConsent(e.target.checked)}
                     />
                     <span className={styles.smsConsentText}>
-                      By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., membership alerts, reminders, and updates). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
+                      By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., membership alerts, reminders, and updates). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply HELP for help, STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
                     </span>
                   </label>
 

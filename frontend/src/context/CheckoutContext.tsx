@@ -57,6 +57,8 @@ export type TicketCartItem = {
   ticketId?: string;
   eventId?: string;
   bundleId?: string;
+  /** Kid passes per unit (from Admin -> Products); 0 for add-ons. */
+  childCount?: number;
   label: string;
   quantity: number;
   unitPrice: number;

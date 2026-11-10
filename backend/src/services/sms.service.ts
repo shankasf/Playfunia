@@ -117,8 +117,8 @@ function buildStatusCallbackUrl(notificationId?: number): string | undefined {
 
 // Send SMS helper. Routes through the registered Messaging Service when
 // TWILIO_MESSAGING_SERVICE_SID is set, otherwise falls back to the bare
-// from-number (sandbox/dev). Always appends the STOP footer for customer
-// transactional sends; OTP/staff helpers can opt out by passing
+// from-number (sandbox/dev). Staff sends can use their own Messaging Service.
+// Always appends the STOP footer for transactional sends; OTP helpers opt out with
 // `appendStopFooter: false`. When `notificationId` is supplied, a
 // statusCallback is attached so Twilio can POST delivery updates back.
 async function sendSms(options: {
@@ -126,6 +126,7 @@ async function sendSms(options: {
   body: string;
   appendStopFooter?: boolean;
   notificationId?: number;
+  audience?: 'customer' | 'staff';
 }): Promise<SendSmsResult> {
   const normalizedPhone = normalizePhoneNumber(options.to);
 
@@ -156,8 +157,11 @@ async function sendSms(options: {
       body,
       to: normalizedPhone,
     };
-    if (appConfig.twilioMessagingServiceSid) {
-      payload.messagingServiceSid = appConfig.twilioMessagingServiceSid;
+    const messagingServiceSid = options.audience === 'staff'
+      ? appConfig.twilioStaffMessagingServiceSid || appConfig.twilioMessagingServiceSid
+      : appConfig.twilioMessagingServiceSid;
+    if (messagingServiceSid) {
+      payload.messagingServiceSid = messagingServiceSid;
     } else {
       payload.from = appConfig.twilioPhoneNumber;
     }
@@ -457,6 +461,7 @@ export async function sendStaffTaskAlertSms(data: {
   return sendSms({
     to: data.phone,
     body: `Playfunia Staff Task Alert: Hi ${data.staffName}, a new task has been assigned to you.${detail} Please log in to the employee portal to review the task details and complete it on time.`,
+    audience: 'staff',
     notificationId,
   });
 }
@@ -474,6 +479,7 @@ export async function sendStaffScheduleAssignmentSms(data: {
   return sendSms({
     to: data.phone,
     body: `Playfunia Schedule: Hi ${data.staffName}, you are scheduled${role} on ${data.shiftDate} from ${data.startTime} to ${data.endTime}. Log in to the employee portal for details.`,
+    audience: 'staff',
     notificationId,
   });
 }
@@ -492,6 +498,7 @@ export async function sendStaffClockReminderSms(data: {
   return sendSms({
     to: data.phone,
     body: `Playfunia Reminder: Hi ${data.staffName}, please remember to ${action}.${when} Log in to the employee portal to update your time.`,
+    audience: 'staff',
     notificationId,
   });
 }

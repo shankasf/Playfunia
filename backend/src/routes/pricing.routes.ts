@@ -9,6 +9,7 @@ import {
   getPricingConfigHandler,
   calculateTicketPricingHandler,
 } from '../controllers/pricing.controller';
+import { getPublicCatalogHandler } from '../controllers/product-catalog.controller';
 
 export const pricingRouter = Router();
 
@@ -19,6 +20,7 @@ pricingRouter.get('/', getAllPricingHandler);
 
 // Individual pricing endpoints
 pricingRouter.get('/tickets', getTicketBundlesHandler);
+pricingRouter.get('/catalog', getPublicCatalogHandler);
 pricingRouter.get('/party-packages', getPartyPackagesHandler);
 pricingRouter.get('/party-add-ons', getPartyAddOnsHandler);
 pricingRouter.get('/memberships', getMembershipPlansHandler);

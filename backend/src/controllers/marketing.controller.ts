@@ -51,6 +51,7 @@ const sendSchema = z.object({
   promoCodes: z.array(z.string().max(64)).max(20).default([]),
   months: monthsSchema,
   isTest: z.boolean().default(false),
+  allContacts: z.boolean().default(false),
   testEmail: z.string().max(200).optional(),
   testPhone: z.string().max(40).optional(),
   selectedKeys: z.array(z.string().max(320)).max(2000).optional(),

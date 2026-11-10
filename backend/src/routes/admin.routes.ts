@@ -228,6 +228,16 @@ import {
   searchKbHandler,
 } from '../controllers/chatbot-admin.controller';
 import { AppError } from '../utils/app-error';
+import {
+  listAdminProductsHandler,
+  createProductHandler,
+  updateProductHandler,
+  removeProductHandler,
+  uploadProductImageHandler,
+  createCategoryHandler,
+  updateCategoryHandler,
+  deleteCategoryHandler,
+} from '../controllers/product-catalog.controller';
 import { KB_MAX_FILE_BYTES } from '../services/knowledge-base.service';
 
 const upload = multer({
@@ -537,6 +547,16 @@ adminRouter.patch('/announcements/:id', updateAnnouncementHandler);
 adminRouter.delete('/announcements/:id', deleteAnnouncementHandler);
 
 // Ticket Types CRUD
+// Products on /buy-ticket (admin only: not in STAFF_ALLOWED)
+adminRouter.get('/products', listAdminProductsHandler);
+adminRouter.post('/products', createProductHandler);
+adminRouter.post('/products/image', marketingImageUploadMiddleware, uploadProductImageHandler);
+adminRouter.patch('/products/:id', updateProductHandler);
+adminRouter.delete('/products/:id', removeProductHandler);
+adminRouter.post('/product-categories', createCategoryHandler);
+adminRouter.patch('/product-categories/:id', updateCategoryHandler);
+adminRouter.delete('/product-categories/:id', deleteCategoryHandler);
+
 adminRouter.get('/ticket-types', listTicketTypesHandler);
 adminRouter.get('/ticket-types/:id', getTicketTypeHandler);
 adminRouter.post('/ticket-types', createTicketTypeHandler);

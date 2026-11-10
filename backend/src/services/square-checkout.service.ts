@@ -12,6 +12,7 @@ import {
   getExtraChildFee,
   getExtraAdultFee,
   getSingleAdmissionPrice,
+  getExtraAdultAdmissionPrice,
   roundCurrency as pricingRoundCurrency,
   initializePricingCache,
 } from './pricing-config.service';
@@ -19,6 +20,7 @@ import { AppError } from '../utils/app-error';
 import { PAYMENT_STATUS } from '../utils/payment-statuses';
 import { getUserFriendlyErrorMessage, logPaymentInitiated, logPaymentCompleted, logPaymentFailed, type SquareError } from './payment-logger.service';
 import { reserveTickets } from './ticket.service';
+import { isSellable } from './product-catalog.service';
 import { purchaseMembership } from './membership.service';
 import { sendOrderConfirmation, sendBookingConfirmation, sendAdminBookingNotification, sendAdminTicketNotification, sendAdminMembershipNotification, type BookingEmailData } from './email.service';
 import { sendOrderConfirmationSms, sendTicketConfirmationSms, sendBookingConfirmationSms, type BookingSmsData } from './sms.service';
@@ -144,7 +146,16 @@ async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<voi
         if (!ticketType) {
           throw new AppError('Ticket bundle not found', 404);
         }
-        expectedPrice = ticketType.base_price_usd ?? 0;
+        // Products are managed in Admin -> Products; a turned-off or removed
+        // product must not be purchasable from a stale cart.
+        if (!isSellable(ticketType as Record<string, unknown>)) {
+          throw new AppError(`"${ticketType.name}" is no longer available. Please remove it from your cart.`, 400);
+        }
+        const maxQty = Number((ticketType as Record<string, unknown>).max_quantity ?? 0);
+        if (maxQty > 0 && item.quantity > maxQty) {
+          throw new AppError(`You can buy at most ${maxQty} of "${ticketType.name}" per order.`, 400);
+        }
+        expectedPrice = Number(ticketType.base_price_usd ?? 0);
       } else {
         // General admission ticket - validate against single admission price.
         expectedPrice = await getSingleAdmissionPrice();
@@ -155,6 +166,11 @@ async function validateItemPrices(items: SquareCheckoutItemInput[]): Promise<voi
         // Tying the expected price to the bundle the label claims keeps the
         // anti-underpayment guard intact — paying a smaller bundle's price for a
         // larger bundle's label is still rejected.
+        // Legacy "Extra Adult(s) (N)" lines were wrongly compared against single
+        // admission and always rejected; they are priced from pricing_config.
+        if (/^Extra Adults?\b/i.test(item.label)) {
+          expectedPrice = await getExtraAdultAdmissionPrice();
+        }
         const bundleMatch = item.label.match(/^(\d+)\s+Child(?:ren)?\s+Bundle/i);
         if (bundleMatch && bundleMatch[1]) {
           const childCount = parseInt(bundleMatch[1], 10);
@@ -862,6 +878,7 @@ export async function finalizeSquareCheckout(userId: string, input: SquareChecko
           type: item.eventId ? 'event' : 'general',
           eventId: item.eventId,
           quantity: item.quantity,
+          ticketTypeId: item.bundleId && /^\d+$/.test(item.bundleId) ? parseInt(item.bundleId, 10) : undefined,
           price: pricePerTicket,
           metadata: {
             ...(item.metadata ?? {}),
@@ -2040,6 +2057,7 @@ export async function finalizeSquareGuestCheckout(input: SquareGuestCheckoutFina
           type: item.eventId ? 'event' : 'general',
           eventId: item.eventId,
           quantity: item.quantity,
+          ticketTypeId: item.bundleId && /^\d+$/.test(item.bundleId) ? parseInt(item.bundleId, 10) : undefined,
           price: pricePerTicket,
           metadata: {
             ...(item.metadata ?? {}),

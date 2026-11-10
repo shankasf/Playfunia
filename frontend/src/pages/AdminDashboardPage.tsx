@@ -1158,6 +1158,16 @@ export function AdminDashboardPage() {
           </Link>
         )}
         {isAdmin && (
+          <Link to="/admin/products" style={{ textDecoration: 'none', display: 'contents' }}>
+            {renderSummaryCard(
+              'Tickets & Products',
+              'Catalog',
+              'Buy Tickets page',
+              'Passes, bundles, add-ons, prices'
+            )}
+          </Link>
+        )}
+        {isAdmin && (
           <Link to="/admin/marketing" style={{ textDecoration: 'none', display: 'contents' }}>
             {renderSummaryCard(
               'Marketing',

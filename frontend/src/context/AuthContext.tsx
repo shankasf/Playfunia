@@ -107,15 +107,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Guard against concurrent loadProfile calls (race condition between getSession and onAuthStateChange)
-  const loadProfileLockRef = useRef(false);
+  // Concurrent loadProfile calls (getSession and onAuthStateChange both fire on
+  // start-up) share one in-flight request. The second caller used to return at
+  // once, so isLoading went false before roles arrived and admin-only routes
+  // bounced a cold page load to /admin or /account.
+  const loadProfileInFlightRef = useRef<Promise<void> | null>(null);
 
   // Load user profile from backend
-  const loadProfile = useCallback(async (accessToken: string) => {
-    // Prevent concurrent calls — second caller skips instead of racing
-    if (loadProfileLockRef.current) return;
-    loadProfileLockRef.current = true;
-
+  const loadProfile = useCallback((accessToken: string): Promise<void> => {
+    if (loadProfileInFlightRef.current) return loadProfileInFlightRef.current;
+    const run = (async () => {
     try {
       setAuthToken(accessToken);
       const response = await apiGet<{ user: unknown }>('/users/me');
@@ -162,8 +163,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } finally {
-      loadProfileLockRef.current = false;
+      loadProfileInFlightRef.current = null;
     }
+    })();
+    loadProfileInFlightRef.current = run;
+    return run;
   }, []);
 
   // Initialize auth state

@@ -37,6 +37,7 @@ interface FieldErrors {
 }
 
 const TERMS_POLICY = 'terms_conditions';
+const MARKETING_SMS_POLICY = 'marketing_sms_consent_v1';
 
 const RELATIONSHIP_OPTIONS = ['Father', 'Mother', 'Other'] as const;
 
@@ -135,6 +136,7 @@ interface WaiverFormProps {
   initialGuardianDob?: string;
   initialRelationship?: string;
   initialMarketingOptIn?: boolean;
+  initialMarketingSmsConsent?: boolean;
   initialSignature?: string;
   initialChildren?: InitialChild[];
   initialTeens?: InitialChild[];
@@ -150,6 +152,7 @@ export function WaiverForm({
   initialGuardianDob,
   initialRelationship,
   initialMarketingOptIn,
+  initialMarketingSmsConsent,
   initialSignature,
   initialChildren,
   initialTeens,
@@ -203,6 +206,7 @@ export function WaiverForm({
   const [guardianDob, setGuardianDob] = useState(initialValuesRef.current.guardianDob);
   const [relationship, setRelationship] = useState(initialValuesRef.current.relationship);
   const [marketingOptIn, setMarketingOptIn] = useState(initialValuesRef.current.marketingOptIn);
+  const [marketingSmsConsent, setMarketingSmsConsent] = useState(initialMarketingSmsConsent ?? false);
   const [children, setChildren] = useState<ChildForm[]>(() =>
     initialChildrenRef.current.map((child) => ({ ...child }))
   );
@@ -429,7 +433,7 @@ export function WaiverForm({
         relationshipToChildren: relationship.trim(),
         signature: guardianName.trim(),
         signatureImage,
-        acceptedPolicies: [TERMS_POLICY],
+        acceptedPolicies: marketingSmsConsent ? [TERMS_POLICY, MARKETING_SMS_POLICY] : [TERMS_POLICY],
         marketingOptIn,
         children: validChildren.map((child) => ({
           childId: child.childId,
@@ -867,7 +871,17 @@ export function WaiverForm({
             onChange={(event) => setMarketingOptIn(event.target.checked)}
           />
           <span className={styles.smsConsentText}>
-            By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., waiver confirmations, booking reminders, ticket codes, and membership alerts). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
+            By providing your phone number and checking this box, you consent to receive transactional text messages from Playfunia (e.g., waiver confirmations, booking reminders, ticket codes, and membership alerts). Consent is not a condition of purchase. Msg &amp; data rates may apply. Msg frequency varies. Reply HELP for help, STOP to unsubscribe at any time. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/waiver-policy" target="_blank" rel="noopener noreferrer">Terms</a>.
+          </span>
+        </label>
+        <label className={styles.checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={marketingSmsConsent}
+            onChange={(event) => setMarketingSmsConsent(event.target.checked)}
+          />
+          <span className={styles.smsConsentText}>
+            Optional: Yes, send me marketing text messages from Playfunia about promotions, offers, and events, sent using automated technology to the phone number provided. Consent is not a condition of purchase or participation. Msg &amp; data rates may apply. Up to 4 marketing msgs per month. Reply HELP for help, STOP to unsubscribe. <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> &amp; <a href="/sms-terms" target="_blank" rel="noopener noreferrer">SMS Terms</a>.
           </span>
         </label>
       </div>

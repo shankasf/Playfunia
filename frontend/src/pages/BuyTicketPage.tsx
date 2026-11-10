@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 
 import { getAllPricing, type AllPricing } from "../api/pricing";
+import { getTicketCatalog, type CatalogProduct, type PublicCatalog } from "../api/products";
 import { PrimaryButton } from "../components/common/PrimaryButton";
 import { useCheckout } from "../context/CheckoutContext";
 import styles from "./BuyTicketPage.module.css";
@@ -16,7 +18,8 @@ type BundleInfo = {
   savings: number;
 };
 
-export function BuyTicketPage() {
+/** Pre-migration layout, kept so the page works until the catalog tables exist. */
+function LegacyBuyTicketPage() {
   const { items, addTicketPurchase } = useCheckout();
 
   const [generalAdmissionQty, setGeneralAdmissionQty] = useState(1);
@@ -296,6 +299,207 @@ export function BuyTicketPage() {
             </div>
           </div>
         </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic page: every section and product comes from Admin -> Products.
+// ---------------------------------------------------------------------------
+
+function formatMoney(n: number): string {
+  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+}
+
+export function BuyTicketPage() {
+  const [catalog, setCatalog] = useState<PublicCatalog | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    getTicketCatalog()
+      .then(data => { if (mounted) setCatalog(data); })
+      .catch(err => {
+        console.error("Failed to load products:", err);
+        if (mounted) setFailed(true);
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  // Until the catalog tables exist (or if the new endpoint is unreachable),
+  // fall back to the original layout, which reads /pricing.
+  if (failed || (catalog && !catalog.schemaReady)) return <LegacyBuyTicketPage />;
+
+  return <DynamicBuyTicketPage catalog={catalog} />;
+}
+
+function DynamicBuyTicketPage({ catalog }: { catalog: PublicCatalog | null }) {
+  const { items, addTicketPurchase } = useCheckout();
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [added, setAdded] = useState<string | null>(null);
+
+  const allProducts = useMemo(
+    () => (catalog?.categories ?? []).flatMap(c => c.items),
+    [catalog],
+  );
+  const singleAdmission = allProducts.find(p => p.code === "single_admission")
+    ?? allProducts.find(p => p.childCount === 1);
+
+  const childrenInCart = useMemo(() => {
+    let count = 0;
+    for (const item of items) {
+      if (item.type !== "ticket" || item.status !== "pending") continue;
+      if (typeof item.childCount === "number") {
+        count += item.childCount * (item.quantity || 1);
+      } else {
+        const match = item.label.match(/(\d+)\s*Child/i);
+        if (match) count += parseInt(match[1], 10);
+        else if (item.label.includes("General Admission")) count += 1;
+      }
+    }
+    return count;
+  }, [items]);
+
+  const qtyFor = (p: CatalogProduct) => quantities[p.id] ?? 1;
+  const setQty = (p: CatalogProduct, next: number) =>
+    setQuantities(prev => ({ ...prev, [p.id]: Math.max(1, Math.min(p.maxQuantity || 10, next)) }));
+
+  const addToCart = useCallback((p: CatalogProduct, quantity: number) => {
+    addTicketPurchase({
+      id: `ticket-${Date.now()}-${p.id}`,
+      type: "ticket",
+      bundleId: p.id,
+      childCount: p.childCount,
+      label: p.name,
+      quantity,
+      unitPrice: p.price,
+      total: Math.round(p.price * quantity * 100) / 100,
+      status: "pending",
+    });
+    setQuantities(prev => ({ ...prev, [p.id]: 1 }));
+    setAdded(quantity > 1 ? `${quantity} × ${p.name}` : p.name);
+  }, [addTicketPurchase]);
+
+  const metaFor = (p: CatalogProduct): string | null => {
+    if (p.code === "extra_adult" && childrenInCart > 0) {
+      return `${childrenInCart} free adult${childrenInCart > 1 ? "s" : ""} already included from your cart`;
+    }
+    return p.description;
+  };
+
+  const savingsFor = (p: CatalogProduct): number => {
+    if (!singleAdmission || p.childCount < 2) return 0;
+    return Math.max(0, Math.round((p.childCount * singleAdmission.price - p.price) * 100) / 100);
+  };
+
+  return (
+    <section className={styles.page}>
+      <div className={styles.inner}>
+        <div className={styles.pageHeader}>
+          <span className={styles.tag}>Play Passes</span>
+          <h1>Buy Play Passes</h1>
+          <p>Purchase digital passes and extras online and skip the line at the welcome desk.</p>
+        </div>
+
+        {added && (
+          <div className={styles.addedBanner} role="status">
+            <span><strong>{added}</strong> added to your cart.</span>
+            <Link to="/cart" className={styles.addedLink}>View cart</Link>
+          </div>
+        )}
+
+        {!catalog ? (
+          <div className={styles.loadingState}>Loading passes…</div>
+        ) : catalog.categories.length === 0 ? (
+          <div className={styles.loadingState}>Online passes are not available right now. Please visit the welcome desk.</div>
+        ) : (
+          <div className={styles.sections}>
+            {catalog.categories.map(category => (
+              <section key={category.id} className={styles.section} aria-labelledby={`cat-${category.id}`}>
+                <div className={styles.sectionHeader}>
+                  <h2 id={`cat-${category.id}`}>{category.name}</h2>
+                  {category.description && <p>{category.description}</p>}
+                </div>
+
+                {category.layout === "list" ? (
+                  <div className={`${styles.bundlesCard} ${styles.listCard}`}>
+                    <div className={styles.bundleList}>
+                      {category.items.map(p => {
+                        const savings = savingsFor(p);
+                        return (
+                          <div key={p.id} className={styles.bundleRow}>
+                            <div className={styles.bundleInfo}>
+                              {p.imageUrl && <img src={p.imageUrl} alt="" className={styles.rowThumb} />}
+                              <div className={styles.rowText}>
+                                <span className={styles.bundleKids}>{p.name}</span>
+                                {p.description && <span className={styles.rowDesc}>{p.description}</span>}
+                              </div>
+                              {savings > 0 && <span className={styles.bundleSave}>Save {formatMoney(savings)}</span>}
+                            </div>
+                            <div className={styles.bundleRight}>
+                              <span className={styles.bundlePrice}>{formatMoney(p.price)}</span>
+                              <button type="button" className={styles.bundleAddBtn} onClick={() => addToCart(p, 1)}>
+                                Add
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className={styles.productGrid}>
+                    {category.items.map(p => {
+                      const qty = qtyFor(p);
+                      const meta = metaFor(p);
+                      return (
+                        <div key={p.id} className={`${styles.card} ${styles.productCard}`}>
+                          {p.imageUrl && <img src={p.imageUrl} alt={p.name} className={styles.productImage} loading="lazy" />}
+                          <div className={styles.cardHeader}>
+                            <div>
+                              <h3 className={styles.cardTitle}>{p.name}</h3>
+                              {meta && <p className={styles.cardMeta}>{meta}</p>}
+                            </div>
+                            <span className={styles.price}>
+                              {formatMoney(p.price)}{p.unitLabel && <small>/{p.unitLabel}</small>}
+                            </span>
+                          </div>
+                          <div className={styles.cardActions}>
+                            <div className={styles.qty}>
+                              <button
+                                type="button"
+                                className={styles.qtyBtn}
+                                onClick={() => setQty(p, qty - 1)}
+                                disabled={qty <= 1}
+                                aria-label={`Fewer ${p.name}`}
+                              >
+                                −
+                              </button>
+                              <span className={styles.qtyNum} aria-live="polite">{qty}</span>
+                              <button
+                                type="button"
+                                className={styles.qtyBtn}
+                                onClick={() => setQty(p, qty + 1)}
+                                disabled={qty >= (p.maxQuantity || 10)}
+                                aria-label={`More ${p.name}`}
+                              >
+                                +
+                              </button>
+                            </div>
+                            <PrimaryButton onClick={() => addToCart(p, qty)} className={styles.addBtn}>
+                              Add {formatMoney(Math.round(p.price * qty * 100) / 100)}
+                            </PrimaryButton>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

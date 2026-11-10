@@ -59,7 +59,24 @@ function monthOf(date: unknown): number | null {
   return d.getUTCMonth() + 1;
 }
 
-// Build the unified contact map. Datasets are small enough to load in full.
+// Supabase limits each response; page through every source for full audiences.
+async function loadContactRows(table: string, columns: string) {
+  const rows: Record<string, any>[] = [];
+  const pageSize = 500;
+  const primaryKeys: Record<string, string> = {
+    customers: 'customer_id', children: 'child_id', waiver_submissions: 'submission_id',
+    waiver_users: 'waiver_user_id', waiver_user_children: 'waiver_user_child_id',
+  };
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabaseAny.from(table).select(columns)
+      .order(primaryKeys[table]!, { ascending: true }).range(offset, offset + pageSize - 1);
+    if (error) throw new AppError(`Unable to load the marketing audience from ${table}. Please try again.`, 503);
+    rows.push(...(data ?? []));
+    if (!data || data.length < pageSize) return { data: rows };
+  }
+}
+
+// Build the unified contact map from all pages.
 async function buildContacts(): Promise<Contact[]> {
   const map = new Map<string, Contact>();
 
@@ -80,11 +97,11 @@ async function buildContacts(): Promise<Contact[]> {
   }
 
   const [customers, children, submissions, waiverUsers, waiverChildren] = await Promise.all([
-    supabaseAny.from('customers').select('customer_id, full_name, email, phone'),
-    supabaseAny.from('children').select('child_id, customer_id, birth_date'),
-    supabaseAny.from('waiver_submissions').select('guardian_first_name, guardian_last_name, guardian_email, guardian_phone, marketing_email_opt_in, marketing_sms_opt_in, child_ids, waiver_user_id'),
-    supabaseAny.from('waiver_users').select('waiver_user_id, guardian_first_name, guardian_last_name, guardian_email, guardian_phone, marketing_opt_in'),
-    supabaseAny.from('waiver_user_children').select('waiver_user_id, minor_date_of_birth'),
+    loadContactRows('customers', 'customer_id, full_name, email, phone'),
+    loadContactRows('children', 'child_id, customer_id, birth_date'),
+    loadContactRows('waiver_submissions', 'guardian_first_name, guardian_last_name, guardian_email, guardian_phone, marketing_email_opt_in, marketing_sms_opt_in, accepted_policies, child_ids, waiver_user_id'),
+    loadContactRows('waiver_users', 'waiver_user_id, guardian_first_name, guardian_last_name, guardian_email, guardian_phone, marketing_opt_in'),
+    loadContactRows('waiver_user_children', 'waiver_user_id, minor_date_of_birth'),
   ]);
 
   const childBirthById = new Map<number, unknown>();
@@ -120,7 +137,9 @@ async function buildContacts(): Promise<Contact[]> {
     const c = upsert(s.guardian_email, s.guardian_phone, name);
     if (!c) continue;
     if (s.marketing_email_opt_in) c.emailOptIn = true;
-    if (s.marketing_sms_opt_in) c.smsOptIn = true;
+    // SMS marketing needs the separate waiver consent; marketing_sms_opt_in comes
+    // from the checkbox that only covers transactional texts.
+    if ((s.accepted_policies ?? []).includes('marketing_sms_consent_v1')) c.smsOptIn = true;
     for (const cid of (s.child_ids ?? []) as number[]) {
       const m = monthOf(childBirthById.get(cid));
       if (m) c.birthdayMonths.add(m);
@@ -131,14 +150,13 @@ async function buildContacts(): Promise<Contact[]> {
     }
   }
 
-  // Legacy waiver users (single opt-in flag → treat as both channels)
+  // Legacy waiver users: the general marketing flag covers email only.
   for (const u of waiverUsers.data ?? []) {
     const name = `${u.guardian_first_name ?? ''} ${u.guardian_last_name ?? ''}`.trim();
     const c = upsert(u.guardian_email, u.guardian_phone, name);
     if (!c) continue;
     if (u.marketing_opt_in) {
       c.emailOptIn = true;
-      c.smsOptIn = true;
     }
     for (const d of waiverChildBirthsByUser.get(u.waiver_user_id) ?? []) {
       const m = monthOf(d);
@@ -183,7 +201,9 @@ async function buildAudience(months: number[], channel: Channel) {
   const wantEmail = channel === 'email' || channel === 'both';
   const wantSms = channel === 'sms' || channel === 'both';
   const emailList = wantEmail ? pool.filter((c) => c.emailOptIn && c.email) : [];
-  const smsList = wantSms ? pool.filter((c) => c.smsOptIn && c.phone) : [];
+  const smsList = wantSms
+    ? [...new Map(pool.filter((c) => c.smsOptIn && c.phone).map((c) => [c.phone, c])).values()]
+    : [];
   return { emailList, smsList };
 }
 
@@ -296,6 +316,7 @@ interface SendInput {
   promoCodes: string[];
   months: number[];
   isTest: boolean;
+  allContacts?: boolean;
   testEmail?: string;
   testPhone?: string;
   // Optional explicit allow-list of contact keys (email or "p:<phone>") chosen
@@ -371,6 +392,9 @@ export async function sendCampaign(input: SendInput) {
   if (wantSms && !input.smsBody?.trim()) {
     throw new AppError('SMS body is required for SMS campaigns.', 400);
   }
+  if (wantSms && !input.isTest && !appConfig.marketingSmsEnabled) {
+    throw new AppError('SMS marketing is paused. Choose Email or enable SMS marketing before sending.', 400);
+  }
 
   type Target = { name: string; email: string | null; phone: string | null };
   let emailTargets: Target[] = [];
@@ -387,13 +411,13 @@ export async function sendCampaign(input: SendInput) {
       smsTargets = [{ name: 'Test', email: null, phone: normPhone(input.testPhone) }];
     }
   } else {
-    if (input.months.length === 0) {
-      throw new AppError('Select at least one birthday month before sending a bulk campaign.', 400);
+    if (!input.allContacts && input.months.length === 0) {
+      throw new AppError('Choose all marketing subscribers or select at least one birthday month before sending.', 400);
     }
-    let { emailList, smsList } = await buildAudience(input.months, input.channel);
+    let { emailList, smsList } = await buildAudience(input.allContacts ? [] : input.months, input.channel);
     // Honor the admin's per-recipient selection (deselected rows are dropped).
     // Server still only ever sees opted-in contacts, so this can only narrow.
-    if (input.selectedKeys && input.selectedKeys.length > 0) {
+    if (input.selectedKeys) {
       const keep = new Set(input.selectedKeys);
       emailList = emailList.filter((c) => keep.has(c.key));
       smsList = smsList.filter((c) => keep.has(c.key));
@@ -426,7 +450,7 @@ export async function sendCampaign(input: SendInput) {
       sms_body: input.smsBody ?? null,
       email_image_url: emailImageUrl,
       promo_codes: input.promoCodes,
-      birthday_months: input.months,
+      birthday_months: input.allContacts ? [] : input.months,
       audience_count: audienceCount,
       is_test: input.isTest,
       status: 'sent',
